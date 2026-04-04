@@ -17,6 +17,6 @@
     "serve": "pnpm build:all && npx serve . -l 3000"
   },
   "devDependencies": {
-    "typescript": "^5.8.0"
+    "typescript": "^6.0.2"
   }
 }

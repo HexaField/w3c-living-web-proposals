@@ -135,7 +135,7 @@ export class DIDCredential {
     if (algorithm !== 'Ed25519') {
       throw new DOMException(`Unsupported algorithm: ${algorithm}`, 'NotSupportedError');
     }
-    const privateKey = ed25519.utils.randomPrivateKey();
+    const privateKey = ed25519.utils.randomSecretKey();
     const publicKey = await ed25519.getPublicKeyAsync(privateKey);
     const did = publicKeyToDID(publicKey);
     const createdAt = new Date().toISOString();

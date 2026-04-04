@@ -2,8 +2,8 @@
  * Encrypted key storage — Argon2id (via @noble/hashes) + AES-256-GCM + IndexedDB
  */
 
-import { argon2id } from '@noble/hashes/argon2';
-import { randomBytes } from '@noble/hashes/utils';
+import { argon2id } from '@noble/hashes/argon2.js';
+import { randomBytes } from '@noble/hashes/utils.js';
 
 const DB_NAME = 'living-web-identity';
 const STORE_NAME = 'credentials';
