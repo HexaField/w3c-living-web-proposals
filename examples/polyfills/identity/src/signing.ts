@@ -3,14 +3,24 @@
  */
 
 import * as ed25519 from '@noble/ed25519';
-import { sha512, sha256 } from '@noble/hashes/sha2.js';
+import { sha512 } from '@noble/hashes/sha2.js';
+import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
 import canonicalize from 'canonicalize';
 import { didToPublicKey } from './did-key.js';
 
-// Configure sha512 for ed25519 sync methods
-if (!ed25519.hashes.sha512) {
-  ed25519.hashes.sha512 = sha512;
+// Configure sha512 for ed25519 (required in @noble/ed25519 v3)
+// v3 uses etc.sha512Sync / etc.sha512Async instead of hashes.sha512
+if (ed25519.etc && !ed25519.etc.sha512Sync) {
+  ed25519.etc.sha512Sync = (...msgs: Uint8Array[]) => {
+    const merged = new Uint8Array(msgs.reduce((acc, m) => acc + m.length, 0));
+    let offset = 0;
+    for (const m of msgs) { merged.set(m, offset); offset += m.length; }
+    return sha512(merged);
+  };
+  ed25519.etc.sha512Async = async (...msgs: Uint8Array[]) => {
+    return ed25519.etc.sha512Sync!(...msgs);
+  };
 }
 
 export { ed25519 };

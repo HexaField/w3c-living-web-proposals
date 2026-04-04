@@ -4,9 +4,17 @@ import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
 import canonicalize from 'canonicalize';
 import type { SemanticTriple, SignedTriple, ContentProof } from './types.js';
 
-// Configure sha512 for ed25519 sync methods
-if (!ed25519.hashes.sha512) {
-  ed25519.hashes.sha512 = sha512;
+// Configure sha512 for ed25519 v3 (uses etc.sha512Sync/sha512Async)
+if (ed25519.etc && !ed25519.etc.sha512Sync) {
+  ed25519.etc.sha512Sync = (...msgs: Uint8Array[]) => {
+    const merged = new Uint8Array(msgs.reduce((acc, m) => acc + m.length, 0));
+    let offset = 0;
+    for (const m of msgs) { merged.set(m, offset); offset += m.length; }
+    return sha512(merged);
+  };
+  ed25519.etc.sha512Async = async (...msgs: Uint8Array[]) => {
+    return ed25519.etc.sha512Sync!(...msgs);
+  };
 }
 
 export interface IdentityProvider {
@@ -24,7 +32,7 @@ export class EphemeralIdentity implements IdentityProvider {
   private ready: Promise<void>;
 
   constructor() {
-    this.privateKey = ed25519.utils.randomSecretKey();
+    this.privateKey = ((ed25519.utils as any).randomPrivateKey || ed25519.utils.randomSecretKey)();
     this.publicKey = new Uint8Array(0);
     this.did = '';
     this.ready = this.init();
