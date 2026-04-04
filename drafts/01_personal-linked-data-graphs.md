@@ -11,7 +11,7 @@
 
 ## Abstract
 
-This specification defines a client-side API for creating, querying, and managing personal linked data graphs. A PersonalGraph is a local-first, user-controlled semantic triple store accessible to web applications. It supports RDF-compatible triples, SPARQL queries, SHACL-based shape validation, and event-driven observation of graph changes. The API is exposed on the `navigator.semanticWeb.graphs` namespace and provides web applications with structured, persistent, queryable semantic storage under user control.
+This specification defines a client-side API for creating, querying, and managing personal linked data graphs. A PersonalGraph is a local-first, user-controlled semantic triple store accessible to web applications. It supports RDF-compatible triples, SPARQL queries, SHACL-based shape validation, and event-driven observation of graph changes. The API is exposed on the `navigator.graph` namespace and provides web applications with structured, persistent, queryable semantic storage under user control.
 
 ---
 
@@ -161,17 +161,12 @@ When multiple fields are specified, they are combined with logical AND. A `null`
 
 ### 4.1 PersonalGraphManager
 
-The **PersonalGraphManager** interface provides methods for creating, listing, retrieving, and removing personal graphs. It is accessed via `navigator.semanticWeb.graphs`.
+The **PersonalGraphManager** interface provides methods for creating, listing, retrieving, and removing personal graphs. It is accessed via `navigator.graph`.
 
 ```webidl
 [Exposed=Window, SecureContext]
 partial interface Navigator {
-  [SameObject] readonly attribute SemanticWeb semanticWeb;
-};
-
-[Exposed=Window, SecureContext]
-interface SemanticWeb {
-  [SameObject] readonly attribute PersonalGraphManager graphs;
+  [SameObject] readonly attribute PersonalGraphManager graph;
 };
 
 [Exposed=Window, SecureContext]
@@ -426,7 +421,7 @@ Even without accessing triple content, the existence, name, and size of personal
 
 ```javascript
 // Create a personal graph
-const graph = await navigator.semanticWeb.graphs.create("My Knowledge Base");
+const graph = await navigator.graph.create("My Knowledge Base");
 
 // Add a triple
 const triple = new SemanticTriple(
@@ -510,7 +505,7 @@ console.log(`${allTasks.length} tasks in graph`);
 ### 9.4 Observing Graph Changes
 
 ```javascript
-const graph = await navigator.semanticWeb.graphs.get("some-uuid");
+const graph = await navigator.graph.get("some-uuid");
 
 graph.ontripleadded = (event) => {
   const triple = event.triple;

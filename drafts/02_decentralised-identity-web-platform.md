@@ -225,17 +225,11 @@ Users MUST be able to delete a DIDCredential from the browser. Deletion MUST rem
 
 ### 5.1 sign(data)
 
-The signing API is exposed on `navigator.semanticWeb.identity`.
+The signing API is exposed as methods on the `DIDCredential` interface itself. This keeps signing tightly bound to the credential object, consistent with how WebAuthn credentials work.
 
 ```webidl
 [Exposed=Window, SecureContext]
-partial interface SemanticWeb {
-  [SameObject] readonly attribute IdentityManager identity;
-};
-
-[Exposed=Window, SecureContext]
-interface IdentityManager {
-  [NewObject] Promise<DIDCredential?> active();
+partial interface DIDCredential {
   [NewObject] Promise<SignedContent> sign(any data);
   [NewObject] Promise<boolean> verify(SignedContent content);
 };
@@ -445,8 +439,11 @@ console.log(credential.createdAt);   // "2026-04-04T00:08:00Z"
 ### 10.2 Signing and Verifying Data
 
 ```javascript
+// Get active identity
+const credential = await navigator.credentials.get({ did: {} });
+
 // Sign arbitrary data
-const signed = await navigator.semanticWeb.identity.sign({
+const signed = await credential.sign({
   type: "message",
   content: "Hello, decentralised web!",
   recipient: "did:key:z6MkotherDID..."
@@ -458,7 +455,7 @@ console.log(signed.timestamp);        // "2026-04-04T00:08:15Z"
 console.log(signed.proof.signature);  // "a3b4c5d6..."
 
 // Verify the signature (no prompt needed)
-const isValid = await navigator.semanticWeb.identity.verify(signed);
+const isValid = await credential.verify(signed);
 console.log(isValid); // true
 ```
 
@@ -491,7 +488,7 @@ const response = await fetch("/auth", {
 
 ```javascript
 // Check if user has an active identity
-const active = await navigator.semanticWeb.identity.active();
+const active = await navigator.credentials.get({ did: {} });
 
 if (active) {
   console.log(`Signed in as ${active.displayName} (${active.did})`);

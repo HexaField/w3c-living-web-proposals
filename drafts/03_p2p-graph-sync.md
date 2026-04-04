@@ -164,27 +164,25 @@ A peer's DID MUST be resolvable to a DID Document containing at least one verifi
 
 ### 5.1 SharedGraphManager
 
-The `SharedGraphManager` interface provides methods for publishing, joining, listing, and leaving shared graphs. It is accessible via `navigator.semanticWeb.sharedGraphs`.
+The sharing and joining of shared graphs is integrated into the `navigator.graph` namespace and the `PersonalGraph` interface. A personal graph becomes a `SharedGraph` by calling `share()` on it. Shared graphs are joined via `navigator.graph.join()`.
 
 ```webidl
-[Exposed=Window]
-partial interface SemanticWeb {
-  [SameObject] readonly attribute SharedGraphManager sharedGraphs;
+[Exposed=Window, SecureContext]
+partial interface PersonalGraphManager {
+  [NewObject] Promise<SharedGraph> join(USVString sharedGraphURI);
+  [NewObject] Promise<sequence<SharedGraphInfo>> listShared();
 };
 
 [Exposed=Window,Worker]
-interface SharedGraphManager {
-  [NewObject] Promise<SharedGraph> publish(
-    PersonalGraph graph,
-    USVString syncProtocolIdentifier,
-    optional SharedGraphMetadata metadata = {}
+partial interface PersonalGraph {
+  [NewObject] Promise<SharedGraph> share(
+    optional SharedGraphOptions options = {}
   );
+};
 
-  [NewObject] Promise<SharedGraph> join(USVString sharedGraphURI);
-
-  [NewObject] Promise<sequence<SharedGraphInfo>> list();
-
-  [NewObject] Promise<undefined> leave(USVString sharedGraphURI, optional LeaveOptions options = {});
+dictionary SharedGraphOptions {
+  USVString syncProtocol = "webrtc-crdt";
+  SharedGraphMetadata meta;
 };
 
 dictionary SharedGraphMetadata {
@@ -197,10 +195,6 @@ dictionary SharedGraphInfo {
   USVString name;
   SyncState syncState;
   unsigned long peerCount;
-};
-
-dictionary LeaveOptions {
-  boolean retainLocalCopy = true;
 };
 ```
 
@@ -406,7 +400,7 @@ interface SyncEvent : ExtendableEvent {
 
 Publishing converts a PersonalGraph into a SharedGraph by associating it with a sync protocol and making it discoverable by peers.
 
-The `publish()` method MUST:
+The `share()` method on PersonalGraph MUST:
 
 1. Generate a globally unique URI for the SharedGraph.
 2. Associate the graph with the specified sync protocol identifier.
@@ -419,7 +413,7 @@ The sync protocol identifier is a URI that uniquely identifies the sync implemen
 
 Joining connects an agent to an existing SharedGraph and begins synchronisation.
 
-The `join()` method MUST:
+The `join()` method on `navigator.graph` MUST:
 
 1. Resolve the SharedGraph URI to determine the sync protocol.
 2. Obtain or instantiate the appropriate sync protocol implementation.
@@ -547,32 +541,31 @@ SharedGraph data stored locally by the user agent SHOULD be protected with the s
 
 ```javascript
 // Create a personal graph
-const graph = await navigator.semanticWeb.createGraph("project-notes");
+const graph = await navigator.graph.create("project-notes");
 
 // Add some initial data
-await graph.add({
+await graph.addTriple({
   source: "note:1",
   predicate: "schema:name",
   target: "Meeting Notes — April 2026"
 });
 
-// Publish as a shared graph
-const shared = await navigator.semanticWeb.sharedGraphs.publish(
-  graph,
-  "urn:sync-protocol:example-crdt-v1",
-  { name: "Project Notes", description: "Shared notes for the team" }
-);
+// Share it as a shared graph
+const shared = await graph.share({
+  protocol: "urn:sync-protocol:example-crdt-v1",
+  meta: { name: "Project Notes", description: "Shared notes for the team" }
+});
 
-console.log("SharedGraph URI:", shared.uri);
-// → "shared-graph://a3f8c2d1-..."
+console.log("SharedGraph URI:", shared.url);
+// → "graph://a3f8c2d1-..."
 ```
 
 ### 12.2 Joining an Existing SharedGraph
 
 ```javascript
 // Join using a URI received out-of-band (e.g., shared via link)
-const shared = await navigator.semanticWeb.sharedGraphs.join(
-  "shared-graph://a3f8c2d1-..."
+const shared = await navigator.graph.join(
+  "graph://a3f8c2d1-..."
 );
 
 // Listen for sync state changes
@@ -592,7 +585,7 @@ console.log("Online peers:", peers.map(p => p.did));
 ### 12.3 Handling Incoming Diffs
 
 ```javascript
-const shared = await navigator.semanticWeb.sharedGraphs.join(graphURI);
+const shared = await navigator.graph.join(graphURI);
 
 // React to incoming changes from peers
 shared.addEventListener("diff", (event) => {
@@ -613,7 +606,7 @@ shared.addEventListener("diff", (event) => {
 ### 12.4 Sending Signals Between Peers
 
 ```javascript
-const shared = await navigator.semanticWeb.sharedGraphs.join(graphURI);
+const shared = await navigator.graph.join(graphURI);
 
 // Listen for signals from other peers
 shared.onsignal = (event) => {

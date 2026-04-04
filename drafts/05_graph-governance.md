@@ -638,29 +638,20 @@ This section defines how the governance engine enforces content constraints for 
 
 ---
 
-## 9. Governance Engine API
+## 9. Governance API on SharedGraph
 
-This section defines the Web IDL interface for the governance engine.
+Governance methods are exposed directly on the `SharedGraph` interface, rather than as a separate namespace. This keeps governance tightly coupled to the shared graph it governs.
 
 ```webidl
 [Exposed=Window,Worker]
-interface GraphGovernanceEngine {
-  ValidationResult validate(SemanticTriple triple, USVString authorDid, SharedGraph graph);
-  Promise<sequence<GraphConstraint>> constraintsForEntity(USVString entityAddress);
-  Promise<boolean> hasCapability(USVString agentDid, USVString predicate, USVString scope);
-  undefined reload();
-};
-
-dictionary SemanticTriple {
-  required USVString source;
-  USVString? predicate;
-  required USVString target;
-  DOMTimeStamp timestamp;
+partial interface SharedGraph {
+  [NewObject] Promise<ValidationResult> canAddTriple(SemanticTriple triple);
+  [NewObject] Promise<sequence<GraphConstraint>> constraintsFor(USVString entityAddress);
+  [NewObject] Promise<sequence<CapabilityInfo>> myCapabilities();
 };
 
 dictionary ValidationResult {
-  required boolean accepted;
-  USVString? rejectedBy;
+  required boolean allowed;
   USVString? module;
   USVString? reason;
 };
@@ -673,15 +664,17 @@ dictionary GraphConstraint {
   record<USVString, USVString> properties;
 };
 
-dictionary SharedGraph {
-  required USVString rootAuthority;
-  required USVString graphIdentifier;
+dictionary CapabilityInfo {
+  required USVString id;
+  required sequence<USVString> predicates;
+  USVString? scope;
+  DOMString? expires;
 };
 ```
 
-### 9.1 `validate()`
+### 9.1 `canAddTriple()`
 
-Evaluates an incoming triple against all governance constraints in scope. Implementations MUST execute the algorithms defined in Sections 5 through 8 in the following order:
+Evaluates whether the current user's identity would be permitted to add the given triple, based on all governance constraints in scope. Implementations MUST execute the algorithms defined in Sections 5 through 8 in the following order:
 
 1. **Scope resolution** (Section 5)
 2. **Capability verification** (Section 6)
@@ -689,21 +682,17 @@ Evaluates an incoming triple against all governance constraints in scope. Implem
 4. **Temporal verification** (Section 7)
 5. **Content verification** (Section 8)
 
-Execution MUST stop at the first rejection. If all checks pass, the result is `{ accepted: true }`.
+Execution MUST stop at the first rejection. If all checks pass, the result is `{ allowed: true }`. If rejected, the result includes `module` and `reason` identifying which constraint rejected the triple.
 
 **Execution order rationale.** Capability and credential checks are evaluated first because they are structurally cheap (lookup and signature verification). Temporal checks require scanning recent triples. Content checks may require expression resolution. Ordering from cheapest to most expensive minimises wasted computation on triples that would be rejected early.
 
-### 9.2 `constraintsForEntity()`
+### 9.2 `constraintsFor()`
 
 Returns all constraints that apply to a given entity address, including inherited constraints from ancestors. Applications MAY use this method to determine and display which actions are permitted for a given entity.
 
-### 9.3 `hasCapability()`
+### 9.3 `myCapabilities()`
 
-Returns `true` if the specified agent holds a valid, non-revoked, non-expired ZCAP authorizing the specified predicate within the specified scope. Applications MAY use this method for UI state management (e.g., enabling or disabling action buttons).
-
-### 9.4 `reload()`
-
-Instructs the governance engine to re-read constraint definitions from the graph. Implementations SHOULD call this method when triples with `governance://` predicates are added to or removed from the graph.
+Returns all valid, non-revoked, non-expired capabilities held by the current user for this shared graph. Applications MAY use this method for UI state management (e.g., enabling or disabling action buttons).
 
 ---
 
@@ -713,21 +702,21 @@ This section defines how the governance engine integrates with the peer-to-peer 
 
 ### 10.1 Sync-Layer Enforcement (Normative)
 
-A conforming sync protocol MUST call the governance engine's `validate()` method for every incoming triple before accepting it into the local graph replica. Specifically:
+A conforming sync protocol MUST evaluate governance constraints for every incoming triple before accepting it into the local graph replica. Specifically:
 
-1. When a peer receives a triple from the network (via gossip, direct sync, or any other transport mechanism), the sync protocol MUST invoke `validate(triple, authorDid, graph)` before committing the triple.
-2. If `validate()` returns `{ accepted: false }`, the triple MUST be rejected. It MUST NOT be stored in the local graph replica and MUST NOT be forwarded to other peers.
-3. If `validate()` returns `{ accepted: true }`, the triple MAY be accepted and committed.
+1. When a peer receives a triple from the network (via gossip, direct sync, or any other transport mechanism), the sync protocol MUST evaluate the triple against all governance constraints before committing.
+2. If the evaluation returns `{ allowed: false }`, the triple MUST be rejected. It MUST NOT be stored in the local graph replica and MUST NOT be forwarded to other peers.
+3. If the evaluation returns `{ allowed: true }`, the triple MAY be accepted and committed.
 
 This ensures that all peers enforce the same governance rules. A triple rejected by one honest peer will be rejected by all honest peers, because all peers evaluate the same constraints against the same graph state.
 
 ### 10.2 Pre-Validation (Informative)
 
-The runtime MAY call `validate()` before submitting a triple to the sync protocol. This provides immediate feedback to the user or application without waiting for sync-layer round-trip. Pre-validation is not authoritative — the sync layer performs the definitive check.
+The runtime MAY evaluate governance constraints before submitting a triple to the sync protocol. This provides immediate feedback to the user or application without waiting for sync-layer round-trip. Pre-validation is not authoritative — the sync layer performs the definitive check.
 
 ### 10.3 Application Queries (Informative)
 
-Applications MAY call `constraintsForEntity()` and `hasCapability()` to adapt their user interface to the current governance state. For example, an application might:
+Applications MAY call `constraintsFor()` and `myCapabilities()` to adapt their user interface to the current governance state. For example, an application might:
 
 - Disable a "send message" button if the user lacks the required capability
 - Display a countdown timer based on temporal constraints
