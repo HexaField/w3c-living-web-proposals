@@ -54,6 +54,11 @@ export class SharedGraph extends EventTarget {
   // Signals pending delivery (for direct peer connections)
   private _signalHandlers = new Map<string, (payload: any, senderDid: string) => void>();
 
+  // BroadcastChannel relay for multi-tab Y.js sync
+  private _channel: BroadcastChannel | null = null;
+  private _instanceId: string;
+  private _applyingRemote = false;
+
   constructor(
     uri: string,
     doc: Y.Doc,
@@ -65,6 +70,32 @@ export class SharedGraph extends EventTarget {
     this._identity = identity;
     this._name = name;
     this._bridge = new YjsBridge(doc);
+    this._instanceId = typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : uuidv4();
+
+    // Set up BroadcastChannel for cross-tab Y.js doc sync
+    if (typeof BroadcastChannel !== 'undefined') {
+      this._channel = new BroadcastChannel(`living-web-shared-graph-${this.uri}`);
+      this._channel.onmessage = (event: MessageEvent) => {
+        if (event.data.origin === this._instanceId) return;
+        if (event.data.type === 'yjs-update') {
+          this._applyingRemote = true;
+          Y.applyUpdate(this._bridge.doc, new Uint8Array(event.data.update));
+          this._applyingRemote = false;
+        }
+      };
+
+      // Broadcast local Y.js updates to other tabs
+      this._bridge.doc.on('update', (update: Uint8Array, origin: any) => {
+        if (this._applyingRemote) return;
+        this._channel?.postMessage({
+          type: 'yjs-update',
+          update: Array.from(update),
+          origin: this._instanceId,
+        });
+      });
+    }
 
     // Listen for remote changes from Y.js and update local triple store
     this._bridge.setOnRemoteChange((additions, removals) => {

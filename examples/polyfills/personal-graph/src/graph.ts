@@ -23,12 +23,65 @@ export class PersonalGraph extends EventTarget {
   private _ontripleadded: EventHandler | null = null;
   private _ontripleremoved: EventHandler | null = null;
 
+  // BroadcastChannel relay for multi-tab sync
+  private _channel: BroadcastChannel | null = null;
+  private _instanceId: string;
+
   constructor(uuid: string, name: string | null, identity: IdentityProvider, storage: GraphStorage) {
     super();
     this.uuid = uuid;
     this.name = name;
     this.identity = identity;
     this.storage = storage;
+    this._instanceId = typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : uuidv4();
+
+    // Set up BroadcastChannel for cross-tab triple relay
+    if (typeof BroadcastChannel !== 'undefined') {
+      this._channel = new BroadcastChannel(`living-web-graph-${this.uuid}`);
+      this._channel.onmessage = (event: MessageEvent) => {
+        if (event.data.origin === this._instanceId) return;
+        if (event.data.type === 'triple-added') {
+          this._addTripleFromRemote(event.data.triple);
+        } else if (event.data.type === 'triple-removed') {
+          this._removeTripleFromRemote(event.data.triple);
+        }
+      };
+    }
+  }
+
+  /** Add a triple received from another tab (no re-broadcast) */
+  private _addTripleFromRemote(triple: SignedTriple): void {
+    // Deduplicate
+    const exists = this.triples.some(
+      (t) =>
+        t.data.source === triple.data.source &&
+        t.data.target === triple.data.target &&
+        t.data.predicate === triple.data.predicate &&
+        t.author === triple.author &&
+        t.timestamp === triple.timestamp
+    );
+    if (exists) return;
+    this.triples.push(triple);
+    this.storage.saveTriple(this.uuid, triple);
+    this.dispatchEvent(new TripleEvent('tripleadded', triple));
+  }
+
+  /** Remove a triple received from another tab (no re-broadcast) */
+  private _removeTripleFromRemote(triple: SignedTriple): void {
+    const idx = this.triples.findIndex(
+      (t) =>
+        t.data.source === triple.data.source &&
+        t.data.target === triple.data.target &&
+        t.data.predicate === triple.data.predicate &&
+        t.author === triple.author &&
+        t.timestamp === triple.timestamp
+    );
+    if (idx === -1) return;
+    const removed = this.triples.splice(idx, 1)[0];
+    this.storage.removeTriple(this.uuid, triple);
+    this.dispatchEvent(new TripleEvent('tripleremoved', removed));
   }
 
   // Load triples from storage on init
@@ -58,6 +111,7 @@ export class PersonalGraph extends EventTarget {
     this.triples.push(signed);
     await this.storage.saveTriple(this.uuid, signed);
     this.dispatchEvent(new TripleEvent('tripleadded', signed));
+    this._broadcast('triple-added', signed);
     return signed;
   }
 
@@ -75,6 +129,7 @@ export class PersonalGraph extends EventTarget {
     await this.storage.saveTriples(this.uuid, signed);
     for (const s of signed) {
       this.dispatchEvent(new TripleEvent('tripleadded', s));
+      this._broadcast('triple-added', s);
     }
     return signed;
   }
@@ -92,7 +147,17 @@ export class PersonalGraph extends EventTarget {
     const removed = this.triples.splice(idx, 1)[0];
     await this.storage.removeTriple(this.uuid, triple);
     this.dispatchEvent(new TripleEvent('tripleremoved', removed));
+    this._broadcast('triple-removed', removed);
     return true;
+  }
+
+  /** Broadcast a triple event to other tabs */
+  private _broadcast(type: string, triple: SignedTriple): void {
+    this._channel?.postMessage({
+      type,
+      triple,
+      origin: this._instanceId,
+    });
   }
 
   async queryTriples(query: TripleQuery): Promise<SignedTriple[]> {
