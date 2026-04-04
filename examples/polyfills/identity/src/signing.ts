@@ -11,15 +11,16 @@ import { didToPublicKey } from './did-key.js';
 
 // Configure sha512 for ed25519 (required in @noble/ed25519 v3)
 // v3 uses etc.sha512Sync / etc.sha512Async instead of hashes.sha512
-if (ed25519.etc && !ed25519.etc.sha512Sync) {
-  ed25519.etc.sha512Sync = (...msgs: Uint8Array[]) => {
-    const merged = new Uint8Array(msgs.reduce((acc, m) => acc + m.length, 0));
+const etc = ed25519.etc as Record<string, unknown>;
+if (etc && !etc.sha512Sync) {
+  etc.sha512Sync = (...msgs: Uint8Array[]) => {
+    const merged = new Uint8Array(msgs.reduce((acc: number, m: Uint8Array) => acc + m.length, 0));
     let offset = 0;
     for (const m of msgs) { merged.set(m, offset); offset += m.length; }
     return sha512(merged);
   };
-  ed25519.etc.sha512Async = async (...msgs: Uint8Array[]) => {
-    return ed25519.etc.sha512Sync!(...msgs);
+  etc.sha512Async = async (...msgs: Uint8Array[]) => {
+    return (etc.sha512Sync as (...m: Uint8Array[]) => Uint8Array)(...msgs);
   };
 }
 
