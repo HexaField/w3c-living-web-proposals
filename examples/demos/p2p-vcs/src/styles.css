@@ -1,0 +1,395 @@
+/* ===== P2P VCS — Living Web Demo ===== */
+/* Dark theme matching community-chat */
+
+:root {
+  --bg-primary: #313338;
+  --bg-secondary: #2b2d31;
+  --bg-tertiary: #1e1f22;
+  --bg-accent: #5865f2;
+  --bg-accent-hover: #4752c4;
+  --bg-danger: #da373c;
+  --bg-success: #43b581;
+  --text-primary: #f2f3f5;
+  --text-secondary: #b5bac1;
+  --text-muted: #6d6f78;
+  --text-link: #00a8fc;
+  --border: #3f4147;
+  --input-bg: #383a40;
+  --scrollbar-thumb: #4e5058;
+  font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+  font-size: 16px;
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body, #app { height: 100%; }
+
+button {
+  font-family: inherit;
+  font-size: 0.875rem;
+  cursor: pointer;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 16px;
+  background: var(--bg-accent);
+  color: var(--text-primary);
+  transition: background 0.15s;
+}
+button:hover { background: var(--bg-accent-hover); }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+input, textarea, select {
+  font-family: inherit;
+  font-size: 1rem;
+  background: var(--input-bg);
+  color: var(--text-primary);
+  border: none;
+  border-radius: 8px;
+  padding: 10px 14px;
+  outline: none;
+  width: 100%;
+}
+input::placeholder, textarea::placeholder { color: var(--text-muted); }
+input:focus, textarea:focus { box-shadow: 0 0 0 2px var(--bg-accent); }
+
+/* ===== Setup screen ===== */
+.setup-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+}
+.setup-card {
+  background: var(--bg-secondary);
+  border-radius: 12px;
+  padding: 40px;
+  max-width: 440px;
+  width: 100%;
+  text-align: center;
+}
+.setup-card h1 { font-size: 1.5rem; margin-bottom: 8px; }
+.setup-card p { color: var(--text-secondary); margin-bottom: 24px; font-size: 0.875rem; }
+.setup-card .field { margin-bottom: 16px; text-align: left; }
+.setup-card .field label { display: block; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 6px; }
+.setup-card .actions { display: flex; gap: 12px; margin-top: 20px; }
+.setup-card .actions button { flex: 1; }
+.setup-card .divider { display: flex; align-items: center; gap: 12px; margin: 20px 0; color: var(--text-muted); font-size: 0.75rem; }
+.setup-card .divider::before, .setup-card .divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+.btn-secondary { background: var(--bg-tertiary); }
+.btn-secondary:hover { background: #35373b; }
+
+/* ===== VCS Layout ===== */
+.vcs-layout {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  grid-template-rows: auto 1fr auto;
+  height: 100%;
+}
+
+/* Top bar */
+.top-bar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--bg-tertiary);
+}
+.top-bar .repo-name { font-weight: 700; font-size: 1.1rem; }
+.top-bar .repo-name .icon { margin-right: 6px; }
+.branch-select {
+  background: var(--input-bg);
+  color: var(--text-primary);
+  border: none;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 0.85rem;
+  width: auto;
+}
+.top-bar .spacer { flex: 1; }
+.top-bar .contributor-count {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+/* Sidebar — file tree */
+.sidebar {
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--bg-tertiary);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.sidebar-header {
+  padding: 12px 16px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--bg-tertiary);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.sidebar-header button {
+  font-size: 0.7rem;
+  padding: 4px 8px;
+}
+.file-tree {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+.file-tree ul { list-style: none; }
+.file-tree li {
+  padding: 4px 16px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.file-tree li:hover { background: rgba(255,255,255,0.04); color: var(--text-primary); }
+.file-tree li.active { background: rgba(255,255,255,0.08); color: var(--text-primary); }
+.file-tree li .icon { flex-shrink: 0; }
+.editing-indicator {
+  padding: 8px 16px;
+  border-top: 1px solid var(--bg-tertiary);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+/* Invite URL */
+.invite-section {
+  padding: 12px 16px;
+  border-top: 1px solid var(--bg-tertiary);
+}
+.invite-section label { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; color: var(--text-muted); margin-bottom: 4px; display: block; }
+.invite-section input { font-size: 0.75rem; padding: 6px 10px; cursor: pointer; }
+.invite-section input:hover { background: var(--bg-tertiary); }
+
+/* Main area */
+.main-area {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-primary);
+  overflow: hidden;
+}
+
+/* Editor area */
+.editor-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.editor-tab-bar {
+  display: flex;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border);
+}
+.editor-tab {
+  padding: 8px 16px;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-right: 1px solid var(--border);
+  background: none;
+  border-radius: 0;
+}
+.editor-tab.active {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+.editor-content {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+}
+.code-editor {
+  width: 100%;
+  height: 100%;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  border: none;
+  resize: none;
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 14px;
+  line-height: 1.5;
+  padding: 16px;
+  tab-size: 2;
+  outline: none;
+}
+.empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+/* Commit bar */
+.commit-bar {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--bg-tertiary);
+  align-items: center;
+}
+.commit-bar input {
+  flex: 1;
+  font-size: 0.85rem;
+  padding: 8px 12px;
+}
+.commit-bar .signed-as {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* Commit history */
+.history-panel {
+  background: var(--bg-tertiary);
+  border-top: 1px solid var(--border);
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+.history-toggle {
+  background: var(--bg-tertiary);
+  border-top: 1px solid var(--border);
+  padding: 4px 16px;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-align: center;
+  grid-column: 1 / -1;
+}
+.history-toggle:hover { color: var(--text-secondary); }
+.commit-entry {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 16px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.commit-entry:hover { background: rgba(255,255,255,0.04); }
+.commit-entry.active { background: rgba(88,101,242,0.2); }
+.commit-hash {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  color: var(--bg-accent);
+  font-size: 0.75rem;
+}
+.commit-msg { flex: 1; color: var(--text-secondary); }
+.commit-author { color: var(--text-muted); font-size: 0.75rem; }
+.commit-time { color: var(--text-muted); font-size: 0.7rem; }
+.commit-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--bg-accent);
+  flex-shrink: 0;
+}
+
+/* Diff view */
+.diff-view {
+  flex: 1;
+  overflow: auto;
+  padding: 16px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.diff-header {
+  padding: 8px 16px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  display: flex;
+  justify-content: space-between;
+}
+.diff-line { white-space: pre-wrap; }
+.diff-line.added { background: rgba(67,181,129,0.15); color: #43b581; }
+.diff-line.removed { background: rgba(240,71,71,0.15); color: #f04747; }
+.diff-line.context { color: var(--text-muted); }
+
+/* Governance log */
+.governance-log {
+  background: var(--bg-tertiary);
+  border-top: 1px solid var(--border);
+  max-height: 100px;
+  overflow-y: auto;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 0.75rem;
+  padding: 8px 16px;
+  grid-column: 1 / -1;
+}
+.governance-log .log-entry { padding: 2px 0; color: var(--text-muted); }
+.governance-log .log-entry.accepted { color: #43b581; }
+.governance-log .log-entry.rejected { color: #f04747; }
+.gov-log-toggle {
+  background: var(--bg-tertiary);
+  border-top: 1px solid var(--border);
+  padding: 4px 16px;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-align: center;
+  grid-column: 1 / -1;
+}
+.gov-log-toggle:hover { color: var(--text-secondary); }
+
+/* New file dialog */
+.new-file-dialog {
+  padding: 8px 16px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  gap: 8px;
+}
+.new-file-dialog input {
+  font-size: 0.8rem;
+  padding: 6px 10px;
+}
+.new-file-dialog button {
+  font-size: 0.75rem;
+  padding: 6px 10px;
+  white-space: nowrap;
+}
+
+/* Contributors panel */
+.contributors-panel {
+  padding: 12px 16px;
+  border-top: 1px solid var(--bg-tertiary);
+}
+.contributors-panel h4 {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+.contributor-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  font-size: 0.8rem;
+}
+.contributor-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.contributor-role {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin-left: auto;
+}

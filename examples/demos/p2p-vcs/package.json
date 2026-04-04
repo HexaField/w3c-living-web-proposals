@@ -1,0 +1,22 @@
+{
+  "name": "@living-web/demo-p2p-vcs",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@living-web/personal-graph": "workspace:*",
+    "@living-web/identity": "workspace:*",
+    "@living-web/graph-sync": "workspace:*",
+    "@living-web/shape-validation": "workspace:*",
+    "@living-web/governance": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.0",
+    "vite": "^6.0.0"
+  }
+}
