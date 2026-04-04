@@ -1,0 +1,24 @@
+{
+  "name": "@living-web/demo-multiplayer-game",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@living-web/governance": "workspace:*",
+    "@living-web/graph-sync": "workspace:*",
+    "@living-web/identity": "workspace:*",
+    "@living-web/personal-graph": "workspace:*",
+    "@living-web/shape-validation": "workspace:*",
+    "three": "^0.183.2"
+  },
+  "devDependencies": {
+    "@types/three": "^0.183.1",
+    "typescript": "^6.0.2",
+    "vite": "^8.0.3"
+  }
+}

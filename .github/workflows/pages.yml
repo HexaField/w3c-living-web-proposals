@@ -1,0 +1,65 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: examples/pnpm-lock.yaml
+      - run: cd examples && pnpm install --frozen-lockfile
+
+      - name: Build polyfills
+        run: |
+          cd examples
+          for pkg in polyfills/personal-graph polyfills/identity polyfills/graph-sync polyfills/shape-validation polyfills/governance; do
+            echo "Building $pkg"
+            cd $pkg && pnpm build && cd ../..
+          done
+
+      - name: Build demos
+        run: |
+          cd examples
+          for demo in demos/community-chat demos/p2p-vcs demos/collaborative-doc demos/collaborative-canvas demos/multiplayer-game; do
+            echo "Building $demo"
+            cd $demo && pnpm build && cd ../..
+          done
+
+      - name: Assemble site
+        run: |
+          mkdir -p _site
+          cp examples/index.html _site/
+          cp -r examples/demos/community-chat/dist _site/community-chat
+          cp -r examples/demos/p2p-vcs/dist _site/p2p-vcs
+          cp -r examples/demos/collaborative-doc/dist _site/collaborative-doc
+          cp -r examples/demos/collaborative-canvas/dist _site/collaborative-canvas
+          cp -r examples/demos/multiplayer-game/dist _site/multiplayer-game
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4

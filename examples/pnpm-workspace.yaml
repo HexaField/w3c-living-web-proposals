@@ -1,0 +1,5 @@
+packages:
+  - 'polyfills/*'
+  - 'demos/*'
+  - 'extension'
+  - 'e2e'
