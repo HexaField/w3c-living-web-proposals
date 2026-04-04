@@ -130,7 +130,7 @@ export async function createDoc(
 
   // First paragraph block
   const blockId = `block:${crypto.randomUUID()}`;
-  await g.createShapeInstance('Block', blockId, { type: 'paragraph', content: '', author: did });
+  await g.createShapeInstance('Block', blockId, { type: 'paragraph', content: ' ', author: did });
   await graph.addTriple(new SemanticTriple(docId, blockId, PREDICATES.HAS_BLOCK));
 
   // Owner collaborator
