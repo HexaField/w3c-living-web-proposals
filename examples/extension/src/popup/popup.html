@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Living Web</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="status-row">
+        <span class="status-dot" id="statusDot"></span>
+        <h1>Living Web</h1>
+      </div>
+      <p class="subtitle">Browser Polyfill Extension</p>
+    </header>
+
+    <section id="identitySection">
+      <h2>Identity</h2>
+      <div id="identityInfo" class="hidden">
+        <div class="field">
+          <label>DID</label>
+          <code id="identityDid"></code>
+        </div>
+        <div class="field">
+          <label>Name</label>
+          <span id="identityName"></span>
+        </div>
+      </div>
+      <div id="identityCreate">
+        <input type="text" id="displayNameInput" placeholder="Display name">
+        <button id="createIdentityBtn">Create Identity</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>Personal Graphs</h2>
+      <div id="graphsList" class="list">
+        <p class="empty">No graphs yet</p>
+      </div>
+    </section>
+
+    <section>
+      <h2>Shared Graphs</h2>
+      <div id="sharedGraphsList" class="list">
+        <p class="empty">No shared graphs</p>
+      </div>
+    </section>
+  </div>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>
