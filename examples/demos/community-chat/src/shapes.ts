@@ -6,7 +6,7 @@ import type { ShapeDefinition } from '@living-web/shape-validation';
 
 const CHAT = 'chat://';
 const RDF = 'rdf://';
-const AD4M = 'ad4m://';
+const GRAPH = 'graph://';
 
 export const PREDICATES = {
   ENTRY_TYPE: `${CHAT}entry_type`,
@@ -28,7 +28,7 @@ export const PREDICATES = {
   REACTION_EMOJI: `${CHAT}reaction_emoji`,
   REACTION_AUTHOR: `${CHAT}reaction_author`,
 
-  HAS_CHILD: `${AD4M}has_child`,
+  HAS_CHILD: `${GRAPH}has_child`,
 } as const;
 
 export const CommunityShape: ShapeDefinition = {

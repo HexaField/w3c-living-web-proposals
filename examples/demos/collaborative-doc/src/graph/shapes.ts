@@ -4,7 +4,7 @@
 import type { ShapeDefinition } from '@living-web/shape-validation';
 
 const DOC = 'doc://';
-const AD4M = 'ad4m://';
+const GRAPH = 'graph://';
 
 export const PREDICATES = {
   ENTRY_TYPE: `${DOC}entry_type`,
@@ -40,7 +40,7 @@ export const PREDICATES = {
   COLLAB_ROLE: `${DOC}collab_role`,
   COLLAB_COLOR: `${DOC}collab_color`,
 
-  HAS_CHILD: `${AD4M}has_child`,
+  HAS_CHILD: `${GRAPH}has_child`,
   HAS_BLOCK: `${DOC}has_block`,
   HAS_COMMENT: `${DOC}has_comment`,
   HAS_REPLY: `${DOC}has_reply`,

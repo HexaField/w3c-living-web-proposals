@@ -4,7 +4,7 @@
 import type { ShapeDefinition } from '@living-web/shape-validation';
 
 const VCS = 'vcs://';
-const AD4M = 'ad4m://';
+const GRAPH = 'graph://';
 
 export const PREDICATES = {
   // Entry types
@@ -51,7 +51,7 @@ export const PREDICATES = {
   CONTRIBUTOR_ROLE: `${VCS}contributor_role`,
 
   // Relations
-  HAS_CHILD: `${AD4M}has_child`,
+  HAS_CHILD: `${GRAPH}has_child`,
   HAS_BRANCH: `${VCS}has_branch`,
   HAS_CONTRIBUTOR: `${VCS}has_contributor`,
 } as const;

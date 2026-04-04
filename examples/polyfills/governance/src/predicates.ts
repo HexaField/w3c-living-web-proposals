@@ -40,5 +40,5 @@ export const GOV = {
   DEFAULT_CAPABILITY_SCOPE: 'governance://default_capability_scope',
 
   // Graph hierarchy
-  HAS_CHILD: 'ad4m://has_child',
+  HAS_CHILD: 'graph://has_child',
 } as const;

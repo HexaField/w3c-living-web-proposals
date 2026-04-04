@@ -4,7 +4,7 @@
 import type { ShapeDefinition } from '@living-web/shape-validation';
 
 const GAME = 'game://';
-const AD4M = 'ad4m://';
+const GRAPH = 'graph://';
 
 export const PREDICATES = {
   ENTRY_TYPE: `${GAME}entry_type`,
@@ -50,7 +50,7 @@ export const PREDICATES = {
   CHAT_AUTHOR: `${GAME}chat_author`,
   CHAT_AUTHOR_NAME: `${GAME}chat_author_name`,
 
-  HAS_CHILD: `${AD4M}has_child`,
+  HAS_CHILD: `${GRAPH}has_child`,
   HAS_PLAYER: `${GAME}has_player`,
   HAS_OBJECT: `${GAME}has_object`,
   HAS_COLLECTIBLE: `${GAME}has_collectible`,
