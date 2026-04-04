@@ -12,6 +12,49 @@ importers:
         specifier: ^5.8.0
         version: 5.9.3
 
+  polyfills/governance:
+    dependencies:
+      '@living-web/graph-sync':
+        specifier: workspace:*
+        version: link:../graph-sync
+      '@living-web/identity':
+        specifier: workspace:*
+        version: link:../identity
+      '@living-web/personal-graph':
+        specifier: workspace:*
+        version: link:../personal-graph
+      '@noble/ed25519':
+        specifier: ^2.2.0
+        version: 2.3.0
+      '@noble/hashes':
+        specifier: ^1.7.0
+        version: 1.8.0
+      canonicalize:
+        specifier: ^2.0.0
+        version: 2.1.0
+      uuid:
+        specifier: ^11.1.0
+        version: 11.1.0
+    devDependencies:
+      '@types/uuid':
+        specifier: ^10.0.0
+        version: 10.0.0
+      fake-indexeddb:
+        specifier: ^6.0.0
+        version: 6.2.5
+      tsup:
+        specifier: ^8.4.0
+        version: 8.5.1(postcss@8.5.8)(typescript@5.9.3)
+      typescript:
+        specifier: ^5.8.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.1.0
+        version: 3.2.4
+      yjs:
+        specifier: ^13.6.0
+        version: 13.6.30
+
   polyfills/graph-sync:
     dependencies:
       '@living-web/identity':
@@ -92,6 +135,31 @@ importers:
       '@types/uuid':
         specifier: ^10.0.0
         version: 10.0.0
+      fake-indexeddb:
+        specifier: ^6.0.0
+        version: 6.2.5
+      tsup:
+        specifier: ^8.4.0
+        version: 8.5.1(postcss@8.5.8)(typescript@5.9.3)
+      typescript:
+        specifier: ^5.8.0
+        version: 5.9.3
+      vitest:
+        specifier: ^3.1.0
+        version: 3.2.4
+
+  polyfills/shape-validation:
+    dependencies:
+      '@living-web/personal-graph':
+        specifier: workspace:*
+        version: link:../personal-graph
+      '@noble/hashes':
+        specifier: ^1.7.0
+        version: 1.8.0
+      canonicalize:
+        specifier: ^2.0.0
+        version: 2.1.0
+    devDependencies:
       fake-indexeddb:
         specifier: ^6.0.0
         version: 6.2.5
