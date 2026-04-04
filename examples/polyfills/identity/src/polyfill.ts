@@ -1,5 +1,6 @@
 /**
- * Polyfill entry — monkey-patches navigator.credentials for DID support
+ * Polyfill entry — monkey-patches navigator.credentials for DID support.
+ * Only installs if the browser doesn't already support DID credentials natively.
  */
 
 import { DIDCredential } from './credential.js';
@@ -13,6 +14,16 @@ const POLYFILL_PASSPHRASE = '__living-web-polyfill__';
 export function install(): void {
   if (typeof globalThis.navigator === 'undefined') return;
   if (!globalThis.navigator.credentials) return;
+
+  // Feature detect: if the browser natively supports DID credentials, skip polyfill.
+  // We test by checking if create({did:{}}) is handled natively (no standard way to detect this yet,
+  // so we check for a marker property set by native implementations).
+  if ((globalThis.navigator.credentials as any).__livingWebNativeDID) {
+    console.info('[living-web] Native DID credential support detected — polyfill skipped');
+    return;
+  }
+
+  console.info('[living-web] DID identity polyfill installed (no native support detected)');
 
   const originalCreate = globalThis.navigator.credentials.create?.bind(globalThis.navigator.credentials);
   const originalGet = globalThis.navigator.credentials.get?.bind(globalThis.navigator.credentials);

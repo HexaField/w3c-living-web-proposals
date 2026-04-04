@@ -1,5 +1,14 @@
-// Auto-install polyfill — import '@living-web/shape-validation/polyfill'
+/**
+ * Auto-install shape validation polyfill.
+ * Only installs if PersonalGraph doesn't already have native shape support.
+ */
 import { PersonalGraph } from '@living-web/personal-graph';
 import { installShapeExtension } from './extension.js';
 
-installShapeExtension(PersonalGraph);
+// Feature detect: check if defineShape already exists on the prototype
+if (typeof (PersonalGraph.prototype as any).defineShape !== 'function') {
+  installShapeExtension(PersonalGraph);
+  console.info('[living-web] Shape validation polyfill installed (no native support detected)');
+} else {
+  console.info('[living-web] Native shape validation detected — polyfill skipped');
+}
