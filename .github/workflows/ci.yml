@@ -1,0 +1,41 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: examples/pnpm-lock.yaml
+      - run: cd examples && pnpm install --frozen-lockfile
+      - name: Build polyfills
+        run: |
+          cd examples
+          for pkg in polyfills/personal-graph polyfills/identity polyfills/graph-sync polyfills/shape-validation polyfills/governance; do
+            echo "Building $pkg"
+            cd $pkg && pnpm build && cd ../..
+          done
+      - name: Test polyfills
+        run: |
+          cd examples
+          for pkg in polyfills/personal-graph polyfills/identity polyfills/graph-sync polyfills/shape-validation polyfills/governance; do
+            echo "Testing $pkg"
+            cd $pkg && pnpm test && cd ../..
+          done
+      - name: Build demos
+        run: |
+          cd examples
+          for demo in demos/community-chat demos/p2p-vcs demos/collaborative-doc demos/collaborative-canvas demos/multiplayer-game; do
+            echo "Building $demo"
+            cd $demo && pnpm build && cd ../..
+          done

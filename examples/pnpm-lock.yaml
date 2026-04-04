@@ -154,6 +154,9 @@ importers:
       '@living-web/personal-graph':
         specifier: workspace:*
         version: link:../personal-graph
+      '@living-web/shape-validation':
+        specifier: workspace:*
+        version: link:../shape-validation
       '@noble/ed25519':
         specifier: ^2.2.0
         version: 2.3.0
