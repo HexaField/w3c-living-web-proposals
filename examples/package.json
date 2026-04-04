@@ -5,7 +5,16 @@
   "scripts": {
     "build": "pnpm -r build",
     "test": "pnpm -r test",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "build:polyfills": "for p in polyfills/personal-graph polyfills/identity polyfills/graph-sync polyfills/shape-validation polyfills/governance; do (cd $p && pnpm build); done",
+    "build:demos": "for d in demos/community-chat demos/p2p-vcs demos/collaborative-doc demos/collaborative-canvas demos/multiplayer-game; do (cd $d && pnpm build); done",
+    "build:all": "pnpm build:polyfills && pnpm build:demos",
+    "dev:chat": "cd demos/community-chat && pnpm dev",
+    "dev:vcs": "cd demos/p2p-vcs && pnpm dev",
+    "dev:doc": "cd demos/collaborative-doc && pnpm dev",
+    "dev:canvas": "cd demos/collaborative-canvas && pnpm dev",
+    "dev:game": "cd demos/multiplayer-game && pnpm dev",
+    "serve": "pnpm build:all && npx serve . -l 3000"
   },
   "devDependencies": {
     "typescript": "^5.8.0"

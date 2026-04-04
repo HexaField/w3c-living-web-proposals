@@ -59,21 +59,62 @@ if ('graph' in navigator) {
 ## Getting Started
 
 ```bash
+# Install all dependencies
+cd examples
 pnpm install
 
-# Build all polyfills
-for pkg in polyfills/personal-graph polyfills/identity polyfills/graph-sync polyfills/shape-validation polyfills/governance; do
-  cd $pkg && pnpm build && cd ../..
-done
+# Build everything (polyfills + demos)
+pnpm build:all
 
-# Run all tests
-for pkg in polyfills/personal-graph polyfills/identity polyfills/graph-sync polyfills/shape-validation polyfills/governance; do
-  cd $pkg && pnpm test && cd ../..
-done
-
-# Build a demo
-cd demos/community-chat && pnpm build
+# Run all polyfill tests
+pnpm test
 ```
+
+### Running Demos Locally
+
+Each demo runs as a Vite dev server. Use the convenience scripts from the `examples/` root:
+
+```bash
+pnpm dev:chat       # Community Chat    → http://localhost:5173
+pnpm dev:vcs        # P2P VCS           → http://localhost:5173
+pnpm dev:doc        # Collaborative Doc → http://localhost:5173
+pnpm dev:canvas     # Collaborative Canvas → http://localhost:5173
+pnpm dev:game       # Multiplayer Game  → http://localhost:5173
+```
+
+Or run any demo directly:
+
+```bash
+cd demos/community-chat && pnpm dev
+```
+
+### Two-Tab Testing
+
+Open two browser tabs pointing to the same dev server URL. Create/join in one tab, interact in the other. BroadcastChannel syncs triples across tabs on the same origin.
+
+### Serving Built Demos
+
+After building, each demo's `dist/` folder contains static files. Serve with any HTTP server:
+
+```bash
+# Serve a specific demo
+cd demos/community-chat && pnpm preview
+
+# Or serve everything from examples root
+npx serve . -l 3000
+```
+
+> **Note:** Built demos use ES modules (`type="module"`) and won't work when opened as `file://` URLs. You must use an HTTP server.
+
+### Chrome Extension
+
+Load the extension for Living Web support on any page:
+
+```bash
+cd extension && pnpm build
+```
+
+Then in Chrome: `chrome://extensions` → Developer mode → Load unpacked → select `examples/extension/dist/`
 
 ## Structure
 
@@ -86,10 +127,11 @@ examples/
 │   ├── shape-validation/   # @living-web/shape-validation — SHACL-like shapes
 │   └── governance/         # @living-web/governance — capability-based access
 ├── demos/
-│   ├── community-chat/     # Chat app demo
-│   ├── p2p-vcs/            # Version control demo
-│   ├── collaborative-doc/  # Document editing demo
-│   ├── collaborative-canvas/ # Drawing canvas demo
-│   └── multiplayer-game/   # Game state demo
-└── index.html              # Landing page for GitHub Pages
+│   ├── community-chat/     # Discord-like chat with governance
+│   ├── p2p-vcs/            # Git-lite version control
+│   ├── collaborative-doc/  # Block editor with comments
+│   ├── collaborative-canvas/ # SVG drawing with layers
+│   └── multiplayer-game/   # Three.js 3D game
+├── extension/              # Chrome extension (Manifest V3)
+└── index.html              # Landing page with feature detection
 ```
