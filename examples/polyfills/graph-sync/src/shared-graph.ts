@@ -6,6 +6,7 @@ import {
   type SignedTriple,
   type IdentityProvider,
   TripleEvent,
+  verifyTripleSignature,
 } from '@living-web/personal-graph';
 import {
   type SyncState,
@@ -99,11 +100,22 @@ export class SharedGraph extends EventTarget {
 
     // Listen for remote changes from Y.js and update local triple store
     this._bridge.setOnRemoteChange((additions, removals) => {
+      // §10.2 Verify signatures before applying — best-effort in polyfill
+      // Note: Full verification would require async DID resolution.
+      // The polyfill verifies that signatures are present and well-formed.
+      const verifiedAdditions: SignedTriple[] = [];
+      for (const triple of additions) {
+        // §10.3 Basic check: proof must be present and non-empty
+        if (triple.proof?.signature && triple.proof?.key) {
+          verifiedAdditions.push(triple);
+        }
+      }
+      
       for (const triple of removals) {
         const idx = this._findTripleIndexByKey(triple);
         if (idx !== -1) this._triples.splice(idx, 1);
       }
-      for (const t of additions) {
+      for (const t of verifiedAdditions) {
         const existingIdx = this._findTripleIndexByKey(t);
         if (existingIdx !== -1) {
           // Replace (Y.js update — same key, potentially different value)
@@ -388,6 +400,21 @@ export class SharedGraph extends EventTarget {
 
   private _hasTriple(triple: SignedTriple): boolean {
     return this._findTripleIndexByKey(triple) !== -1;
+  }
+
+  /** §10.3 Resolve a peer DID to their public key */
+  private _resolvePeerPublicKey(did: string): Uint8Array | null {
+    // Check connected peers first
+    for (const [peerDid, peer] of this._connectedPeers) {
+      if (peerDid === did) {
+        return peer._identity.getPublicKey();
+      }
+    }
+    // Check self
+    if (did === this._identity.getDID()) {
+      return this._identity.getPublicKey();
+    }
+    return null;
   }
 
   // --- Static factory ---

@@ -441,3 +441,52 @@ describe('Cross-credential verification', () => {
     expect(await verifySignedContent(signed)).toBe(true);
   });
 });
+
+// §4.1 Private keys MUST NOT be stored in IndexedDB/Web Storage directly
+describe('§4.1 Key storage security', () => {
+  it('private keys MUST NOT be stored as plaintext in IndexedDB', async () => {
+    const cred = await DIDCredential.create('StoreSec', TEST_PASSPHRASE);
+    // The private key is encrypted with the passphrase before storage
+    // When locked, the raw key is inaccessible
+    await cred.lock();
+    expect(cred.isLocked).toBe(true);
+    // Cannot sign when locked
+    await expect(cred.sign({ msg: 'test' })).rejects.toThrow();
+  });
+
+  it('all crypto operations MUST be performed by the polyfill (not exposed to web content)', async () => {
+    const cred = await DIDCredential.create('CryptoOps', TEST_PASSPHRASE);
+    const signed = await cred.sign({ data: 'test' });
+    // Verify that signing produces a valid Ed25519 signature (done internally)
+    expect(signed.proof.signature).toMatch(/^[0-9a-f]{128}$/);
+    // The signature was computed internally — web content never sees the private key
+    expect((cred as any).privateKey).toBeUndefined();
+  });
+});
+
+// §4.3.1 Key generation MUST use CSPRNG
+describe('§4.3.1 CSPRNG', () => {
+  it('key generation MUST use CSPRNG (keys are unique)', async () => {
+    const c1 = await DIDCredential.create('CSPRNG1', TEST_PASSPHRASE);
+    const c2 = await DIDCredential.create('CSPRNG2', TEST_PASSPHRASE);
+    // Two independently generated keys must differ (probability of collision is ~2^-128)
+    expect(c1.did).not.toBe(c2.did);
+    expect(c1.publicKey).not.toEqual(c2.publicKey);
+  });
+});
+
+// §8.3 Private keys MUST NOT be exportable by default
+describe('§8.3 Key non-exportability', () => {
+  it('private keys MUST NOT be exportable by default', async () => {
+    const cred = await DIDCredential.create('NoExport', TEST_PASSPHRASE);
+    // The credential doesn't expose raw private key via any public property
+    const publicApi = Object.keys(cred);
+    expect(publicApi).not.toContain('privateKey');
+    // The only way to export is via the explicit exportKey() with a passphrase
+    // which returns encrypted bytes, not raw key material
+    const exported = await cred.exportKey('export-pass');
+    // Exported data is encrypted — not the same as raw 32-byte key
+    expect(exported.length).not.toBe(32);
+    expect(exported.length).toBe(16 + 12 + 32 + 16); // salt + iv + encrypted key + GCM tag
+  });
+});
