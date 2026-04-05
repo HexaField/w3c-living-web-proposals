@@ -12,6 +12,9 @@ export class TripleEvent extends Event {
   }
 }
 
+/** §7.4 Storage quota — configurable per-graph limit (bytes of serialized triples) */
+const DEFAULT_QUOTA_BYTES = 50 * 1024 * 1024; // 50 MB default
+
 export class PersonalGraph extends EventTarget {
   readonly uuid: string;
   readonly name: string | null;
@@ -22,6 +25,8 @@ export class PersonalGraph extends EventTarget {
   private storage: GraphStorage;
   private _ontripleadded: EventHandler | null = null;
   private _ontripleremoved: EventHandler | null = null;
+  private _quotaBytes: number = DEFAULT_QUOTA_BYTES;
+  private _usedBytes: number = 0;
 
   // BroadcastChannel relay for multi-tab sync
   private _channel: BroadcastChannel | null = null;
@@ -87,6 +92,7 @@ export class PersonalGraph extends EventTarget {
   // Load triples from storage on init
   async _loadFromStorage(): Promise<void> {
     this.triples = await this.storage.loadTriples(this.uuid);
+    this._usedBytes = this.triples.reduce((sum, t) => sum + this._estimateTripleSize(t), 0);
   }
 
   get ontripleadded(): EventHandler | null { return this._ontripleadded; }
@@ -103,12 +109,30 @@ export class PersonalGraph extends EventTarget {
     if (handler) this.addEventListener('tripleremoved', handler);
   }
 
+  /** §7.4 Get/set storage quota in bytes */
+  get quotaBytes(): number { return this._quotaBytes; }
+  set quotaBytes(value: number) { this._quotaBytes = value; }
+  get usedBytes(): number { return this._usedBytes; }
+
+  private _estimateTripleSize(signed: SignedTriple): number {
+    return JSON.stringify(signed).length * 2; // rough estimate: 2 bytes per char
+  }
+
+  private _checkQuota(additionalBytes: number): void {
+    if (this._usedBytes + additionalBytes > this._quotaBytes) {
+      throw new DOMException('Storage quota exceeded', 'QuotaExceededError');
+    }
+  }
+
   async addTriple(triple: SemanticTriple): Promise<SignedTriple> {
     if (!this.identity.getDID()) {
       throw new DOMException('No active identity', 'InvalidStateError');
     }
     const signed = await signTriple(triple, this.identity);
+    const size = this._estimateTripleSize(signed);
+    this._checkQuota(size);
     this.triples.push(signed);
+    this._usedBytes += size;
     await this.storage.saveTriple(this.uuid, signed);
     this.dispatchEvent(new TripleEvent('tripleadded', signed));
     this._broadcast('triple-added', signed);
@@ -121,11 +145,17 @@ export class PersonalGraph extends EventTarget {
     }
     // Sign all first (atomic — if any fails, none persist)
     const signed: SignedTriple[] = [];
+    let totalSize = 0;
     for (const triple of triples) {
-      signed.push(await signTriple(triple, this.identity));
+      const s = await signTriple(triple, this.identity);
+      signed.push(s);
+      totalSize += this._estimateTripleSize(s);
     }
+    // Check quota for entire batch
+    this._checkQuota(totalSize);
     // Persist all
     this.triples.push(...signed);
+    this._usedBytes += totalSize;
     await this.storage.saveTriples(this.uuid, signed);
     for (const s of signed) {
       this.dispatchEvent(new TripleEvent('tripleadded', s));

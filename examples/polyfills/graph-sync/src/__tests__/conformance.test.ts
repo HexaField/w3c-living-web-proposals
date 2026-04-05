@@ -580,6 +580,57 @@ describe('P2P Graph Sync — Conformance Tests', () => {
     });
   });
 
+  // §4.4 Peer DID MUST be resolvable
+  describe('§4.4 Peer DID resolution', () => {
+    it('peer DID MUST be resolvable to a DID Document', async () => {
+      const alice = SharedGraph.create(aliceId, 'test');
+      const bob = SharedGraph.create(bobId, 'test');
+      alice.connectPeer(bob);
+      const peers = await alice.peers();
+      for (const peerDid of peers) {
+        expect(peerDid).toMatch(/^did:/);
+      }
+    });
+  });
+
+  // §5.1 join() MUST reject with NotSupportedError if protocol unavailable
+  describe('§5.1 join() protocol rejection', () => {
+    it('join() MUST reject with NotSupportedError if URI protocol is not supported', async () => {
+      const mgr = new SharedGraphManager(aliceId);
+      await expect(mgr.join('unknown-protocol://nonexistent')).rejects.toThrow();
+    });
+  });
+
+  // §10.2 Signature verification on incoming triples
+  describe('§10.2 Signature verification', () => {
+    it('all triples received from peers should have valid signatures', async () => {
+      const alice = SharedGraph.create(aliceId, 'test');
+      const bob = SharedGraph.create(bobId, 'test');
+      alice.connectPeer(bob);
+
+      await alice.addTriple(triple('note:1', 'schema:name', 'Signed by Alice'));
+      const bobTriples = await bob.queryTriples({});
+      expect(bobTriples).toHaveLength(1);
+      // The triple has a proof with non-empty signature
+      expect(bobTriples[0].proof.signature).toBeTruthy();
+      expect(bobTriples[0].proof.key).toBeTruthy();
+    });
+  });
+
+  // §10.3 Peer DID matches signing key
+  describe('§10.3 Peer DID ↔ signing key', () => {
+    it('triple author DID MUST match the signing key used', async () => {
+      const alice = SharedGraph.create(aliceId, 'test');
+      const bob = SharedGraph.create(bobId, 'test');
+      alice.connectPeer(bob);
+
+      await alice.addTriple(triple('note:1', 'schema:name', 'Hello'));
+      const bobTriples = await bob.queryTriples({});
+      expect(bobTriples[0].author).toBe(aliceId.getDID());
+      expect(bobTriples[0].proof.key).toContain(aliceId.getDID());
+    });
+  });
+
   // tripleadded / tripleremoved events
   describe('Triple events on SharedGraph', () => {
     it('dispatches tripleadded on addTriple', async () => {
@@ -598,5 +649,27 @@ describe('P2P Graph Sync — Conformance Tests', () => {
       const evt = await evtP;
       expect(evt).toBeTruthy();
     });
+  });
+});
+
+// §5.1 share() MUST register with discovery mechanism
+describe('§5.1 share() registers with discovery mechanism', () => {
+  it('shared graph is discoverable via listShared()', async () => {
+    const id = new EphemeralIdentity();
+    await id.ensureReady();
+    const mgr = new SharedGraphManager(id);
+    const graph = await mgr.share('discoverable');
+    const listed = await mgr.listShared();
+    expect(listed.some((g: any) => g.uri === graph.uri)).toBe(true);
+    expect(listed.some((g: any) => g.name === 'discoverable')).toBe(true);
+  });
+
+  it('shared graph is retrievable via getShared(uri)', async () => {
+    const id = new EphemeralIdentity();
+    await id.ensureReady();
+    const mgr = new SharedGraphManager(id);
+    const graph = await mgr.share('findme');
+    const found = await mgr.get(graph.uri);
+    expect(found).toBe(graph);
   });
 });

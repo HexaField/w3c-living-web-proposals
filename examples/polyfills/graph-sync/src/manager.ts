@@ -26,10 +26,18 @@ export class SharedGraphManager {
 
   /**
    * Join an existing shared graph by URI.
+   * MUST reject with NotSupportedError if protocol is unavailable.
    */
   async join(uri: string): Promise<SharedGraph> {
     if (this.sharedGraphs.has(uri)) {
       return this.sharedGraphs.get(uri)!;
+    }
+    // §5.1 Validate URI protocol
+    if (!uri.startsWith('shared-graph://')) {
+      throw new DOMException(
+        `Unsupported protocol in URI: ${uri}`,
+        'NotSupportedError'
+      );
     }
     const graph = SharedGraph.join(uri, this.identity);
     this.sharedGraphs.set(uri, graph);
