@@ -378,17 +378,14 @@ test.describe('Spec 01 — Personal Graph API', () => {
   // §4.2.1 addTriple() MUST reject with InvalidStateError if no identity
   test('§4.2.1 addTriple rejects with InvalidStateError if no identity', async ({ page }) => {
     const result = await page.evaluate(async () => {
-      // Access the PersonalGraph constructor internals — create a graph with a mock empty identity
-      const { PersonalGraph } = await import('@living-web/personal-graph');
+      const g = await (navigator as any).graph.create('no-id-test');
+      // Override the identity to simulate no-identity state (empty DID)
       const noIdentity = {
         getDID: () => '',
         getKeyURI: () => '',
         sign: async () => new Uint8Array(64),
         getPublicKey: () => new Uint8Array(32),
       };
-      // Use the internal graph with no identity
-      const g = await (navigator as any).graph.create('no-id-test');
-      // Override the identity to simulate no-identity state
       (g as any).identity = noIdentity;
       try {
         const ST = (window as any).__SemanticTriple;

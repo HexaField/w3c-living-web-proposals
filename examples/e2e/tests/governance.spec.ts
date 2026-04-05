@@ -589,8 +589,7 @@ test.describe('Spec 05 — Governance', () => {
       const c = 'urn:constraint:cred';
       await shared.addTriple(new ST(c, GOV.CONSTRAINT, GOV.ENTRY_TYPE));
       await shared.addTriple(new ST(c, 'credential', GOV.CONSTRAINT_KIND));
-      await shared.addTriple(new ST(c, 'VerifiedMember', GOV.CREDENTIAL_TYPE || 'gov://credential_type'));
-      await shared.addTriple(new ST(c, 'did:key:z6MkTrustedIssuer', GOV.CREDENTIAL_ISSUER || 'gov://credential_issuer'));
+      await shared.addTriple(new ST(c, 'VerifiedMember', GOV.REQUIRES_CREDENTIAL_TYPE));
       await shared.addTriple(new ST('urn:entity:1', c, GOV.HAS_CONSTRAINT));
       const gov = createGovernanceLayer(shared, { rootAuthority: 'did:key:z6MkOtherRoot' });
       // Without a matching credential, should be rejected
@@ -733,8 +732,8 @@ test.describe('Spec 05 — Governance', () => {
       await shared.addTriple(new ST(agent, 'expr://rev-cap', GOV.HAS_ZCAP));
       // Before revocation
       const before = await gov.canAddTripleAs('urn:entity:1', 'app://body', 'test', agent);
-      // Revoke
-      await shared.addTriple(new ST('expr://rev-cap', 'true', GOV.REVOKED || 'gov://revoked'));
+      // Revoke using proper predicate: source=revoker, predicate=REVOKES_CAPABILITY, target=zcapId
+      await shared.addTriple(new ST(did, cap.id, GOV.REVOKES_CAPABILITY));
       const after = await gov.canAddTripleAs('urn:entity:1', 'app://body', 'test', agent);
       return { before: before.allowed, after: after.allowed };
     });
@@ -879,8 +878,8 @@ test.describe('Spec 05 — Governance', () => {
       await shared.addTriple(new ST(agent, 'expr://rev-every-cap', GOV.HAS_ZCAP));
       // First check: allowed
       const r1 = await gov.canAddTripleAs('urn:entity:1', 'app://body', 'test1', agent);
-      // Revoke between checks
-      await shared.addTriple(new ST('expr://rev-every-cap', 'true', GOV.REVOKED || 'gov://revoked'));
+      // Revoke between checks using proper predicate
+      await shared.addTriple(new ST(did, cap.id, GOV.REVOKES_CAPABILITY));
       // Second check: should be blocked
       const r2 = await gov.canAddTripleAs('urn:entity:1', 'app://body', 'test2', agent);
       return { first: r1.allowed, second: r2.allowed };
