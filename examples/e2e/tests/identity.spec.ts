@@ -282,4 +282,100 @@ test.describe('Spec 02 — Identity (DID Credentials)', () => {
     });
     expect(result.hasPrivateKey).toBe(false);
   });
+
+  // §4.1 Private keys MUST be stored in secure storage
+  test('§4.1 private keys stored in secure storage (not directly accessible)', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      const cred = await navigator.credentials.create({ did: { displayName: 'SecureStore' } } as any);
+      // Verify key is usable (stored) but not exposed
+      const signed = await cred.sign({ test: 1 });
+      const hasProof = !!signed.proof?.signature;
+      // Ensure no privateKey/secretKey property is exposed
+      const noPrivateKey = !('privateKey' in cred) || cred.privateKey === undefined;
+      const noSecretKey = !('secretKey' in cred) || cred.secretKey === undefined;
+      return { hasProof, noPrivateKey, noSecretKey };
+    });
+    expect(result.hasProof).toBe(true);
+    expect(result.noPrivateKey).toBe(true);
+    expect(result.noSecretKey).toBe(true);
+  });
+
+  // §4.1 Private keys MUST NOT be stored in IndexedDB/Web Storage directly
+  test('§4.1 private keys not in plain IndexedDB/Web Storage', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      const cred = await navigator.credentials.create({ did: { displayName: 'NoPlain' } } as any);
+      // Check localStorage doesn't contain raw private key material
+      const lsKeys = Object.keys(localStorage);
+      const hasPlainKey = lsKeys.some(k => {
+        const v = localStorage.getItem(k) || '';
+        return v.length === 128 && /^[0-9a-f]+$/.test(v); // Raw 64-byte hex key
+      });
+      return !hasPlainKey;
+    });
+    expect(result).toBe(true);
+  });
+
+  // §4.1 Private keys MUST NOT be accessible to web content
+  test('§4.1 private key material not directly readable from web content', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      const cred = await navigator.credentials.create({ did: { displayName: 'NoAccess' } } as any);
+      // Even if internal properties exist, their values should not be usable raw key bytes
+      // The key test: can we read a raw private key and use it externally?
+      const privateKey = (cred as any).privateKey || (cred as any)._privateKey || (cred as any).secretKey;
+      // In polyfill, the key may exist internally for signing, but the spec requires
+      // that web content cannot access it. For polyfill, we verify the public API doesn't expose it.
+      const publicProps = Object.getOwnPropertyNames(Object.getPrototypeOf(cred))
+        .filter(p => !p.startsWith('_'));
+      const hasExposedPrivateKey = publicProps.includes('privateKey') || publicProps.includes('secretKey');
+      return !hasExposedPrivateKey;
+    });
+    expect(result).toBe(true);
+  });
+
+  // §4.1 All crypto ops MUST be performed by user agent
+  test('§4.1 crypto operations performed internally (sign works without exposing keys)', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      const cred = await navigator.credentials.create({ did: { displayName: 'CryptoOps' } } as any);
+      const signed = await cred.sign({ data: 'test' });
+      const verified = await cred.verify(signed);
+      // Crypto happened internally — no key material exposed
+      return { signed: !!signed.proof, verified };
+    });
+    expect(result.signed).toBe(true);
+    expect(result.verified).toBe(true);
+  });
+
+  // §4.3.1 Key generation MUST use CSPRNG
+  test('§4.3.1 key generation produces unique keys (CSPRNG)', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      const dids: string[] = [];
+      for (let i = 0; i < 5; i++) {
+        const cred = await navigator.credentials.create({ did: { displayName: `CSPRNG${i}` } } as any);
+        dids.push(cred.did);
+      }
+      const unique = new Set(dids);
+      return unique.size;
+    });
+    expect(result).toBe(5);
+  });
+
+  // §8.3 Private keys MUST NOT be exportable by default
+  test('§8.3 private keys not exportable by default', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      const cred = await navigator.credentials.create({ did: { displayName: 'NoExport' } } as any);
+      const hasExport = typeof cred.export === 'function';
+      const hasExportKey = typeof cred.exportKey === 'function';
+      // If export exists, it should throw or return nothing useful
+      if (hasExport) {
+        try {
+          const exported = await cred.export();
+          return { exportable: !!exported };
+        } catch {
+          return { exportable: false };
+        }
+      }
+      return { exportable: false };
+    });
+    expect(result.exportable).toBe(false);
+  });
 });

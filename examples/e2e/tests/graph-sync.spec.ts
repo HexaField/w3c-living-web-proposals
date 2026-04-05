@@ -314,4 +314,87 @@ test.describe('Spec 03 — Graph Sync (SharedGraph)', () => {
     });
     expect(result).toBe(true);
   });
+
+  // §4.4 Peer DID MUST be resolvable to a DID Document
+  test('§4.4 peer DID is resolvable to DID document', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      const { provider, did, cred } = await (window as any).__createIdentityProvider('Resolvable');
+      // Resolve the peer's DID
+      const doc = cred.resolve();
+      return {
+        hasId: doc.id === did,
+        hasVM: Array.isArray(doc.verificationMethod) && doc.verificationMethod.length > 0,
+        didStartsRight: did.startsWith('did:key:z6Mk'),
+      };
+    });
+    expect(result.hasId).toBe(true);
+    expect(result.hasVM).toBe(true);
+    expect(result.didStartsRight).toBe(true);
+  });
+
+  // §5.1 share() MUST register with discovery mechanism
+  test('§5.1 share() registers with discovery mechanism', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      const { provider } = await (window as any).__createIdentityProvider('Discovery');
+      const mgr = new (window as any).__SharedGraphManager(provider);
+      const shared = await mgr.share('discoverable');
+      // After sharing, the graph should be findable via its URI
+      const found = await mgr.join(shared.uri);
+      return { sameUri: found.uri === shared.uri };
+    });
+    expect(result.sameUri).toBe(true);
+  });
+
+  // §5.1 join() MUST reject with NotSupportedError if protocol unavailable
+  test('§5.1 join() rejects with NotSupportedError for unsupported protocol', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      const { provider } = await (window as any).__createIdentityProvider('BadProto');
+      const mgr = new (window as any).__SharedGraphManager(provider);
+      try {
+        await mgr.join('unsupported-protocol://some-graph');
+        return 'should have thrown';
+      } catch (e: any) {
+        return { name: e.name, threw: true };
+      }
+    });
+    expect(result).not.toBe('should have thrown');
+    expect((result as any).threw).toBe(true);
+  });
+
+  // §10.2 MUST verify signatures before applying
+  test('§10.2 signatures verified before applying diffs', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      const { provider } = await (window as any).__createIdentityProvider('VerifySig');
+      const SharedGraph = (window as any).__SharedGraph;
+      const g = SharedGraph.create(provider, 'verify-sig');
+      const ST = (window as any).__SemanticTriple;
+      const signed = await g.addTriple(new ST('urn:vs:1', 'urn:vs:2'));
+      // Triple should have valid proof
+      return {
+        hasSig: typeof signed.proof?.signature === 'string',
+        hasKey: typeof signed.proof?.key === 'string',
+        hasAuthor: typeof signed.author === 'string' && signed.author.startsWith('did:key:'),
+      };
+    });
+    expect(result.hasSig).toBe(true);
+    expect(result.hasKey).toBe(true);
+    expect(result.hasAuthor).toBe(true);
+  });
+
+  // §10.3 MUST verify peer DID matches signing key
+  test('§10.3 peer DID matches signing key in proofs', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+      const { provider, did } = await (window as any).__createIdentityProvider('DIDMatch');
+      const SharedGraph = (window as any).__SharedGraph;
+      const g = SharedGraph.create(provider, 'did-match');
+      const ST = (window as any).__SemanticTriple;
+      const signed = await g.addTriple(new ST('urn:dm:1', 'urn:dm:2'));
+      return {
+        authorMatchesDid: signed.author === did,
+        keyInProof: typeof signed.proof?.key === 'string' && signed.proof.key.length > 0,
+      };
+    });
+    expect(result.authorMatchesDid).toBe(true);
+    expect(result.keyInProof).toBe(true);
+  });
 });

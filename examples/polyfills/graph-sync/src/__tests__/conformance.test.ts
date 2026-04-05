@@ -651,3 +651,25 @@ describe('P2P Graph Sync — Conformance Tests', () => {
     });
   });
 });
+
+// §5.1 share() MUST register with discovery mechanism
+describe('§5.1 share() registers with discovery mechanism', () => {
+  it('shared graph is discoverable via listShared()', async () => {
+    const id = new EphemeralIdentity();
+    await id.ensureReady();
+    const mgr = new SharedGraphManager(id);
+    const graph = await mgr.share('discoverable');
+    const listed = await mgr.listShared();
+    expect(listed.some((g: any) => g.uri === graph.uri)).toBe(true);
+    expect(listed.some((g: any) => g.name === 'discoverable')).toBe(true);
+  });
+
+  it('shared graph is retrievable via getShared(uri)', async () => {
+    const id = new EphemeralIdentity();
+    await id.ensureReady();
+    const mgr = new SharedGraphManager(id);
+    const graph = await mgr.share('findme');
+    const found = await mgr.get(graph.uri);
+    expect(found).toBe(graph);
+  });
+});
