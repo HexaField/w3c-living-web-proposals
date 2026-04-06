@@ -142,11 +142,10 @@ test.describe('Spec 03 — Graph Sync (SharedGraph)', () => {
     const result = await page.evaluate(async () => {
       const { provider } = await (window as any).__createIdentityProvider('DetRev');
       const SharedGraph = (window as any).__SharedGraph;
-      const computeRevision = (window as any).__SharedGraph ? null : null; // Not exposed
       const g = SharedGraph.create(provider, 'det-rev');
       const ST = (window as any).__SemanticTriple;
       await g.addTriple(new ST('urn:a:1', 'urn:b:1', 'urn:p:1'));
-      const rev = g.currentRevision();
+      const rev = await g.currentRevision();
       return typeof rev === 'string' && rev.length === 64;
     });
     expect(result).toBe(true);
@@ -159,7 +158,7 @@ test.describe('Spec 03 — Graph Sync (SharedGraph)', () => {
       const mgr = new (window as any).__SharedGraphManager(provider);
       const g1 = await mgr.share('g1');
       const g2 = await mgr.share('g2');
-      return { different: g1.uri !== g2.uri, startsRight: g1.uri.startsWith('shared-graph://') };
+      return { different: g1.uri !== g2.uri, startsRight: g1.uri.startsWith('graph://') };
     });
     expect(result.different).toBe(true);
     expect(result.startsRight).toBe(true);
