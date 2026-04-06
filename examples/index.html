@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Living Web — Examples</title>
+  <title>The Living Web — Demos &amp; Specifications</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -13,9 +13,13 @@
       min-height: 100vh;
       padding: 2rem;
     }
-    .container { max-width: 900px; margin: 0 auto; }
-    h1 { color: #f0f6fc; font-size: 2rem; margin-bottom: 0.5rem; }
-    .subtitle { color: #8b949e; margin-bottom: 2rem; font-size: 1.1rem; }
+    .container { max-width: 960px; margin: 0 auto; }
+    h1 { color: #f0f6fc; font-size: 2.2rem; margin-bottom: 0.5rem; }
+    .subtitle { color: #8b949e; margin-bottom: 1rem; font-size: 1.1rem; line-height: 1.5; }
+    .links { margin-bottom: 2rem; font-size: 0.9rem; }
+    .links a { color: #58a6ff; text-decoration: none; }
+    .links a:hover { text-decoration: underline; }
+    .links span { color: #484f58; margin: 0 0.5rem; }
     .status {
       background: #161b22;
       border: 1px solid #30363d;
@@ -27,7 +31,10 @@
     }
     .status .native { color: #3fb950; }
     .status .polyfill { color: #d29922; }
-    .status .missing { color: #f85149; }
+
+    h2 { color: #f0f6fc; font-size: 1.3rem; margin: 2rem 0 1rem; }
+    .section-sub { color: #8b949e; font-size: 0.9rem; margin-bottom: 1rem; }
+
     .grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -45,7 +52,7 @@
       display: block;
     }
     .card:hover { border-color: #58a6ff; }
-    .card h2 { color: #f0f6fc; font-size: 1.2rem; margin-bottom: 0.5rem; }
+    .card h3 { color: #f0f6fc; font-size: 1.1rem; margin-bottom: 0.5rem; }
     .card .emoji { font-size: 1.8rem; margin-bottom: 0.75rem; display: block; }
     .card p { color: #8b949e; font-size: 0.9rem; line-height: 1.5; }
     .card .tags { margin-top: 0.75rem; }
@@ -60,40 +67,128 @@
       margin-right: 4px;
       margin-bottom: 4px;
     }
-    .specs-link {
+
+    .specs-table { width: 100%; border-collapse: collapse; margin-bottom: 1.5rem; }
+    .specs-table th { text-align: left; color: #8b949e; font-size: 0.8rem; font-weight: 500; padding: 0.5rem 0.75rem; border-bottom: 1px solid #21262d; }
+    .specs-table td { padding: 0.6rem 0.75rem; border-bottom: 1px solid #161b22; font-size: 0.9rem; }
+    .specs-table a { color: #58a6ff; text-decoration: none; }
+    .specs-table a:hover { text-decoration: underline; }
+    .specs-table code { background: #21262d; padding: 2px 6px; border-radius: 4px; font-size: 0.85rem; color: #e6edf3; }
+    .specs-table .num { color: #484f58; font-family: monospace; }
+
+    .impl-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem; }
+    @media (max-width: 700px) { .impl-grid { grid-template-columns: 1fr; } }
+    .impl-card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 1rem;
+      text-decoration: none;
+      color: inherit;
+      display: block;
+      transition: border-color 0.2s;
+    }
+    .impl-card:hover { border-color: #58a6ff; }
+    .impl-card h4 { color: #f0f6fc; font-size: 0.95rem; margin-bottom: 0.4rem; }
+    .impl-card p { color: #8b949e; font-size: 0.8rem; line-height: 1.4; }
+    .impl-card .stat { color: #3fb950; font-family: monospace; font-size: 0.8rem; }
+
+    .footer {
       text-align: center;
-      margin-top: 2rem;
+      margin-top: 3rem;
       padding-top: 2rem;
       border-top: 1px solid #21262d;
+      color: #484f58;
+      font-size: 0.85rem;
     }
-    .specs-link a { color: #58a6ff; text-decoration: none; }
-    .specs-link a:hover { text-decoration: underline; }
+    .footer a { color: #58a6ff; text-decoration: none; }
+    .footer a:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>Living Web — Examples</h1>
-    <p class="subtitle">Demonstrations of the five Living Web draft specifications working together in the browser.</p>
+    <h1>The Living Web</h1>
+    <p class="subtitle">Six browser primitives for a decentralised semantic web — personal graphs, identity, peer-to-peer sync, dynamic schemas, governance, and group identity.</p>
+    <p class="links">
+      <a href="https://joshuafield.au/posts/closing-the-loop-on-the-semantic-web">Read the article</a>
+      <span>·</span>
+      <a href="https://github.com/HexaField/w3c-living-web-proposals/tree/main/drafts">Draft Specifications</a>
+      <span>·</span>
+      <a href="https://github.com/HexaField/living-web-chromium">Chromium Fork</a>
+      <span>·</span>
+      <a href="https://github.com/HexaField/w3c-living-web-proposals">GitHub</a>
+    </p>
 
     <div class="status" id="status">Detecting browser capabilities...</div>
 
+    <!-- Specifications -->
+    <h2>The Specifications</h2>
+    <p class="section-sub">Six W3C-format draft specifications — 5,865 lines total.</p>
+    <table class="specs-table">
+      <thead>
+        <tr><th>#</th><th>Specification</th><th>Lines</th><th>Description</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="num">01</td>
+          <td><a href="https://github.com/HexaField/w3c-living-web-proposals/blob/main/drafts/01_personal-linked-data-graphs.md">Personal Linked Data Graphs</a></td>
+          <td class="num">544</td>
+          <td><code>navigator.graph</code> — browser-native semantic triple store with SPARQL</td>
+        </tr>
+        <tr>
+          <td class="num">02</td>
+          <td><a href="https://github.com/HexaField/w3c-living-web-proposals/blob/main/drafts/02_decentralised-identity-web-platform.md">Decentralised Identity</a></td>
+          <td class="num">522</td>
+          <td>Extends <code>navigator.credentials</code> with DID key generation and signing</td>
+        </tr>
+        <tr>
+          <td class="num">03</td>
+          <td><a href="https://github.com/HexaField/w3c-living-web-proposals/blob/main/drafts/03_p2p-graph-sync.md">P2P Graph Synchronisation</a></td>
+          <td class="num">1,952</td>
+          <td>Pluggable WASM sync modules, relay protocol, OR-Set CRDT</td>
+        </tr>
+        <tr>
+          <td class="num">04</td>
+          <td><a href="https://github.com/HexaField/w3c-living-web-proposals/blob/main/drafts/04_dynamic-graph-shape-validation.md">Dynamic Graph Shape Validation</a></td>
+          <td class="num">733</td>
+          <td>SHACL extension with constructors, setters, collections</td>
+        </tr>
+        <tr>
+          <td class="num">05</td>
+          <td><a href="https://github.com/HexaField/w3c-living-web-proposals/blob/main/drafts/05_graph-governance.md">Graph Governance</a></td>
+          <td class="num">1,083</td>
+          <td>ZCAP/VC constraint enforcement at the sync layer</td>
+        </tr>
+        <tr>
+          <td class="num">06</td>
+          <td><a href="https://github.com/HexaField/w3c-living-web-proposals/blob/main/drafts/06_group-identity.md">Decentralised Group Identity</a></td>
+          <td class="num">1,031</td>
+          <td>Holonic groups — individual = group of one, fractal nesting</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- Demos -->
+    <h2>Demos</h2>
+    <p class="section-sub">5 integration demos exercising all 6 specifications. 364+ unit tests, 142+ E2E tests.</p>
     <div class="grid">
       <a class="card" href="demos/community-chat/">
         <span class="emoji">💬</span>
-        <h2>Community Chat</h2>
-        <p>Discord-like community with channels, roles, real-time messaging, and full governance — slow mode, read-only channels, bans, role promotion. The governance showcase.</p>
+        <h3>Community Chat</h3>
+        <p>Discord-like community with channels, roles, real-time messaging, and full governance — slow mode, read-only channels, bans, role promotion.</p>
         <div class="tags">
           <span class="tag">Graph</span>
           <span class="tag">Identity</span>
           <span class="tag">Sync</span>
           <span class="tag">Shapes</span>
           <span class="tag">Governance</span>
+          <span class="tag">Groups</span>
         </div>
       </a>
 
       <a class="card" href="demos/p2p-vcs/">
         <span class="emoji">🔀</span>
-        <h2>P2P Version Control</h2>
+        <h3>P2P Version Control</h3>
         <p>Git-lite on graphs. Create repos, edit files, commit, branch, view diffs, and fork — all peer-to-peer with protected branches and contributor permissions.</p>
         <div class="tags">
           <span class="tag">Graph</span>
@@ -106,7 +201,7 @@
 
       <a class="card" href="demos/collaborative-doc/">
         <span class="emoji">📝</span>
-        <h2>Collaborative Document</h2>
+        <h3>Collaborative Document</h3>
         <p>Google Docs on graphs. Block-based editing with real-time sync, cursor indicators, threaded comments, and editor/commenter/viewer roles.</p>
         <div class="tags">
           <span class="tag">Graph</span>
@@ -119,21 +214,20 @@
 
       <a class="card" href="demos/collaborative-canvas/">
         <span class="emoji">🎨</span>
-        <h2>Collaborative Canvas</h2>
+        <h3>Collaborative Canvas</h3>
         <p>tldraw-style drawing. Rectangles, circles, lines, freehand paths, text — with layers, lock/unlock governance, and real-time cursor sharing.</p>
         <div class="tags">
           <span class="tag">Graph</span>
           <span class="tag">Identity</span>
           <span class="tag">Sync</span>
           <span class="tag">Shapes</span>
-          <span class="tag">Governance</span>
         </div>
       </a>
 
       <a class="card" href="demos/multiplayer-game/">
         <span class="emoji">🎮</span>
-        <h2>Multiplayer 3D Game</h2>
-        <p>Three.js world with WASD movement, collectibles, leaderboard, and in-game chat. Player-scoped permissions, anti-cheat constraints, first-write-wins collectibles.</p>
+        <h3>Multiplayer 3D Game</h3>
+        <p>Three.js world with WASD movement, collectibles, leaderboard, and in-game chat. Player-scoped permissions, anti-cheat constraints, first-write-wins.</p>
         <div class="tags">
           <span class="tag">Graph</span>
           <span class="tag">Identity</span>
@@ -144,8 +238,42 @@
       </a>
     </div>
 
-    <div class="specs-link">
-      <a href="https://github.com/HexaField/w3c-living-web-proposals/tree/main/drafts">View the Draft Specifications →</a>
+    <!-- Implementations -->
+    <h2>Implementations</h2>
+    <div class="impl-grid">
+      <div class="impl-card">
+        <h4>📦 Polyfills</h4>
+        <p>6 npm packages — works in any browser today</p>
+        <p class="stat">364+ unit tests · 142+ E2E</p>
+      </div>
+      <a class="impl-card" href="https://github.com/HexaField/living-web-sync-websocket">
+        <h4>🔌 WebSocket Sync</h4>
+        <p>Rust → WASM sync module via relay server</p>
+        <p class="stat">142KB WASM · 14 tests</p>
+      </a>
+      <a class="impl-card" href="https://github.com/HexaField/living-web-sync-iroh">
+        <h4>🌐 Iroh P2P Sync</h4>
+        <p>QUIC via iroh-net with hole punching</p>
+        <p class="stat">WASM + native · 9 tests</p>
+      </a>
+      <a class="impl-card" href="https://github.com/HexaField/living-web-chromium">
+        <h4>🏗️ Chromium Fork</h4>
+        <p>Native Mojo IPC — no polyfills needed</p>
+        <p class="stat">76 C++ tests · macOS + Linux</p>
+      </a>
+      <div class="impl-card">
+        <h4>🧩 Chrome Extension</h4>
+        <p><code>navigator.graph</code> on every page, feature-detects native</p>
+      </div>
+      <div class="impl-card">
+        <h4>📡 Relay Server</h4>
+        <p>Minimal WebSocket relay — anyone can run one</p>
+        <p class="stat">npx tsx src/index.ts</p>
+      </div>
+    </div>
+
+    <div class="footer">
+      <p>Specifications: <a href="https://www.w3.org/copyright/software-license-2023/">W3C Software and Document License</a> · Implementations: MIT</p>
     </div>
   </div>
 
@@ -161,14 +289,14 @@
     const missing = checks.filter(c => !c.test());
 
     if (native.length === checks.length) {
-      el.innerHTML = '<span class="native">✓ Native browser support detected</span> — running on browser-native APIs (no polyfills loaded).';
+      el.innerHTML = '<span class="native">✓ Native browser support detected</span> — running on browser-native APIs.';
     } else if (native.length > 0) {
       el.innerHTML = '<span class="native">✓ Partial native support:</span> ' +
         native.map(c => c.name).join(', ') +
         ' · <span class="polyfill">⚡ Polyfilled:</span> ' +
         missing.map(c => c.name).join(', ');
     } else {
-      el.innerHTML = '<span class="polyfill">⚡ Running on polyfills</span> — no native browser support detected. All APIs provided by @living-web packages.';
+      el.innerHTML = '<span class="polyfill">⚡ Running on polyfills</span> — all APIs provided by @living-web packages.';
     }
   </script>
 </body>
