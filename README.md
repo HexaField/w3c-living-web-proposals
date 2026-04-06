@@ -2,7 +2,7 @@
 
 **Six browser primitives for a decentralised semantic web — personal graphs, identity, peer-to-peer sync, dynamic schemas, governance, and group identity.**
 
-[Read the article: "Closing the Loop on the Semantic Web"](https://joshuafield.au/posts/closing-the-loop-on-the-semantic-web) · [View the Demos](examples/) · [Chromium Fork](https://github.com/HexaField/living-web-chromium)
+[View the Demos](examples/) · [Chromium Fork](https://github.com/HexaField/living-web-chromium)
 
 ---
 
@@ -241,7 +241,6 @@ cd examples/relay && npx tsx src/index.ts
 - **E2E**: 142+ Playwright tests
 - **Chromium**: Built on Linux + macOS, verified via CDP
 - **Sync modules**: 2 implementations (WebSocket + Iroh)
-- **Article**: ["Closing the Loop on the Semantic Web"](https://joshuafield.au/posts/closing-the-loop-on-the-semantic-web) (~6,100 words)
 
 ## License
 
