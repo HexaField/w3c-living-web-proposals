@@ -11,6 +11,7 @@ import {
 import {
   type SyncState,
   type OnlinePeer,
+  type Peer,
   type SharedGraphOptions,
   type RevisionNode,
   GraphDiff,
@@ -21,6 +22,7 @@ import {
 } from './types.js';
 import { YjsBridge, tripleKey } from './yjs-bridge.js';
 import { createGraphDiff, computeRevision } from './diff.js';
+import { buildGraphURI, parseGraphURI } from './graph-uri.js';
 
 type EventHandler = ((event: Event) => void) | null;
 
@@ -33,6 +35,7 @@ type EventHandler = ((event: Event) => void) | null;
  */
 export class SharedGraph extends EventTarget {
   readonly uri: string;
+  readonly moduleHash: string;
   private _syncState: SyncState = 'idle';
   private _peers = new Map<string, { lastSeen: number }>();
   private _bridge: YjsBridge;
@@ -41,6 +44,7 @@ export class SharedGraph extends EventTarget {
   private _revisionDAG: RevisionNode[] = [];
   private _currentRevision: string | null = null;
   private _name: string | undefined;
+  private _description: string | undefined;
   private _destroyed = false;
 
   // Event handler properties
@@ -48,6 +52,7 @@ export class SharedGraph extends EventTarget {
   private _onpeerleft: EventHandler = null;
   private _onsyncstatechange: EventHandler = null;
   private _onsignal: EventHandler = null;
+  private _ondiff: EventHandler = null;
 
   // Connected peers' SharedGraph instances (for direct sync)
   private _connectedPeers = new Map<string, SharedGraph>();
@@ -64,12 +69,14 @@ export class SharedGraph extends EventTarget {
     uri: string,
     doc: Y.Doc,
     identity: IdentityProvider,
-    name?: string
+    opts?: { name?: string; description?: string; moduleHash?: string }
   ) {
     super();
     this.uri = uri;
+    this.moduleHash = opts?.moduleHash ?? 'default';
     this._identity = identity;
-    this._name = name;
+    this._name = opts?.name;
+    this._description = opts?.description;
     this._bridge = new YjsBridge(doc);
     this._instanceId = typeof crypto !== 'undefined' && crypto.randomUUID
       ? crypto.randomUUID()
@@ -80,18 +87,25 @@ export class SharedGraph extends EventTarget {
       this._channel = new BroadcastChannel(`living-web-shared-graph-${this.uri}`);
       this._channel.onmessage = (event: MessageEvent) => {
         if (event.data.origin === this._instanceId) return;
-        if (event.data.type === 'yjs-update') {
+        const msg = event.data;
+        if (msg.type === 'DIFF') {
           this._applyingRemote = true;
-          Y.applyUpdate(this._bridge.doc, new Uint8Array(event.data.update));
+          if (msg.update) {
+            Y.applyUpdate(this._bridge.doc, new Uint8Array(msg.update));
+          }
           this._applyingRemote = false;
         }
       };
 
-      // Broadcast local Y.js updates to other tabs
+      // Broadcast local Y.js updates to other tabs using wire protocol format
       this._bridge.doc.on('update', (update: Uint8Array, origin: any) => {
         if (this._applyingRemote) return;
         this._channel?.postMessage({
-          type: 'yjs-update',
+          type: 'DIFF',
+          revision: this._currentRevision ?? '',
+          additions: [],
+          removals: [],
+          dependencies: this._currentRevision ? [this._currentRevision] : [],
           update: Array.from(update),
           origin: this._instanceId,
         });
@@ -185,6 +199,13 @@ export class SharedGraph extends EventTarget {
     if (h) this.addEventListener('signal', h);
   }
 
+  get ondiff(): EventHandler { return this._ondiff; }
+  set ondiff(h: EventHandler) {
+    if (this._ondiff) this.removeEventListener('diff', this._ondiff);
+    this._ondiff = h;
+    if (h) this.addEventListener('diff', h);
+  }
+
   // --- PersonalGraph-compatible operations ---
 
   async addTriple(triple: SemanticTriple): Promise<SignedTriple> {
@@ -254,14 +275,19 @@ export class SharedGraph extends EventTarget {
 
   // --- Sync-specific operations ---
 
-  async peers(): Promise<string[]> {
-    return Array.from(this._peers.keys());
-  }
-
-  async onlinePeers(): Promise<OnlinePeer[]> {
+  async peers(): Promise<Peer[]> {
     return Array.from(this._peers.entries()).map(([did, info]) => ({
       did,
       lastSeen: info.lastSeen,
+      online: true,
+    }));
+  }
+
+  async onlinePeers(): Promise<Peer[]> {
+    return Array.from(this._peers.entries()).map(([did, info]) => ({
+      did,
+      lastSeen: info.lastSeen,
+      online: true,
     }));
   }
 
@@ -283,7 +309,7 @@ export class SharedGraph extends EventTarget {
     return [...this._revisionDAG];
   }
 
-  currentRevision(): string | null {
+  async currentRevision(): Promise<string | null> {
     return this._currentRevision;
   }
 
@@ -420,13 +446,27 @@ export class SharedGraph extends EventTarget {
   // --- Static factory ---
 
   static create(identity: IdentityProvider, name?: string, opts?: SharedGraphOptions): SharedGraph {
-    const uri = `shared-graph://${uuidv4()}`;
+    const graphId = uuidv4();
+    const relays = opts?.relays ?? ['localhost'];
+    const moduleHash = opts?.module ?? 'default';
+    const uri = buildGraphURI(relays, graphId, moduleHash);
     const doc = new Y.Doc();
-    return new SharedGraph(uri, doc, identity, name);
+    return new SharedGraph(uri, doc, identity, {
+      name: opts?.meta?.name ?? name,
+      description: opts?.meta?.description,
+      moduleHash,
+    });
   }
 
   static join(uri: string, identity: IdentityProvider): SharedGraph {
     const doc = new Y.Doc();
-    return new SharedGraph(uri, doc, identity);
+    let moduleHash = 'default';
+    try {
+      const parsed = parseGraphURI(uri);
+      moduleHash = parsed.moduleHash ?? 'default';
+    } catch {
+      // Legacy URI format — accept as-is
+    }
+    return new SharedGraph(uri, doc, identity, { moduleHash });
   }
 }

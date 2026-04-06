@@ -33,7 +33,7 @@ export class SharedGraphManager {
       return this.sharedGraphs.get(uri)!;
     }
     // §5.1 Validate URI protocol
-    if (!uri.startsWith('shared-graph://')) {
+    if (!uri.startsWith('graph://') && !uri.startsWith('shared-graph://')) {
       throw new DOMException(
         `Unsupported protocol in URI: ${uri}`,
         'NotSupportedError'
@@ -51,6 +51,7 @@ export class SharedGraphManager {
     return Array.from(this.sharedGraphs.values()).map((g) => ({
       uri: g.uri,
       name: g.name,
+      moduleHash: g.moduleHash,
       syncState: g.syncState,
       peerCount: 0, // updated lazily
     }));

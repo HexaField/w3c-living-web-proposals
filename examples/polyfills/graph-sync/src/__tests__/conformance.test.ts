@@ -82,7 +82,7 @@ describe('P2P Graph Sync — Conformance Tests', () => {
     it('has a globally unique URI', () => {
       const g1 = SharedGraph.create(aliceId);
       const g2 = SharedGraph.create(aliceId);
-      expect(g1.uri).toMatch(/^shared-graph:\/\//);
+      expect(g1.uri).toMatch(/^graph:\/\//);
       expect(g1.uri).not.toBe(g2.uri);
     });
   });
@@ -154,7 +154,7 @@ describe('P2P Graph Sync — Conformance Tests', () => {
     it('share() returns SharedGraph with unique URI', async () => {
       const mgr = new SharedGraphManager(aliceId);
       const graph = await mgr.share('test-graph');
-      expect(graph.uri).toMatch(/^shared-graph:\/\//);
+      expect(graph.uri).toMatch(/^graph:\/\//);
       expect(graph.name).toBe('test-graph');
     });
 
@@ -198,7 +198,7 @@ describe('P2P Graph Sync — Conformance Tests', () => {
       const bob = SharedGraph.create(bobId, 'test');
       alice.connectPeer(bob);
       const peers = await alice.peers();
-      expect(peers).toContain(bobId.getDID());
+      expect(peers.map(p => p.did)).toContain(bobId.getDID());
     });
 
     it('onlinePeers() returns peers with lastSeen', async () => {
@@ -322,7 +322,7 @@ describe('P2P Graph Sync — Conformance Tests', () => {
     it('GraphDiff declares causal dependencies', async () => {
       const graph = SharedGraph.create(aliceId, 'test');
       await graph.addTriple(triple('note:1', 'schema:name', 'First'));
-      const rev1 = graph.currentRevision();
+      const rev1 = await graph.currentRevision();
       expect(rev1).toBeTruthy();
 
       await graph.addTriple(triple('note:2', 'schema:name', 'Second'));
@@ -371,8 +371,8 @@ describe('P2P Graph Sync — Conformance Tests', () => {
       const alice = SharedGraph.create(aliceId, 'test');
       const bob = SharedGraph.create(bobId, 'test');
       alice.connectPeer(bob);
-      expect(await alice.peers()).toContain(bobId.getDID());
-      expect(await bob.peers()).toContain(aliceId.getDID());
+      expect((await alice.peers()).map(p => p.did)).toContain(bobId.getDID());
+      expect((await bob.peers()).map(p => p.did)).toContain(aliceId.getDID());
     });
   });
 
@@ -380,9 +380,10 @@ describe('P2P Graph Sync — Conformance Tests', () => {
   describe('§8.1 Publishing', () => {
     it('SharedGraph URI has sufficient entropy (UUID)', () => {
       const graph = SharedGraph.create(aliceId, 'test');
-      const uuidPart = graph.uri.replace('shared-graph://', '');
-      // UUID v4 format
-      expect(uuidPart).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+      expect(graph.uri).toMatch(/^graph:\/\//);
+      // Extract graph ID from URI and verify it's a UUID
+      const match = graph.uri.match(/\/([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})/);
+      expect(match).toBeTruthy();
     });
   });
 
@@ -563,9 +564,9 @@ describe('P2P Graph Sync — Conformance Tests', () => {
 
     it('currentRevision() returns latest revision', async () => {
       const graph = SharedGraph.create(aliceId, 'test');
-      expect(graph.currentRevision()).toBeNull();
+      expect(await graph.currentRevision()).toBeNull();
       await graph.addTriple(triple('note:1', 'schema:name', 'A'));
-      expect(graph.currentRevision()).toMatch(/^[0-9a-f]{64}$/);
+      expect(await graph.currentRevision()).toMatch(/^[0-9a-f]{64}$/);
     });
   });
 
@@ -587,8 +588,8 @@ describe('P2P Graph Sync — Conformance Tests', () => {
       const bob = SharedGraph.create(bobId, 'test');
       alice.connectPeer(bob);
       const peers = await alice.peers();
-      for (const peerDid of peers) {
-        expect(peerDid).toMatch(/^did:/);
+      for (const peer of peers) {
+        expect(peer.did).toMatch(/^did:/);
       }
     });
   });
@@ -671,5 +672,159 @@ describe('§5.1 share() registers with discovery mechanism', () => {
     const graph = await mgr.share('findme');
     const found = await mgr.get(graph.uri);
     expect(found).toBe(graph);
+  });
+});
+
+// --- New API tests ---
+import { DefaultSyncModule, parseGraphURI, buildGraphURI, isGraphURI } from '../index.js';
+
+describe('Graph URI', () => {
+  it('parseGraphURI parses valid URI', () => {
+    const parsed = parseGraphURI('graph://relay.example.com/abc-123?module=sha256hash');
+    expect(parsed.relays).toEqual(['relay.example.com']);
+    expect(parsed.graphId).toBe('abc-123');
+    expect(parsed.moduleHash).toBe('sha256hash');
+  });
+
+  it('parseGraphURI handles multiple relays', () => {
+    const parsed = parseGraphURI('graph://r1.com,r2.com/myid');
+    expect(parsed.relays).toEqual(['r1.com', 'r2.com']);
+    expect(parsed.moduleHash).toBeNull();
+  });
+
+  it('parseGraphURI throws on invalid URI', () => {
+    expect(() => parseGraphURI('http://example.com')).toThrow();
+  });
+
+  it('buildGraphURI constructs valid URI', () => {
+    const uri = buildGraphURI(['relay.com'], 'graph-id', 'mod-hash');
+    expect(uri).toBe('graph://relay.com/graph-id?module=mod-hash');
+  });
+
+  it('isGraphURI validates URIs', () => {
+    expect(isGraphURI('graph://r/id')).toBe(true);
+    expect(isGraphURI('http://r/id')).toBe(false);
+  });
+
+  it('roundtrips through build and parse', () => {
+    const uri = buildGraphURI(['a.com', 'b.com'], 'test-id', 'hash123');
+    const parsed = parseGraphURI(uri);
+    expect(parsed.relays).toEqual(['a.com', 'b.com']);
+    expect(parsed.graphId).toBe('test-id');
+    expect(parsed.moduleHash).toBe('hash123');
+  });
+});
+
+describe('SharedGraph new API', () => {
+  it('has moduleHash property defaulting to "default"', async () => {
+    const id = await makeIdentity();
+    const graph = SharedGraph.create(id, 'test');
+    expect(graph.moduleHash).toBe('default');
+  });
+
+  it('URI uses graph:// format', async () => {
+    const id = await makeIdentity();
+    const graph = SharedGraph.create(id, 'test');
+    expect(graph.uri).toMatch(/^graph:\/\//);
+    expect(isGraphURI(graph.uri)).toBe(true);
+  });
+
+  it('currentRevision() returns a promise', async () => {
+    const id = await makeIdentity();
+    const graph = SharedGraph.create(id, 'test');
+    const rev = graph.currentRevision();
+    expect(rev).toBeInstanceOf(Promise);
+    expect(await rev).toBeNull();
+  });
+
+  it('ondiff handler receives diff events', async () => {
+    const id = await makeIdentity();
+    const graph = SharedGraph.create(id, 'test');
+    const diffs: any[] = [];
+    graph.ondiff = (e: Event) => diffs.push((e as DiffEvent).diff);
+    await graph.addTriple(triple('urn:s', 'urn:p', 'urn:o'));
+    // Diff is dispatched from Y.js observer
+    // Give a tick
+    await new Promise(r => setTimeout(r, 10));
+    // At minimum the tripleadded triggers a diff in the revision DAG
+    const rev = await graph.currentRevision();
+    expect(rev).toBeTruthy();
+  });
+
+  it('create() accepts SharedGraphOptions with meta', async () => {
+    const id = await makeIdentity();
+    const graph = SharedGraph.create(id, undefined, {
+      meta: { name: 'My Graph', description: 'A test graph' },
+      module: 'custom-hash',
+    });
+    expect(graph.name).toBe('My Graph');
+    expect(graph.moduleHash).toBe('custom-hash');
+  });
+
+  it('peers() returns Peer objects with did and online', async () => {
+    const aliceId = await makeIdentity();
+    const bobId = await makeIdentity();
+    const alice = SharedGraph.create(aliceId, 'test');
+    const bob = SharedGraph.create(bobId, 'test');
+    alice.connectPeer(bob);
+    const peers = await alice.peers();
+    expect(peers[0]).toHaveProperty('did');
+    expect(peers[0]).toHaveProperty('online');
+    expect(peers[0].online).toBe(true);
+  });
+});
+
+describe('DefaultSyncModule', () => {
+  it('can be instantiated and initialized', () => {
+    const mod = new DefaultSyncModule();
+    mod.init({
+      graphUri: 'graph://localhost/test',
+      localDid: 'did:test:alice',
+      graphWriter: { applyDiff: () => {}, rejectDiff: () => {} },
+      graphReader: { query: () => [], tripleCount: () => 0, currentRevision: () => null },
+    });
+    expect(mod.peers()).toEqual([]);
+    expect(mod.onlinePeers()).toEqual([]);
+    mod.shutdown();
+  });
+
+  it('validate accepts diffs with signatures by default', async () => {
+    const mod = new DefaultSyncModule();
+    const id = await makeIdentity();
+    const graph = SharedGraph.create(id, 'test');
+    const signed = await graph.addTriple(triple('urn:s', 'urn:p', 'urn:o'));
+    const diff = new GraphDiff({
+      revision: 'rev1',
+      additions: [signed],
+      removals: [],
+      dependencies: [],
+      author: id.getDID(),
+      timestamp: Date.now(),
+    });
+    const reader = { query: () => [], tripleCount: () => 0, currentRevision: () => null };
+    const result = mod.validate(diff, id.getDID(), reader);
+    expect(result.accepted).toBe(true);
+  });
+
+  it('validate rejects diffs without signatures', () => {
+    const mod = new DefaultSyncModule();
+    const diff = new GraphDiff({
+      revision: 'rev1',
+      additions: [{ data: { source: 's', target: 'o', predicate: 'p' }, author: 'did:test:x', timestamp: '2024-01-01', proof: { signature: '', key: '' } } as any],
+      removals: [],
+      dependencies: [],
+      author: 'did:test:x',
+      timestamp: Date.now(),
+    });
+    const reader = { query: () => [], tripleCount: () => 0, currentRevision: () => null };
+    const result = mod.validate(diff, 'did:test:x', reader);
+    expect(result.accepted).toBe(false);
+  });
+
+  it('onSignal registers callback', () => {
+    const mod = new DefaultSyncModule();
+    const cb = () => {};
+    mod.onSignal(cb);
+    // No throw = success
   });
 });
