@@ -8,10 +8,18 @@ export default defineConfig({
     baseURL: 'http://localhost:5173',
     headless: true,
   },
-  webServer: {
-    command: 'pnpm dev:test',
-    port: 5173,
-    reuseExistingServer: true,
-    timeout: 15000,
-  },
+  webServer: [
+    {
+      command: 'cd ../relay && npx tsx src/index.ts',
+      port: 4000,
+      reuseExistingServer: true,
+      timeout: 10000,
+    },
+    {
+      command: 'pnpm dev:test',
+      port: 5173,
+      reuseExistingServer: true,
+      timeout: 15000,
+    },
+  ],
 });
