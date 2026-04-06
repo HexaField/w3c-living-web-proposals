@@ -237,6 +237,10 @@ The session ID enables:
 - **Session handoff**: A user can start a voice call on one device and transfer it to another by targeting the new session.
 - **Cursor/selection tracking**: In collaborative editing, each tab has its own cursor position. The session ID distinguishes them.
 
+#### 4.4.1.1 Reconnection
+
+If a sync connection is interrupted and re-established within the same browsing context (tab/window), the user agent SHOULD reuse the same session ID. If the browsing context is destroyed and recreated (e.g., page reload), a new session ID MUST be generated.
+
 #### 4.4.2 Device Labels
 
 Peers MAY include an optional `deviceLabel` — a human-readable string identifying the device or context (e.g., "MacBook Pro", "iPhone", "Work Browser Tab 2"). This is provided by the user agent and is purely informational.
@@ -533,6 +537,14 @@ The user agent SHOULD provide a management interface for sync modules, analogous
 - Pause and resume individual modules
 - Remove modules (which disconnects from all graphs using that module)
 - View the capabilities granted to each module
+
+### 6.7 Module Availability
+
+The graph URI SHOULD include at least two content-addressable locations for the sync module (e.g., IPFS CID and HTTPS URL). If the primary location is unavailable, the user agent MUST attempt alternate locations before reporting failure.
+
+### 6.8 Module Upgrade Coordination
+
+When a graph's sync module is updated (new content hash), existing peers MUST be notified via a `MODULE_UPDATE` wire protocol message. Peers MUST NOT apply the update until a quorum (>50% of known peers) has acknowledged availability of the new module. During transition, peers running the old module and peers running the new module MUST NOT exchange diffs.
 
 ---
 
@@ -1345,6 +1357,18 @@ Tombstones (remove-set entries) accumulate over time. The default module SHOULD 
 3. Implementations SHOULD track peer sync state to determine when garbage collection is safe.
 4. As a conservative default, tombstones SHOULD be retained for at least 30 days.
 
+### 15.9 Scalar Property Conflicts
+
+When multiple concurrent operations set different values for the same scalar property (a predicate with `maxCount=1` in the shape definition), the OR-Set retains ALL values. Implementations MUST resolve scalar conflicts using a deterministic last-writer-wins (LWW) strategy: the triple with the lexicographically greatest `(timestamp, author-DID)` pair wins. The losing triple is tombstoned.
+
+### 15.10 Tombstone Garbage Collection
+
+Implementations SHOULD garbage-collect tombstones after all known peers have acknowledged the removal (i.e., all peers' current revision includes the removal diff's revision as an ancestor). Implementations MUST NOT garbage-collect tombstones while any known peer has not yet synced past the removal. Tombstones older than 30 days with no unsynced peers MAY be collected.
+
+### 15.11 Revision DAG Pruning
+
+Implementations MAY prune the revision DAG by compacting contiguous sequences of revisions into a single checkpoint revision, provided all peers have synced past the compacted range.
+
 ---
 
 ## 16. Governance Integration
@@ -1729,6 +1753,16 @@ Relay servers observe:
 - IP addresses of connecting peers
 
 Relay operators SHOULD minimise metadata retention. Relay operators SHOULD publish a privacy policy.
+
+Relay operators CANNOT observe diff content (encrypted by TLS). For sensitive use cases, implementations SHOULD use anonymization techniques (e.g., connecting via Tor, using ephemeral DIDs for relay authentication).
+
+### 21.4.1 Relay Availability
+
+Graph URIs SHOULD specify at least two relay endpoints for redundancy. If all specified relays are unavailable, the user agent MUST enter a "disconnected" sync state and attempt reconnection with exponential backoff.
+
+### 21.4.2 Relay Economics
+
+> NOTE: The economic model for relay operation is out of scope for this specification. Communities MAY operate their own relays, use public relays, or incentivize relay operation through application-layer mechanisms.
 
 ### 21.5 Module Fingerprinting
 

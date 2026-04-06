@@ -187,7 +187,15 @@ In this hierarchy:
 
 **Override semantics.** When a constraint of the same `constraint_kind` exists at multiple levels in the scope chain, the most-specific constraint (closest to the triple's source in the hierarchy) replaces — does not supplement — the less-specific constraint of the same kind. Constraints of different kinds always accumulate.
 
-### 4.3 Capability Constraints (ZCAP-based)
+### 4.3 Governance Bootstrap
+
+When a shared graph is created, the creating agent's DID is automatically established as the root authority. The root authority MUST be recorded as a triple: `<graph-did> -[governance://root_authority]→ <creator-did>`. The root authority has implicit capability for all predicates at all scopes. No explicit ZCAP is required for the root authority.
+
+### 4.4 Governance Constraint Conflicts
+
+When concurrent governance mutations create contradictory constraints (e.g., one constraint allows URLs while another blocks them), the constraint with the most specific scope takes precedence (per §5 Scope Resolution). If scopes are equal, the constraint added by the higher-authority agent takes precedence (lower ZCAP delegation depth). If authority is equal, the constraint with the lexicographically greater constraint ID persists and the other is marked superseded.
+
+### 4.5 Capability Constraints (ZCAP-based)
 
 A capability constraint requires triple authors to hold valid Authorization Capabilities [[ZCAP-LD]] before their triples are accepted.
 
@@ -297,7 +305,7 @@ Revocation of a capability invalidates the entire delegation chain below it. If 
 
 Revocation triples propagate via the sync protocol like any other triple. There is an inherent propagation delay — see [Section 12](#12-security-considerations).
 
-### 4.4 Credential Requirements
+### 4.6 Credential Requirements
 
 A credential constraint requires triple authors to hold specific Verifiable Credentials [[VC-DATA-MODEL-2.0]].
 
@@ -340,7 +348,7 @@ The governance engine resolves the expression to read the VC document and perfor
 5. The VC's `proof` is cryptographically valid
 6. The VC has not expired (if `expirationDate` is present)
 
-### 4.5 Temporal Constraints
+### 4.7 Temporal Constraints
 
 A temporal constraint limits the rate at which an agent can create matching triples within a scope.
 
@@ -377,7 +385,7 @@ Duration of the sliding time window in seconds. Default: `60`. Used only when `t
 
 Restricts this temporal constraint to triples with the listed predicates. If absent or empty, the constraint applies to all predicates within scope.
 
-### 4.6 Content Constraints
+### 4.8 Content Constraints
 
 A content constraint validates the textual or media content of triple targets.
 
@@ -428,7 +436,7 @@ Maximum character count of resolved text content. If the triple's target resolve
 
 **Target resolution.** If the triple's target is a literal string, it is used directly. If it is a content-addressed expression, the governance engine MUST resolve it to obtain text content and/or media type before evaluation.
 
-### 4.7 Default Capability
+### 4.9 Default Capability
 
 A **default capability** defines the authorization tokens that are automatically issued to agents joining the shared graph. It is not a constraint but a template stored in the graph.
 
@@ -445,7 +453,7 @@ A **default capability** defines the authorization tokens that are automatically
 
 When an agent joins a shared graph, the graph creator (or an agent with delegation authority) SHOULD issue a ZCAP matching each `DefaultCapability` template. The governance engine does not perform issuance — it reads these templates so that join-flow implementations know what capabilities to issue.
 
-### 4.8 Revocation List
+### 4.10 Revocation List
 
 Revocations are stored as triples in the graph:
 

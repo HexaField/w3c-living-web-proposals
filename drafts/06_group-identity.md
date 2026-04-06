@@ -674,6 +674,16 @@ A group's DID is backed by a keypair. The security of the group depends on the s
 
 Implementations MUST document their key management strategy. Implementations SHOULD support key rotation. Implementations MAY support threshold signatures.
 
+Group DID key management MUST use one of the following strategies, declared in the group's metadata:
+
+1. **Designated holder:** One member holds the private key and signs on behalf of the group. If the holder leaves, they MUST transfer the key to another member before departure.
+2. **Threshold signatures:** The group's private key is split among N members using Shamir's Secret Sharing or a threshold signature scheme. K-of-N members must cooperate to sign.
+3. **Rotatable keys:** The group DID supports key rotation via DID Document updates. Any member with `manage_group` capability can trigger rotation.
+
+### 9.1.1 Abandoned Groups
+
+A group with zero members is considered abandoned. Abandoned groups MUST retain their DID and graph data on any peer that still holds a copy. Any agent MAY re-claim an abandoned group by joining its shared graph and adding themselves as a member, provided the sync module accepts the join. The re-claiming agent becomes the new root authority.
+
 ### 9.2 Membership Spoofing
 
 Only members with the `manage_members` governance capability can add members. The sync protocol enforces this at the consensus layer — a `group://has_member` triple submitted by an unauthorised agent is rejected by all peers.

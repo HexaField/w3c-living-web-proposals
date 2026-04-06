@@ -349,11 +349,29 @@ PersonalGraph data MUST persist across browsing sessions. Implementations SHOULD
 
 Graph data MUST survive normal browser restarts. Graph data SHOULD survive "clear browsing data" only if the user explicitly opts to preserve it (analogous to persistent storage via `navigator.storage.persist()`).
 
-### 6.2 Origin Isolation
+### 6.2 Eviction Policy
+
+When storage quota is exceeded, the user agent SHOULD prompt the user before evicting graph data. Graphs marked as persistent (via the Storage API's `persist()` method) MUST NOT be evicted without user consent.
+
+### 6.3 Export Format
+
+The `snapshot()` method MAY accept an optional `format` parameter. Conforming implementations SHOULD support at least N-Triples (`application/n-triples`) and JSON-LD (`application/ld+json`) serialization for interoperability.
+
+```webidl
+partial interface PersonalGraph {
+  [NewObject] Promise<Blob> snapshot(optional DOMString format);
+};
+```
+
+### 6.4 Crash Recovery
+
+User agents MUST use transactional storage for graph mutations. If a mutation is interrupted (e.g., by a crash), the graph MUST be restored to the state before the interrupted mutation.
+
+### 6.5 Origin Isolation
 
 By default, a PersonalGraph is scoped to its creating origin. Scripts from other origins MUST NOT access the graph.
 
-### 6.3 Cross-Origin Sharing
+### 6.6 Cross-Origin Sharing
 
 A user MAY grant another origin read or write access to a PersonalGraph. Cross-origin sharing MUST require an explicit user gesture and a browser-mediated permission prompt.
 
