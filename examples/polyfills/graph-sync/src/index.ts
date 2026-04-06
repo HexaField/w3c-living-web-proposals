@@ -19,7 +19,9 @@ export type {
 } from './types.js';
 export type { ParsedGraphURI } from './graph-uri.js';
 export type { GraphSyncModule, ModuleConfig, GraphReader, GraphWriter } from './default-sync-module.js';
-export { DefaultModuleLoader, contentHash } from './module-loader.js';
+export { DefaultModuleLoader, contentHash, contentHashBytes } from './module-loader.js';
 export type { SyncModuleLoader } from './module-loader.js';
+export { WasmSyncModuleAdapter } from './wasm-module-adapter.js';
+export type { WasmSyncModuleInstance } from './wasm-module-adapter.js';
 export { registerSyncWorker } from './sw-sync.js';
 export type { SyncWorkerOptions, SyncWorkerHandle } from './sw-sync.js';
