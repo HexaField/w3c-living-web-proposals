@@ -22,7 +22,7 @@ if (typeof navigator !== 'undefined' && 'graph' in navigator && (navigator as an
   // 2. Identity — extends navigator.credentials with DID support
   installIdentity();
 
-  // 3. Shape Validation — extends PersonalGraph with defineShape/construct
+  // 3. Shape Validation — extends PersonalGraph with addShape/construct
   installShapeExtension(PersonalGraph);
 
   // 4. Graph Sync — extends navigator.graph with join/share/listShared

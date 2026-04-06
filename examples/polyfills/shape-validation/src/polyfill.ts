@@ -5,8 +5,8 @@
 import { PersonalGraph } from '@living-web/personal-graph';
 import { installShapeExtension } from './extension.js';
 
-// Feature detect: check if defineShape already exists on the prototype
-if (typeof (PersonalGraph.prototype as any).defineShape !== 'function') {
+// Feature detect: check if addShape already exists on the prototype
+if (typeof (PersonalGraph.prototype as any).addShape !== 'function') {
   installShapeExtension(PersonalGraph);
   console.info('[living-web] Shape validation polyfill installed (no native support detected)');
 } else {

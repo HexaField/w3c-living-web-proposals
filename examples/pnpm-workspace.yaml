@@ -3,3 +3,4 @@ packages:
   - 'demos/*'
   - 'extension'
   - 'e2e'
+  - 'relay'

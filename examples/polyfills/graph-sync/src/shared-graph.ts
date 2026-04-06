@@ -65,6 +65,10 @@ export class SharedGraph extends EventTarget {
   private _instanceId: string;
   private _applyingRemote = false;
 
+  // WebSocket relay for cross-device sync
+  private _ws: WebSocket | null = null;
+  private _wsReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
   constructor(
     uri: string,
     doc: Y.Doc,
@@ -88,11 +92,9 @@ export class SharedGraph extends EventTarget {
       this._channel.onmessage = (event: MessageEvent) => {
         if (event.data.origin === this._instanceId) return;
         const msg = event.data;
-        if (msg.type === 'DIFF') {
+        if (msg.type === 'YDOC_UPDATE' && msg.update) {
           this._applyingRemote = true;
-          if (msg.update) {
-            Y.applyUpdate(this._bridge.doc, new Uint8Array(msg.update));
-          }
+          Y.applyUpdate(this._bridge.doc, new Uint8Array(msg.update));
           this._applyingRemote = false;
         }
       };
@@ -100,17 +102,22 @@ export class SharedGraph extends EventTarget {
       // Broadcast local Y.js updates to other tabs using wire protocol format
       this._bridge.doc.on('update', (update: Uint8Array, origin: any) => {
         if (this._applyingRemote) return;
-        this._channel?.postMessage({
-          type: 'DIFF',
-          revision: this._currentRevision ?? '',
-          additions: [],
-          removals: [],
-          dependencies: this._currentRevision ? [this._currentRevision] : [],
+        const msg = {
+          type: 'YDOC_UPDATE',
           update: Array.from(update),
           origin: this._instanceId,
-        });
+        };
+        // Send to same-origin tabs via BroadcastChannel
+        this._channel?.postMessage(msg);
+        // Send to remote peers via WebSocket relay
+        if (this._ws && this._ws.readyState === WebSocket.OPEN) {
+          this._ws.send(JSON.stringify(msg));
+        }
       });
     }
+
+    // Connect to WebSocket relay if URI specifies one
+    this._connectToRelay();
 
     // Listen for remote changes from Y.js and update local triple store
     this._bridge.setOnRemoteChange((additions, removals) => {
@@ -385,6 +392,7 @@ export class SharedGraph extends EventTarget {
 
     this._setSyncState('idle');
     this._destroyed = true;
+    this._disconnectRelay();
 
     if (!retain) {
       this._triples = [];
@@ -393,6 +401,88 @@ export class SharedGraph extends EventTarget {
     }
 
     this._bridge.destroy();
+  }
+
+  // --- WebSocket Relay Connection ---
+
+  private _connectToRelay(): void {
+    // Only connect in browser environments (not Node.js/test environments)
+    if (typeof window === 'undefined') return;
+
+    let parsed: { relays: string[]; graphId: string };
+    try {
+      parsed = parseGraphURI(this.uri);
+    } catch {
+      return; // Not a valid graph URI — skip relay
+    }
+
+    if (!parsed.relays.length) return;
+
+    // Use first relay endpoint
+    const relay = parsed.relays[0];
+    // Determine protocol — if relay includes a port or is localhost, use ws://
+    const protocol = relay.match(/^(localhost|127\.|0\.)/) ? 'ws' : 'wss';
+    const wsUrl = `${protocol}://${relay}/graph/${encodeURIComponent(parsed.graphId)}`;
+
+    try {
+      const ws = new WebSocket(wsUrl);
+      this._ws = ws;
+      this._setSyncState('connecting');
+
+      ws.onopen = () => {
+        console.log(`[shared-graph] connected to relay ${wsUrl}`);
+        this._setSyncState('synced');
+
+        // Send full Y.Doc state for catch-up
+        const state = Y.encodeStateAsUpdate(this._bridge.doc);
+        ws.send(JSON.stringify({
+          type: 'YDOC_UPDATE',
+          update: Array.from(state),
+          origin: this._instanceId,
+        }));
+      };
+
+      ws.onmessage = (event: MessageEvent) => {
+        try {
+          const msg = JSON.parse(typeof event.data === 'string' ? event.data : new TextDecoder().decode(event.data));
+          if (msg.origin === this._instanceId) return;
+
+          if (msg.type === 'YDOC_UPDATE' && msg.update) {
+            this._applyingRemote = true;
+            Y.applyUpdate(this._bridge.doc, new Uint8Array(msg.update));
+            this._applyingRemote = false;
+          }
+        } catch (err) {
+          console.warn('[shared-graph] failed to parse relay message:', err);
+        }
+      };
+
+      ws.onclose = () => {
+        this._ws = null;
+        if (!this._destroyed) {
+          // Reconnect after 2 seconds
+          this._wsReconnectTimer = setTimeout(() => this._connectToRelay(), 2000);
+        }
+      };
+
+      ws.onerror = () => {
+        // Error will trigger onclose — no extra handling needed
+      };
+    } catch {
+      // WebSocket constructor failed (e.g., invalid URL) — silently skip
+    }
+  }
+
+  private _disconnectRelay(): void {
+    if (this._wsReconnectTimer) {
+      clearTimeout(this._wsReconnectTimer);
+      this._wsReconnectTimer = null;
+    }
+    if (this._ws) {
+      this._ws.onclose = null; // Prevent reconnect
+      this._ws.close();
+      this._ws = null;
+    }
   }
 
   // --- Internal ---
