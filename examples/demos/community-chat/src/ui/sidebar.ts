@@ -18,6 +18,21 @@ export function renderSidebar(container: HTMLElement, state: AppState): void {
   nameSpan.textContent = state.communityName;
   header.appendChild(nameSpan);
 
+  // Show group DID (Spec 06)
+  if (state.groupDid) {
+    const didEl = document.createElement('div');
+    didEl.className = 'group-did';
+    didEl.textContent = state.groupDid;
+    didEl.title = `Group DID: ${state.groupDid}`;
+    didEl.style.cssText = 'font-size:10px;color:#72767d;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;padding:0 8px;';
+    didEl.addEventListener('click', () => {
+      navigator.clipboard?.writeText(state.groupDid);
+      didEl.textContent = 'Copied!';
+      setTimeout(() => { didEl.textContent = state.groupDid; }, 1500);
+    });
+    header.appendChild(didEl);
+  }
+
   if (state.isOwner) {
     const settingsBtn = document.createElement('button');
     settingsBtn.className = 'settings-btn';

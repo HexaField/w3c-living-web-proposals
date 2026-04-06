@@ -17,6 +17,7 @@
     "@living-web/identity": "workspace:*",
     "@living-web/graph-sync": "workspace:*",
     "@living-web/shape-validation": "workspace:*",
-    "@living-web/governance": "workspace:*"
+    "@living-web/governance": "workspace:*",
+    "@living-web/group-identity": "workspace:*"
   }
 }

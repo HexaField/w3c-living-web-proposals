@@ -7,6 +7,7 @@ import { SharedGraph, SharedGraphManager } from '@living-web/graph-sync';
 import { installShapeExtension } from '@living-web/shape-validation';
 import { PersonalGraph, SemanticTriple } from '@living-web/personal-graph';
 import type { IdentityProvider } from '@living-web/personal-graph';
+import { GroupManager, DefaultGroupRegistry, type Group } from '@living-web/group-identity';
 import {
   CommunityShape, ChannelShape, MessageShape, RoleShape, MemberShape,
   PREDICATES,
@@ -50,10 +51,13 @@ export interface AppState {
   did: string;
   displayName: string;
   graph: SharedGraph;
+  group: Group | null;       // The community Group (Spec 06)
+  groupDid: string;          // The community's group DID
   communityId: string;
   communityName: string;
   channels: { id: string; name: string }[];
   roles: { id: string; name: string; color: string; position: number }[];
+  roleGroups: Map<string, Group>; // role name -> sub-group
   members: { id: string; did: string; name: string; roleIds: string[] }[];
   messages: Map<string, ChatMessage[]>; // channelId -> messages
   governance: GovernanceState;
@@ -88,8 +92,11 @@ export async function createCommunity(
   identity: IdentityProvider,
   did: string,
 ): Promise<AppState> {
-  const manager = new SharedGraphManager(identity);
-  const graph = await manager.share(communityName);
+  // Create a Group for the community (Spec 06)
+  const registry = new DefaultGroupRegistry();
+  const groupMgr = new GroupManager(identity, registry);
+  const communityGroup = await groupMgr.createGroup({ name: communityName, description: `Community: ${communityName}` });
+  const graph = communityGroup.graph;
   const g = graph as any;
 
   // Register shapes
@@ -103,8 +110,9 @@ export async function createCommunity(
   const communityId = `community:${crypto.randomUUID()}`;
   await g.createShapeInstance('Community', communityId, { name: communityName });
 
-  // Create roles
+  // Create roles — each role is a sub-group of the community (Spec 06 holonic nesting)
   const roles: AppState['roles'] = [];
+  const roleGroupsMap = new Map<string, Group>();
   for (const [name, color, pos] of [
     ['Owner', '#f0b232', '100'],
     ['Admin', '#e74c3c', '80'],
@@ -114,6 +122,12 @@ export async function createCommunity(
     const roleId = `role:${crypto.randomUUID()}`;
     await g.createShapeInstance('Role', roleId, { name, color, position: pos });
     await graph.addTriple(new SemanticTriple(communityId, roleId, PREDICATES.HAS_CHILD));
+
+    // Create a sub-group for this role
+    const roleGroup = await groupMgr.createGroup({ name: `${communityName}/${name}` });
+    await communityGroup.addMember(roleGroup.did); // holonic nesting
+    roleGroupsMap.set(name, roleGroup);
+
     roles.push({ id: roleId, name, color, position: Number(pos) });
   }
 
@@ -128,14 +142,21 @@ export async function createCommunity(
   await graph.addTriple(new SemanticTriple(communityId, memberId, PREDICATES.HAS_CHILD));
   await graph.addTriple(new SemanticTriple(memberId, roles[0].id, PREDICATES.HAS_ROLE));
 
+  // Add owner to the Owner role sub-group
+  const ownerRoleGroup = roleGroupsMap.get('Owner');
+  if (ownerRoleGroup) await ownerRoleGroup.addMember(did);
+
   const governance = setupGovernance(graph, did);
   const bc = new BroadcastChannel(SYNC_CHANNEL);
 
   const state: AppState = {
     did, displayName, graph,
+    group: communityGroup,
+    groupDid: communityGroup.did,
     communityId, communityName,
     channels: [{ id: generalId, name: 'general' }],
     roles,
+    roleGroups: roleGroupsMap,
     members: [{ id: memberId, did, name: displayName, roleIds: [roles[0].id] }],
     messages: new Map([[generalId, []]]),
     governance,
@@ -172,10 +193,14 @@ export async function joinCommunity(
       const governance = setupGovernance(graph, did);
       resolve({
         did, displayName, graph,
+        group: null,
+        groupDid: '',
         communityId: `community:fallback`,
         communityName: 'Community',
         channels: [{ id: `channel:general`, name: 'general' }],
-        roles: [], members: [{ id: `member:${crypto.randomUUID()}`, did, name: displayName, roleIds: [] }],
+        roles: [],
+        roleGroups: new Map(),
+        members: [{ id: `member:${crypto.randomUUID()}`, did, name: displayName, roleIds: [] }],
         messages: new Map([[`channel:general`, []]]),
         governance, isOwner: false, bc, identity,
         governanceLogs: [],
@@ -226,10 +251,13 @@ export async function joinCommunity(
 
         const state: AppState = {
           did, displayName, graph,
+          group: null, // Joined groups don't have local Group object yet
+          groupDid: data.groupDid || '',
           communityId: data.communityId,
           communityName: data.communityName,
           channels: data.channels,
           roles: data.roles,
+          roleGroups: new Map(),
           members: [...data.members],
           messages,
           governance, isOwner: false, bc, identity,
@@ -282,6 +310,7 @@ function setupCrossTabSync(state: AppState): void {
         type: 'sync-response',
         graphUri: graph.uri,
         ownerDid: state.did,
+        groupDid: state.groupDid,
         communityId: state.communityId,
         communityName: state.communityName,
         channels: state.channels,

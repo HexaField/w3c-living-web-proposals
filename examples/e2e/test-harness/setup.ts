@@ -40,5 +40,9 @@ import { DIDIdentityProvider } from '@living-web/identity';
   return { cred, provider, did: cred.did };
 };
 
+// 06 — Group Identity
+import { GroupManager, DefaultGroupRegistry, Group, GROUP, RDF } from '@living-web/group-identity';
+(window as any).__GroupIdentity = { GroupManager, DefaultGroupRegistry, Group, GROUP, RDF };
+
 document.getElementById('status')!.textContent = 'ready';
 console.log('[test-harness] All polyfills loaded');
