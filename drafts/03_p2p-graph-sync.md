@@ -217,9 +217,43 @@ The canonicalisation algorithm for triples MUST produce a deterministic byte rep
 
 ### 4.4 Peer
 
-A Peer is an agent participating in the synchronisation of a SharedGraph. Each peer is identified by a Decentralised Identifier (DID) [[DID-CORE]].
+A Peer is an agent participating in the synchronisation of a SharedGraph. A single agent (identified by a DID) MAY have multiple concurrent sessions — for example, multiple browser tabs on the same device, or sessions across different devices. Each session is a distinct peer.
+
+A peer is identified by the combination of:
+- **DID**: The agent's Decentralised Identifier [[DID-CORE]], representing the user's identity.
+- **Session ID**: A unique, randomly generated identifier for this specific session (tab, device, or context). The session ID MUST be generated using a cryptographically secure random source and MUST contain at least 128 bits of entropy.
+
+Two peers with the same DID but different session IDs represent the same user on different tabs or devices. Two peers with different DIDs are different users.
 
 A peer's DID MUST be resolvable to a DID Document containing at least one verification method suitable for digital signatures.
+
+#### 4.4.1 Session Identity
+
+When a user opens a shared graph in a new tab or on a new device, the browser MUST generate a new session ID for that context. The session ID is ephemeral — it does not persist across page reloads or browser restarts.
+
+The session ID enables:
+- **Targeted signalling**: Send a signal to a specific tab or device, not just a user. For example, sending a WebRTC offer to the user's laptop session specifically, not their phone.
+- **Presence granularity**: Show which devices a user is active on. "Alice is on her laptop and phone."
+- **Session handoff**: A user can start a voice call on one device and transfer it to another by targeting the new session.
+- **Cursor/selection tracking**: In collaborative editing, each tab has its own cursor position. The session ID distinguishes them.
+
+#### 4.4.2 Device Labels
+
+Peers MAY include an optional `deviceLabel` — a human-readable string identifying the device or context (e.g., "MacBook Pro", "iPhone", "Work Browser Tab 2"). This is provided by the user agent and is purely informational.
+
+#### 4.4.3 Peer Equality
+
+Two peers are **the same peer** if and only if both their DID and session ID are identical. Two peers with the same DID but different session IDs are **the same user on different sessions**. Implementations MUST treat them as distinct peers for the purposes of sync, signalling, and presence, but MAY group them for display purposes (e.g., showing "Alice (2 devices)" instead of two separate entries).
+
+#### 4.4.4 Signal Targeting
+
+The `sendSignal(remoteDid, payload)` method targets ALL sessions of the specified DID. To target a specific session, use `sendSignalToSession(remoteDid, sessionId, payload)`:
+
+```webidl
+Promise<undefined> sendSignalToSession(USVString remoteDid, USVString sessionId, BufferSource payload);
+```
+
+This is critical for WebRTC negotiation, where the offer must reach a specific device, and for session handoff scenarios.
 
 ### 4.5 Graph URI
 
@@ -332,6 +366,7 @@ interface SharedGraph : PersonalGraph {
   [NewObject] Promise<USVString> currentRevision();
 
   Promise<undefined> sendSignal(USVString remoteDid, BufferSource payload);
+  Promise<undefined> sendSignalToSession(USVString remoteDid, USVString sessionId, BufferSource payload);
   Promise<undefined> broadcast(BufferSource payload);
 
   attribute EventHandler onpeerjoined;
@@ -343,7 +378,9 @@ interface SharedGraph : PersonalGraph {
 
 dictionary Peer {
   USVString did;
+  USVString sessionId;
   USVString? publicKey;
+  USVString? deviceLabel;
   DOMTimeStamp? lastSeen;
   boolean online;
 };
@@ -1002,10 +1039,14 @@ SIGNAL {
 PEER_JOIN {
   type: 0x05,
   did: string,                   // DID of the joining peer
+  sessionId: string,             // Unique session identifier (tab/device)
   publicKey: bytes(32),          // Ed25519 public key
+  deviceLabel: string?,          // Optional human-readable device label
   timestamp: uint64              // Join timestamp
 }
 ```
+
+A single DID MAY have multiple concurrent PEER_JOIN messages with different session IDs. Each represents a distinct session (tab or device) for the same user.
 
 #### 11.3.6 PEER_LEAVE
 
@@ -1013,6 +1054,7 @@ PEER_JOIN {
 PEER_LEAVE {
   type: 0x06,
   did: string,                   // DID of the departing peer
+  sessionId: string,             // Session that is leaving
   timestamp: uint64              // Leave timestamp
 }
 ```
