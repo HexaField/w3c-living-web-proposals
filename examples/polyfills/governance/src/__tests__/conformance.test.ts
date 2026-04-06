@@ -34,7 +34,7 @@ const ROOT_DID = 'did:key:z6MkRootAuthority';
 const AGENT_A = 'did:key:z6MkAgentA';
 const AGENT_B = 'did:key:z6MkAgentB';
 const AGENT_C = 'did:key:z6MkAgentC';
-const GRAPH_URI = 'shared-graph://test-graph';
+const GRAPH_URI = 'graph://localhost/test-graph?module=default';
 
 interface TripleStore {
   triples: TripleRecord[];

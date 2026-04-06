@@ -86,7 +86,7 @@ describe('Full-stack integration: PersonalGraph → Identity → Shapes → Sync
 
     // ── 4. Share the graph (creates SharedGraph) ──
     const sharedGraph = SharedGraph.create(aliceIdentity, 'shared-tasks');
-    expect(sharedGraph.uri).toMatch(/^shared-graph:\/\//);
+    expect(sharedGraph.uri).toMatch(/^graph:\/\//);
 
     // Add some triples to the shared graph
     const triple = new SemanticTriple('task:001', 'Done', 'schema:actionStatus');
