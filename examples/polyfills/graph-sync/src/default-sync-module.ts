@@ -402,8 +402,10 @@ export class DefaultSyncModule implements GraphSyncModule {
   }
 
   private _handlePeerJoin(msg: PeerJoinMessage): void {
-    this._peers.set(msg.did, {
+    const key = msg.sessionId ?? msg.did;
+    this._peers.set(key, {
       did: msg.did,
+      sessionId: msg.sessionId ?? msg.did,
       publicKey: msg.publicKey,
       lastSeen: msg.timestamp,
       online: true,

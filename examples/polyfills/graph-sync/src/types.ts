@@ -6,6 +6,8 @@ export type SyncState = 'idle' | 'connecting' | 'syncing' | 'synced' | 'error';
 // --- Peer (§5.2) ---
 export interface Peer {
   readonly did: string;
+  readonly sessionId: string;
+  readonly deviceLabel?: string;
   readonly publicKey?: string;
   readonly lastSeen?: number;
   readonly online: boolean;
@@ -164,12 +166,15 @@ export interface SignalMessage extends WireMessage {
   type: typeof MSG_SIGNAL;
   senderDid: string;
   recipientDid: string;
+  recipientSessionId?: string;
   payload: any;
 }
 
 export interface PeerJoinMessage extends WireMessage {
   type: typeof MSG_PEER_JOIN;
   did: string;
+  sessionId: string;
+  deviceLabel?: string;
   publicKey: string;
   timestamp: number;
 }

@@ -234,7 +234,7 @@ describe('P2P Graph Sync — Conformance Tests', () => {
       const bob = SharedGraph.create(bobId, 'test');
       alice.connectPeer(bob);
       const stateChange = waitForEvent<SyncStateChangeEvent>(alice, 'syncstatechange');
-      alice.disconnectPeer(bobId.getDID());
+      alice.disconnectPeer(bob.sessionId);
       const evt = await stateChange;
       expect(evt.state).toBe('idle');
     });
@@ -495,7 +495,7 @@ describe('P2P Graph Sync — Conformance Tests', () => {
       const bob = SharedGraph.create(bobId, 'test');
       alice.connectPeer(bob);
       const peerLeft = waitForEvent<PeerEvent>(alice, 'peerleft');
-      alice.disconnectPeer(bobId.getDID());
+      alice.disconnectPeer(bob.sessionId);
       const evt = await peerLeft;
       expect(evt.did).toBe(bobId.getDID());
     });
@@ -826,5 +826,67 @@ describe('DefaultSyncModule', () => {
     const cb = () => {};
     mod.onSignal(cb);
     // No throw = success
+  });
+});
+
+describe('Session Identity (multi-tab peers)', () => {
+  let aliceId: EphemeralIdentity;
+
+  beforeEach(async () => {
+    aliceId = await makeIdentity();
+  });
+
+  it('two SharedGraph instances with same DID have different sessionIds', () => {
+    const g1 = SharedGraph.create(aliceId, 'test');
+    const g2 = SharedGraph.create(aliceId, 'test');
+    expect(g1.sessionId).toBeTruthy();
+    expect(g2.sessionId).toBeTruthy();
+    expect(g1.sessionId).not.toBe(g2.sessionId);
+  });
+
+  it('peers() shows same DID with different sessionIds for multi-tab', async () => {
+    const bobId = await makeIdentity();
+    // Two "tabs" from alice
+    const aliceTab1 = SharedGraph.create(aliceId, 'test');
+    const aliceTab2 = SharedGraph.create(aliceId, 'test');
+    const bob = SharedGraph.create(bobId, 'test');
+
+    bob.connectPeer(aliceTab1);
+    bob.connectPeer(aliceTab2);
+
+    const peers = await bob.peers();
+    expect(peers.length).toBe(2);
+    // Both should be alice's DID
+    expect(peers[0].did).toBe(aliceId.getDID());
+    expect(peers[1].did).toBe(aliceId.getDID());
+    // But different sessionIds
+    expect(peers[0].sessionId).not.toBe(peers[1].sessionId);
+  });
+
+  it('sendSignalToSession delivers only to the targeted session', async () => {
+    const bobId = await makeIdentity();
+    const aliceTab1 = SharedGraph.create(aliceId, 'test');
+    const aliceTab2 = SharedGraph.create(aliceId, 'test');
+    const bob = SharedGraph.create(bobId, 'test');
+
+    bob.connectPeer(aliceTab1);
+    bob.connectPeer(aliceTab2);
+
+    const received1: any[] = [];
+    const received2: any[] = [];
+    aliceTab1.addEventListener('signal', (e: Event) => received1.push((e as SignalEvent).payload));
+    aliceTab2.addEventListener('signal', (e: Event) => received2.push((e as SignalEvent).payload));
+
+    // Send only to tab1
+    await bob.sendSignalToSession(aliceId.getDID(), aliceTab1.sessionId, { msg: 'hello tab1' });
+
+    expect(received1).toEqual([{ msg: 'hello tab1' }]);
+    expect(received2).toEqual([]);
+
+    // Send only to tab2
+    await bob.sendSignalToSession(aliceId.getDID(), aliceTab2.sessionId, { msg: 'hello tab2' });
+
+    expect(received2).toEqual([{ msg: 'hello tab2' }]);
+    expect(received1).toEqual([{ msg: 'hello tab1' }]); // unchanged
   });
 });

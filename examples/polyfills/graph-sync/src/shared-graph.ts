@@ -37,7 +37,7 @@ export class SharedGraph extends EventTarget {
   readonly uri: string;
   readonly moduleHash: string;
   private _syncState: SyncState = 'idle';
-  private _peers = new Map<string, { lastSeen: number }>();
+  private _peers = new Map<string, { did: string; sessionId: string; deviceLabel?: string; lastSeen: number }>();
   private _bridge: YjsBridge;
   private _identity: IdentityProvider;
   private _triples: SignedTriple[] = [];
@@ -54,7 +54,7 @@ export class SharedGraph extends EventTarget {
   private _onsignal: EventHandler = null;
   private _ondiff: EventHandler = null;
 
-  // Connected peers' SharedGraph instances (for direct sync)
+  // Connected peers' SharedGraph instances (for direct sync), keyed by sessionId
   private _connectedPeers = new Map<string, SharedGraph>();
 
   // Signals pending delivery (for direct peer connections)
@@ -62,7 +62,8 @@ export class SharedGraph extends EventTarget {
 
   // BroadcastChannel relay for multi-tab Y.js sync
   private _channel: BroadcastChannel | null = null;
-  private _instanceId: string;
+  private _sessionId: string;
+  private _deviceLabel: string | undefined;
   private _applyingRemote = false;
 
   // WebSocket relay for cross-device sync
@@ -73,7 +74,7 @@ export class SharedGraph extends EventTarget {
     uri: string,
     doc: Y.Doc,
     identity: IdentityProvider,
-    opts?: { name?: string; description?: string; moduleHash?: string }
+    opts?: { name?: string; description?: string; moduleHash?: string; deviceLabel?: string }
   ) {
     super();
     this.uri = uri;
@@ -81,8 +82,9 @@ export class SharedGraph extends EventTarget {
     this._identity = identity;
     this._name = opts?.name;
     this._description = opts?.description;
+    this._deviceLabel = opts?.deviceLabel;
     this._bridge = new YjsBridge(doc);
-    this._instanceId = typeof crypto !== 'undefined' && crypto.randomUUID
+    this._sessionId = typeof crypto !== 'undefined' && crypto.randomUUID
       ? crypto.randomUUID()
       : uuidv4();
 
@@ -90,7 +92,7 @@ export class SharedGraph extends EventTarget {
     if (typeof BroadcastChannel !== 'undefined') {
       this._channel = new BroadcastChannel(`living-web-shared-graph-${this.uri}`);
       this._channel.onmessage = (event: MessageEvent) => {
-        if (event.data.origin === this._instanceId) return;
+        if (event.data.origin === this._sessionId) return;
         const msg = event.data;
         if (msg.type === 'YDOC_UPDATE' && msg.update) {
           this._applyingRemote = true;
@@ -105,7 +107,7 @@ export class SharedGraph extends EventTarget {
         const msg = {
           type: 'YDOC_UPDATE',
           update: Array.from(update),
-          origin: this._instanceId,
+          origin: this._sessionId,
         };
         // Send to same-origin tabs via BroadcastChannel
         this._channel?.postMessage(msg);
@@ -282,32 +284,49 @@ export class SharedGraph extends EventTarget {
 
   // --- Sync-specific operations ---
 
+  get sessionId(): string {
+    return this._sessionId;
+  }
+
   async peers(): Promise<Peer[]> {
-    return Array.from(this._peers.entries()).map(([did, info]) => ({
-      did,
+    return Array.from(this._peers.values()).map((info) => ({
+      did: info.did,
+      sessionId: info.sessionId,
+      deviceLabel: info.deviceLabel,
       lastSeen: info.lastSeen,
       online: true,
     }));
   }
 
   async onlinePeers(): Promise<Peer[]> {
-    return Array.from(this._peers.entries()).map(([did, info]) => ({
-      did,
+    return Array.from(this._peers.values()).map((info) => ({
+      did: info.did,
+      sessionId: info.sessionId,
+      deviceLabel: info.deviceLabel,
       lastSeen: info.lastSeen,
       online: true,
     }));
   }
 
   async sendSignal(remoteDid: string, payload: any): Promise<void> {
-    const peer = this._connectedPeers.get(remoteDid);
-    if (peer) {
+    // Send to all sessions of the given DID
+    for (const [sessionId, peer] of this._connectedPeers) {
+      if (peer._identity.getDID() === remoteDid) {
+        peer.dispatchEvent(new SignalEvent(this._identity.getDID(), payload));
+      }
+    }
+  }
+
+  async sendSignalToSession(remoteDid: string, sessionId: string, payload: any): Promise<void> {
+    const peer = this._connectedPeers.get(sessionId);
+    if (peer && peer._identity.getDID() === remoteDid) {
       peer.dispatchEvent(new SignalEvent(this._identity.getDID(), payload));
     }
   }
 
   async broadcast(payload: any): Promise<void> {
     const myDid = this._identity.getDID();
-    for (const [_did, peer] of this._connectedPeers) {
+    for (const [_sessionId, peer] of this._connectedPeers) {
       peer.dispatchEvent(new SignalEvent(myDid, payload));
     }
   }
@@ -328,14 +347,16 @@ export class SharedGraph extends EventTarget {
    */
   connectPeer(peer: SharedGraph): void {
     const peerDid = peer._identity.getDID();
+    const peerSessionId = peer._sessionId;
     const myDid = this._identity.getDID();
+    const mySessionId = this._sessionId;
 
-    if (this._connectedPeers.has(peerDid)) return;
+    if (this._connectedPeers.has(peerSessionId)) return;
 
-    this._connectedPeers.set(peerDid, peer);
-    this._peers.set(peerDid, { lastSeen: Date.now() });
-    peer._connectedPeers.set(myDid, this);
-    peer._peers.set(myDid, { lastSeen: Date.now() });
+    this._connectedPeers.set(peerSessionId, peer);
+    this._peers.set(peerSessionId, { did: peerDid, sessionId: peerSessionId, deviceLabel: peer._deviceLabel, lastSeen: Date.now() });
+    peer._connectedPeers.set(mySessionId, this);
+    peer._peers.set(mySessionId, { did: myDid, sessionId: mySessionId, deviceLabel: this._deviceLabel, lastSeen: Date.now() });
 
     // Initial sync — exchange Y.Doc state
     const myState = Y.encodeStateAsUpdate(this._bridge.doc);
@@ -365,18 +386,19 @@ export class SharedGraph extends EventTarget {
     peer.dispatchEvent(new PeerEvent('peerjoined', myDid));
   }
 
-  disconnectPeer(peerDid: string): void {
-    const peer = this._connectedPeers.get(peerDid);
+  disconnectPeer(peerSessionId: string): void {
+    const peer = this._connectedPeers.get(peerSessionId);
     if (!peer) return;
-    const myDid = this._identity.getDID();
+    const peerDid = peer._identity.getDID();
+    const mySessionId = this._sessionId;
 
-    this._connectedPeers.delete(peerDid);
-    this._peers.delete(peerDid);
-    peer._connectedPeers.delete(myDid);
-    peer._peers.delete(myDid);
+    this._connectedPeers.delete(peerSessionId);
+    this._peers.delete(peerSessionId);
+    peer._connectedPeers.delete(mySessionId);
+    peer._peers.delete(mySessionId);
 
     this.dispatchEvent(new PeerEvent('peerleft', peerDid));
-    peer.dispatchEvent(new PeerEvent('peerleft', myDid));
+    peer.dispatchEvent(new PeerEvent('peerleft', this._identity.getDID()));
 
     if (this._connectedPeers.size === 0) this._setSyncState('idle');
     if (peer._connectedPeers.size === 0) peer._setSyncState('idle');
@@ -386,8 +408,8 @@ export class SharedGraph extends EventTarget {
     const retain = opts?.retainLocalCopy ?? true;
 
     // Disconnect all peers
-    for (const [did] of this._connectedPeers) {
-      this.disconnectPeer(did);
+    for (const [sessionId] of this._connectedPeers) {
+      this.disconnectPeer(sessionId);
     }
 
     this._setSyncState('idle');
@@ -438,14 +460,14 @@ export class SharedGraph extends EventTarget {
         ws.send(JSON.stringify({
           type: 'YDOC_UPDATE',
           update: Array.from(state),
-          origin: this._instanceId,
+          origin: this._sessionId,
         }));
       };
 
       ws.onmessage = (event: MessageEvent) => {
         try {
           const msg = JSON.parse(typeof event.data === 'string' ? event.data : new TextDecoder().decode(event.data));
-          if (msg.origin === this._instanceId) return;
+          if (msg.origin === this._sessionId) return;
 
           if (msg.type === 'YDOC_UPDATE' && msg.update) {
             this._applyingRemote = true;
@@ -521,8 +543,8 @@ export class SharedGraph extends EventTarget {
   /** §10.3 Resolve a peer DID to their public key */
   private _resolvePeerPublicKey(did: string): Uint8Array | null {
     // Check connected peers first
-    for (const [peerDid, peer] of this._connectedPeers) {
-      if (peerDid === did) {
+    for (const [_sessionId, peer] of this._connectedPeers) {
+      if (peer._identity.getDID() === did) {
         return peer._identity.getPublicKey();
       }
     }
