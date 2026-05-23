@@ -1,20 +1,23 @@
 /**
- * Governance setup — ZCAP-based role permissions, constraints
+ * Governance setup — realigned to actions+resource ZCAPs targeting did:graph.
  */
 
-import { SharedGraph } from '@living-web/graph-sync';
+import { Context } from '@living-web/personal-graph';
 import {
   createGovernanceLayer,
   createCapability,
   delegateCapability,
   revokeCapability,
-  GOV,
   type ZCAPDocument,
-  type ValidationResult,
 } from '@living-web/governance';
 import { PREDICATES } from './shapes.js';
 
-// All message-related predicates a member can use
+/** Actions a regular member can perform. */
+const MEMBER_ACTIONS = ['createLink', 'updateProperty'];
+/** Actions an admin can perform. */
+const ADMIN_ACTIONS = ['createLink', 'removeLink', 'updateProperty', 'updateSHACL', 'updateGovernance'];
+
+/** Member predicate caveats — what predicates a member ZCAP can carry. */
 const MEMBER_PREDICATES = [
   PREDICATES.BODY,
   PREDICATES.ENTRY_TYPE,
@@ -24,43 +27,30 @@ const MEMBER_PREDICATES = [
   PREDICATES.MEMBER_NAME,
 ];
 
-const ADMIN_PREDICATES = [
-  ...MEMBER_PREDICATES,
-  PREDICATES.NAME,
-  PREDICATES.TOPIC,
-  PREDICATES.ROLE_COLOR,
-  PREDICATES.ROLE_POSITION,
-  PREDICATES.HAS_ROLE,
-  PREDICATES.HAS_CHILD,
-];
-
 export interface GovernanceState {
   layer: ReturnType<typeof createGovernanceLayer>;
   rootZcap: ZCAPDocument;
   memberZcapTemplate: ZCAPDocument | null;
-  zcaps: Map<string, ZCAPDocument>; // did -> zcap
-  slowModeChannels: Map<string, number>; // channelId -> interval ms
+  zcaps: Map<string, ZCAPDocument>;
+  slowModeChannels: Map<string, number>;
   readOnlyChannels: Set<string>;
   bannedDids: Set<string>;
-  lastMessageTime: Map<string, number>; // `${did}:${channelId}` -> timestamp
+  lastMessageTime: Map<string, number>;
 }
 
-export function setupGovernance(graph: SharedGraph, ownerDid: string): GovernanceState {
-  const layer = createGovernanceLayer(graph, {
-    rootAuthority: ownerDid,
+export function setupGovernance(context: Context, ownerDid: string): GovernanceState {
+  const layer = createGovernanceLayer(context, {
+    enforcementMode: 'open',  // start in open mode; tighten as needed
   });
 
-  // Root ZCAP for owner
+  // Root ZCAP — represents the context's root capability
   const rootZcap = createCapability(
     ownerDid,
-    [...ADMIN_PREDICATES],
-    { within: null, graph: graph.uri },
+    [...ADMIN_ACTIONS],
+    context.did,
     ownerDid,
   );
   layer.storeExpression(rootZcap.id, rootZcap);
-
-  // Store ZCAP in graph so governance engine can find it
-  // (We do this via the expression store rather than as triples for simplicity)
 
   return {
     layer,
@@ -77,15 +67,15 @@ export function setupGovernance(graph: SharedGraph, ownerDid: string): Governanc
 export function issueMemberZcap(
   state: GovernanceState,
   memberDid: string,
-  graphUri: string,
+  _graphDid: string,
   ownerDid: string,
 ): ZCAPDocument {
-  const zcap = delegateCapability(
-    state.rootZcap,
-    memberDid,
-    ownerDid,
-    { subsetPredicates: MEMBER_PREDICATES },
-  );
+  const zcap = delegateCapability(state.rootZcap, memberDid, ownerDid, {
+    subsetActions: MEMBER_ACTIONS,
+    additionalCaveats: [
+      { type: 'predicate', value: { allowed: MEMBER_PREDICATES } },
+    ],
+  });
   state.layer.storeExpression(zcap.id, zcap);
   state.zcaps.set(memberDid, zcap);
   return zcap;
@@ -96,12 +86,9 @@ export function issueAdminZcap(
   adminDid: string,
   ownerDid: string,
 ): ZCAPDocument {
-  const zcap = delegateCapability(
-    state.rootZcap,
-    adminDid,
-    ownerDid,
-    { subsetPredicates: ADMIN_PREDICATES },
-  );
+  const zcap = delegateCapability(state.rootZcap, adminDid, ownerDid, {
+    subsetActions: ADMIN_ACTIONS,
+  });
   state.layer.storeExpression(zcap.id, zcap);
   state.zcaps.set(adminDid, zcap);
   return zcap;
@@ -111,7 +98,6 @@ export function banMember(state: GovernanceState, did: string): void {
   state.bannedDids.add(did);
   const zcap = state.zcaps.get(did);
   if (zcap) {
-    // Revoke
     const rev = revokeCapability(did, zcap.id);
     state.layer.storeExpression(`revoke:${zcap.id}`, rev);
     state.zcaps.delete(did);
@@ -119,19 +105,13 @@ export function banMember(state: GovernanceState, did: string): void {
 }
 
 export function setSlowMode(state: GovernanceState, channelId: string, intervalMs: number): void {
-  if (intervalMs <= 0) {
-    state.slowModeChannels.delete(channelId);
-  } else {
-    state.slowModeChannels.set(channelId, intervalMs);
-  }
+  if (intervalMs <= 0) state.slowModeChannels.delete(channelId);
+  else state.slowModeChannels.set(channelId, intervalMs);
 }
 
 export function setReadOnly(state: GovernanceState, channelId: string, readOnly: boolean): void {
-  if (readOnly) {
-    state.readOnlyChannels.add(channelId);
-  } else {
-    state.readOnlyChannels.delete(channelId);
-  }
+  if (readOnly) state.readOnlyChannels.add(channelId);
+  else state.readOnlyChannels.delete(channelId);
 }
 
 export interface SendValidation {
@@ -140,51 +120,29 @@ export interface SendValidation {
   waitMs?: number;
 }
 
-/**
- * Validate whether a DID can send a message in a channel.
- * This is our custom governance logic that layers on top of the ZCAP engine.
- */
 export function validateSend(
   state: GovernanceState,
   authorDid: string,
   channelId: string,
   isOwner: boolean,
 ): SendValidation {
-  // Owner bypasses all
   if (isOwner) return { allowed: true };
-
-  // Ban check
-  if (state.bannedDids.has(authorDid)) {
-    return { allowed: false, reason: 'You have been banned from this community' };
-  }
-
-  // ZCAP check
-  if (!state.zcaps.has(authorDid)) {
-    return { allowed: false, reason: 'No capability — not a member' };
-  }
-
-  // Read-only channel check
-  if (state.readOnlyChannels.has(channelId)) {
-    return { allowed: false, reason: 'This channel is read-only (announcements only)' };
-  }
-
-  // Slow mode check
+  if (state.bannedDids.has(authorDid)) return { allowed: false, reason: 'You have been banned from this community' };
+  if (!state.zcaps.has(authorDid)) return { allowed: false, reason: 'No capability — not a member' };
+  if (state.readOnlyChannels.has(channelId)) return { allowed: false, reason: 'This channel is read-only' };
   const interval = state.slowModeChannels.get(channelId);
   if (interval) {
     const key = `${authorDid}:${channelId}`;
     const last = state.lastMessageTime.get(key) ?? 0;
-    const now = Date.now();
-    const elapsed = now - last;
+    const elapsed = Date.now() - last;
     if (elapsed < interval) {
       const wait = interval - elapsed;
       return { allowed: false, reason: `Slow mode: wait ${Math.ceil(wait / 1000)}s`, waitMs: wait };
     }
   }
-
   return { allowed: true };
 }
 
 export function recordSend(state: GovernanceState, authorDid: string, channelId: string): void {
-  const key = `${authorDid}:${channelId}`;
-  state.lastMessageTime.set(key, Date.now());
+  state.lastMessageTime.set(`${authorDid}:${channelId}`, Date.now());
 }

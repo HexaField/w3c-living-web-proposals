@@ -1,7 +1,7 @@
 /**
  * Governance setup for collaborative canvas
  */
-import { SharedGraph } from '@living-web/graph-sync';
+import { Context } from '@living-web/personal-graph';
 import {
   createGovernanceLayer,
   createCapability,
@@ -9,6 +9,8 @@ import {
   type ZCAPDocument,
 } from '@living-web/governance';
 import { PREDICATES } from './shapes.js';
+
+type SharedGraph = Context;
 
 const EDITOR_PREDICATES = [
   PREDICATES.SHAPE_TYPE, PREDICATES.SHAPE_X, PREDICATES.SHAPE_Y,
@@ -38,11 +40,13 @@ export interface GovernanceState {
 }
 
 export function setupGovernance(graph: SharedGraph, ownerDid: string): GovernanceState {
-  const layer = createGovernanceLayer(graph, { rootAuthority: ownerDid });
+  const layer = createGovernanceLayer(graph, { enforcementMode: 'open' });
   const rootZcap = createCapability(
-    ownerDid, OWNER_PREDICATES,
-    { within: null, graph: graph.uri },
     ownerDid,
+    ['createLink', 'removeLink', 'updateProperty', 'updateSHACL', 'updateGovernance'],
+    graph.did,
+    ownerDid,
+    { caveats: [{ type: 'predicate', value: { allowed: OWNER_PREDICATES } }] },
   );
   layer.storeExpression(rootZcap.id, rootZcap);
 
@@ -59,7 +63,10 @@ export function issueEditorZcap(
 ): ZCAPDocument {
   const zcap = delegateCapability(
     state.rootZcap, editorDid, ownerDid,
-    { subsetPredicates: EDITOR_PREDICATES },
+    {
+      subsetActions: ['createLink', 'updateProperty'],
+      additionalCaveats: [{ type: 'predicate', value: { allowed: EDITOR_PREDICATES } }],
+    },
   );
   state.layer.storeExpression(zcap.id, zcap);
   state.zcaps.set(editorDid, zcap);

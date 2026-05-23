@@ -3,7 +3,7 @@
  */
 
 import type { AppState } from '../setup.js';
-import { SemanticTriple } from '@living-web/personal-graph';
+import { Triple } from '@living-web/personal-graph';
 import { PREDICATES } from '../shapes.js';
 import { renderMessages } from './messages.js';
 import { showSettingsModal } from './modals.js';
@@ -113,10 +113,10 @@ export function renderSidebar(container: HTMLElement, state: AppState): void {
   invite.appendChild(label);
   const input = document.createElement('input');
   input.readOnly = true;
-  input.value = state.graph.uri;
+  input.value = state.groupDid;
   input.addEventListener('click', () => {
     input.select();
-    navigator.clipboard.writeText(state.graph.uri).catch(() => {});
+    navigator.clipboard.writeText(state.groupDid).catch(() => {});
   });
   invite.appendChild(input);
   container.appendChild(invite);
@@ -127,17 +127,15 @@ async function createChannelPrompt(state: AppState): Promise<void> {
   if (!name || !name.trim()) return;
 
   const channelId = `channel:${crypto.randomUUID()}`;
-  const g = state.graph as any;
-  await g.createShapeInstance('Channel', channelId, { name: name.trim() });
-  await state.graph.addTriple(new SemanticTriple(state.communityId, channelId, PREDICATES.HAS_CHILD));
+  await state.context.createShapeInstance('Channel', channelId, { name: name.trim() });
+  await state.context.addTriple(new Triple(state.communityId, PREDICATES.HAS_CHILD, channelId));
 
   state.channels.push({ id: channelId, name: name.trim() });
   state.messages.set(channelId, []);
 
-  // Broadcast
   state.bc.postMessage({
     type: 'new-channel',
-    graphUri: state.graph.uri,
+    groupDid: state.context.did,
     channel: { id: channelId, name: name.trim() },
   });
 

@@ -77,7 +77,7 @@ function showSetup(): void {
       const { did, identity } = await createIdentity(displayName);
       const state = await createCommunity(displayName, communityName, identity, did);
       // Update URL hash so others can join
-      window.location.hash = state.graph.uri;
+      window.location.hash = state.context.did;
       launchApp(state);
     } catch (e) {
       console.error('Failed to create community:', e);

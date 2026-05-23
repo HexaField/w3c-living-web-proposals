@@ -1,9 +1,41 @@
+/**
+ * Governance types.
+ *
+ * - ZCAPs target `did:graph:...` as their canonical resource.
+ * - Enforcement modes (Open / Announced / Enforced) are first-class.
+ * - Caveat vocabulary: Expiry, Predicate, Shape, Property, Content, RateLimit,
+ *   Cardinality, Source, Target, AuthorOnly, Custom.
+ * - A context's authority is rooted in its root capability — a single ZCAP
+ *   minted at creation time and delegatable like any other.
+ */
+
 export type ConstraintKind = 'capability' | 'temporal' | 'content' | 'credential';
+export type EnforcementMode = 'open' | 'announced' | 'enforced';
+
+export type CaveatType =
+  | 'expiry'
+  | 'predicate'
+  | 'shape'
+  | 'property'
+  | 'content'
+  | 'rateLimit'
+  | 'cardinality'
+  | 'source'
+  | 'target'
+  | 'authorOnly'
+  | 'custom';
+
+export interface Caveat {
+  type: CaveatType;
+  value: Record<string, unknown>;
+}
 
 export interface GraphConstraint {
   readonly id: string;
   readonly kind: ConstraintKind;
+  /** The context (did:graph) this constraint is attached to. */
   readonly scope: string;
+  /** Depth in the holonic scope chain (0 = directly on the writing context). */
   readonly depth: number;
   readonly properties: Record<string, string>;
 }
@@ -13,27 +45,30 @@ export interface ValidationResult {
   readonly module?: string;
   readonly reason?: string;
   readonly rejectedBy?: string;
+  /** When the constraint was advisory (Announced mode), the recorded reason. */
+  readonly announcedRejection?: string;
 }
 
 export interface CapabilityInfo {
   readonly id: string;
-  readonly predicates: string[];
-  readonly scope: string | null;
+  readonly actions: string[];
+  readonly resource: string;          // did:graph:...
+  readonly caveats: Caveat[];
   readonly expires: string | null;
 }
 
 export interface ZCAPDocument {
   id: string;
+  /** Either a did:key (individual delegatee) or a did:graph (delegate to a graph). */
   invoker: string;
+  /** Identifier of the parent capability, or null for a root capability. */
   parentCapability: string | null;
-  capability: {
-    predicates: string[];
-    scope: {
-      within: string | null;
-      graph: string;
-    };
-  };
-  expires?: string | null;
+  /** Actions this capability authorises (e.g., "createLink"). */
+  actions: string[];
+  /** The resource — typically a did:graph:... */
+  resource: string;
+  /** Caveats narrowing the capability. */
+  caveats?: Caveat[];
   proof: {
     type: string;
     created: string;
@@ -41,6 +76,12 @@ export interface ZCAPDocument {
     proofPurpose: string;
     proofValue: string;
   };
+  /** Legacy fields kept for back-compat parsing. */
+  capability?: {
+    predicates?: string[];
+    scope?: { within: string | null; graph: string };
+  };
+  expires?: string | null;
 }
 
 export interface VerifiableCredential {
@@ -61,31 +102,41 @@ export interface VerifiableCredential {
   };
 }
 
-export interface ConstraintHandler {
-  kind: string;
-  validate(triple: TripleInput, constraint: GraphConstraint, context: ValidationContext): ValidationResult;
-}
-
 export interface TripleInput {
   source: string;
-  predicate: string | null;
+  predicate: string;
   target: string;
   author: string;
   timestamp: string;
 }
 
+export interface TripleRecord {
+  data: { source: string; predicate: string; target: string };
+  author: string;
+  timestamp: string;
+}
+
 export interface ValidationContext {
-  graphUri: string;
-  rootAuthority: string;
+  /** did:graph of the context being written to. */
+  graphDid: string;
+  /** The root capability id of this context. */
+  rootCapabilityId: string | null;
+  /** Current enforcement mode (defaults to "open" if not set). */
+  enforcementMode: EnforcementMode;
   queryTriples: (q: { source?: string | null; predicate?: string | null; target?: string | null }) => Promise<TripleRecord[]>;
   resolveExpression?: (address: string) => Promise<unknown>;
   now?: () => number;
 }
 
-export interface TripleRecord {
-  data: { source: string; predicate: string | null; target: string };
-  author: string;
-  timestamp: string;
+export interface ConstraintHandler {
+  kind: string;
+  validate(triple: TripleInput, constraint: GraphConstraint, context: ValidationContext): ValidationResult | Promise<ValidationResult>;
+}
+
+export interface CapabilityProof {
+  chain: ZCAPDocument[];
+  caveatsSatisfied?: string[];
+  hasContentCaveats?: boolean;
 }
 
 export interface ValidationHistoryEntry {

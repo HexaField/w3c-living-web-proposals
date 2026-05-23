@@ -1,259 +1,275 @@
 /**
- * Group — Decentralised Group Identity (Spec 06)
+ * Group — a thin convenience layer over Context + did:graph + governance.
  *
- * A persistent, DID-identified entity with mutable membership,
- * composable via recursive nesting, governed by its own shared graph.
+ * A Group IS a Context. The "group identity" surface is a usage pattern over
+ * the underlying primitives, not a separate data type.
  */
 
-import { SemanticTriple, type SignedTriple } from '@living-web/personal-graph';
-import type { SharedGraph } from '@living-web/graph-sync';
+import { Context } from '@living-web/personal-graph';
+import {
+  decodeEd25519Multibase,
+  addMethodTriples,
+  removeMethodTriples,
+  type DIDDocument,
+} from '@living-web/identity';
 import { createCapability } from '@living-web/governance';
-import { GROUP, RDF, type Member, type GroupOptions, type GroupRegistry } from './types.js';
+import {
+  GROUP,
+  CONTEXT,
+  RDF,
+  VOTE,
+  type Participant,
+  type GroupOptions,
+  type GroupRegistry,
+} from './types.js';
 
-/** Default max nesting depth for transitive resolution */
 const DEFAULT_MAX_DEPTH = 16;
+
+type DelegateSection = 'capabilityInvocation' | 'capabilityDelegation' | 'assertionMethod' | 'authentication';
+
+interface CredentialsWithResolver {
+  resolve?(did: string): Promise<DIDDocument | null>;
+}
 
 export class Group {
   readonly did: string;
+  readonly context: Context;
   readonly name: string;
   readonly description: string;
   readonly created: number;
-  readonly graph: SharedGraph;
 
-  private _registry: GroupRegistry;
+  private readonly registry: GroupRegistry;
 
-  constructor(
-    did: string,
-    graph: SharedGraph,
-    registry: GroupRegistry,
-    options?: GroupOptions,
-  ) {
-    this.did = did;
-    this.name = options?.name || '';
-    this.description = options?.description || '';
+  constructor(context: Context, registry: GroupRegistry, options: GroupOptions = {}) {
+    this.context = context;
+    this.did = context.did;
+    this.name = options.displayName || options.name || context.displayName || '';
+    this.description = options.description || '';
     this.created = Date.now();
-    this.graph = graph;
-    this._registry = registry;
+    this.registry = registry;
   }
 
-  /**
-   * §5.1.2 — members()
-   * Returns direct members only. Does not recurse.
-   */
-  async members(): Promise<Member[]> {
-    const triples = await this.graph.queryTriples({
+  // ── Participation (NOT signing authority) ─────────────────────────────────
+
+  /** Direct participants — those for whom the group has written `accepts_participation`. */
+  async participants(): Promise<Participant[]> {
+    const accepts = await this.context.queryTriples({
       source: this.did,
-      predicate: GROUP.HAS_MEMBER,
+      predicate: CONTEXT.ACCEPTS_PARTICIPATION,
     });
-
-    const members: Member[] = [];
-    for (const t of triples) {
-      const memberDid = t.data.target;
-      const isGroup = await this._isGroupDid(memberDid);
-
-      // Try to get joinedAt from metadata
-      let joinedAt: number | undefined;
-      const joinedTriples = await this.graph.queryTriples({
-        source: memberDid,
-        predicate: GROUP.JOINED_AT,
-      });
-      if (joinedTriples.length > 0) {
-        joinedAt = new Date(joinedTriples[0].data.target).getTime();
-      } else {
-        // Fall back to the triple's own timestamp
-        joinedAt = new Date(t.timestamp).getTime();
-      }
-
-      // Try to get name
+    const result: Participant[] = [];
+    for (const t of accepts) {
+      const did = t.data.target;
+      const isGroup = await this.isGroupDid(did);
       let name: string | undefined;
-      const nameTriples = await this.graph.queryTriples({
-        source: memberDid,
-        predicate: RDF.NAME,
+      const nameTriples = await this.context.queryTriples({ source: did, predicate: RDF.NAME });
+      if (nameTriples.length > 0) name = stripLit(nameTriples[0].data.target);
+      result.push({
+        did,
+        isGroup,
+        name,
+        joinedAt: new Date(t.timestamp).getTime(),
       });
-      if (nameTriples.length > 0) {
-        name = nameTriples[0].data.target;
-      }
-
-      members.push({ did: memberDid, isGroup, name, joinedAt });
     }
-
-    return members;
+    return result;
   }
 
-  /**
-   * §5.1.3 — addMember(memberDid)
-   * Adds a group://has_member triple. Idempotent.
-   */
-  async addMember(memberDid: string): Promise<void> {
-    // Check if already a member (idempotent per spec SHOULD)
-    const existing = await this.graph.queryTriples({
+  /** Accept a participant — writes the `accepts_participation` triple. */
+  async invite(participantDid: string): Promise<void> {
+    await this.context.addTriple({
       source: this.did,
-      predicate: GROUP.HAS_MEMBER,
-      target: memberDid,
+      predicate: CONTEXT.ACCEPTS_PARTICIPATION,
+      target: participantDid,
     });
-    if (existing.length > 0) return;
-
-    await this.graph.addTriple(
-      new SemanticTriple(this.did, memberDid, GROUP.HAS_MEMBER),
-    );
-
-    // Add joined_at metadata
-    const now = new Date().toISOString();
-    await this.graph.addTriple(
-      new SemanticTriple(memberDid, now, GROUP.JOINED_AT),
-    );
   }
 
-  /**
-   * §5.1.4 — removeMember(memberDid)
-   * Removes the membership triple and metadata.
-   */
-  async removeMember(memberDid: string): Promise<void> {
-    const triples = await this.graph.queryTriples({
+  /** Revoke participation acceptance. */
+  async revokeParticipation(participantDid: string): Promise<void> {
+    const triples = await this.context.queryTriples({
       source: this.did,
-      predicate: GROUP.HAS_MEMBER,
-      target: memberDid,
+      predicate: CONTEXT.ACCEPTS_PARTICIPATION,
+      target: participantDid,
     });
-    for (const t of triples) {
-      await this.graph.removeTriple(t);
-    }
-
-    // Remove joined_at metadata
-    const metaTriples = await this.graph.queryTriples({
-      source: memberDid,
-      predicate: GROUP.JOINED_AT,
-    });
-    for (const t of metaTriples) {
-      await this.graph.removeTriple(t);
-    }
+    for (const t of triples) await this.context.removeTriple(t);
   }
 
-  /**
-   * §5.1.5 — isMember(did)
-   * Direct membership check only.
-   */
-  async isMember(did: string): Promise<boolean> {
-    const triples = await this.graph.queryTriples({
+  async hasParticipant(did: string): Promise<boolean> {
+    const triples = await this.context.queryTriples({
       source: this.did,
-      predicate: GROUP.HAS_MEMBER,
+      predicate: CONTEXT.ACCEPTS_PARTICIPATION,
       target: did,
     });
     return triples.length > 0;
   }
 
-  /**
-   * §5.1.6 — parentGroups()
-   * Returns groups that contain this group as a member.
-   */
-  async parentGroups(): Promise<Group[]> {
-    const groups: Group[] = [];
-    for (const g of this._registry.list()) {
-      if (g.did === this.did) continue;
-      const isMember = await g.isMember(this.did);
-      if (isMember) groups.push(g);
-    }
-    return groups;
+  // ── Signing authority (DID-document delegates) ────────────────────────────
+
+  /** Current verification methods in the requested section. */
+  async signers(section: DelegateSection = 'capabilityInvocation'): Promise<Array<{ id: string; publicKeyMultibase: string }>> {
+    const doc = await this.resolveDIDDocument();
+    if (!doc) return [];
+    const ids = sectionRefs(doc, section);
+    return doc.verificationMethod
+      .filter(m => ids.includes(m.id))
+      .map(m => ({ id: m.id, publicKeyMultibase: m.publicKeyMultibase }));
   }
 
   /**
-   * §5.1.7 — childGroups()
-   * Returns members that are themselves groups.
+   * Add a signer (DID-document delegate). Requires the caller to currently hold
+   * a `capabilityDelegation` delegate on this group's DID.
    */
+  async addSigner(
+    method: { id?: string; publicKeyMultibase: string },
+    sections: DelegateSection[],
+  ): Promise<void> {
+    const id = method.id ?? `${this.did}#${method.publicKeyMultibase.slice(0, 16)}`;
+    const publicKey = decodeEd25519Multibase(method.publicKeyMultibase);
+    const triples = addMethodTriples(this.did, id, publicKey, sections);
+    for (const t of triples) await this.context.addTriple(t);
+  }
+
+  async removeSigner(methodId: string): Promise<void> {
+    const removals = removeMethodTriples(this.did, methodId);
+    for (const removal of removals) {
+      const matches = await this.context.queryTriples({
+        source: removal.source,
+        predicate: removal.predicate,
+        target: removal.target,
+      });
+      for (const m of matches) await this.context.removeTriple(m);
+    }
+  }
+
+  async isSigner(did: string, section: DelegateSection = 'capabilityInvocation'): Promise<boolean> {
+    const sigs = await this.signers(section);
+    return sigs.some(s => s.id.startsWith(did) || s.id.includes(did));
+  }
+
+  // ── Nested groups ─────────────────────────────────────────────────────────
+
+  /** Groups this group participates in. */
+  async parentGroups(): Promise<Group[]> {
+    const participations = await this.context.queryTriples({
+      source: this.did,
+      predicate: CONTEXT.PARTICIPATES_IN,
+    });
+    const parents: Group[] = [];
+    for (const p of participations) {
+      const did = p.data.target;
+      const known = this.registry.resolve(did);
+      if (known) parents.push(known);
+    }
+    return parents;
+  }
+
+  /** Participants that are themselves groups. */
   async childGroups(): Promise<Group[]> {
-    const members = await this.members();
+    const parts = await this.participants();
     const children: Group[] = [];
-    for (const m of members) {
-      if (m.isGroup) {
-        const child = this._registry.resolve(m.did);
-        if (child) children.push(child);
-      }
+    for (const p of parts) {
+      if (!p.isGroup) continue;
+      const g = this.registry.resolve(p.did);
+      if (g) children.push(g);
     }
     return children;
   }
 
-  /**
-   * §5.1.8 — transitiveMembers()
-   * BFS through child groups, cycle-safe, depth-limited.
-   */
-  async transitiveMembers(maxDepth = DEFAULT_MAX_DEPTH): Promise<Member[]> {
-    const result: Member[] = [];
+  /** Recursively resolve all individual (non-group) participants. */
+  async transitiveParticipants(maxDepth: number = DEFAULT_MAX_DEPTH): Promise<Participant[]> {
+    const result = new Map<string, Participant>();
     const visited = new Set<string>();
-    const seenIndividuals = new Set<string>();
 
-    const resolve = async (group: Group, depth: number): Promise<void> => {
-      if (depth > maxDepth) return;
-      if (visited.has(group.did)) return;
+    const walk = async (group: Group, depth: number): Promise<void> => {
+      if (depth > maxDepth || visited.has(group.did)) return;
       visited.add(group.did);
-
-      const members = await group.members();
-      for (const m of members) {
-        if (m.isGroup) {
-          const childGroup = this._registry.resolve(m.did);
-          if (childGroup) {
-            await resolve(childGroup, depth + 1);
-          }
-        } else {
-          if (!seenIndividuals.has(m.did)) {
-            seenIndividuals.add(m.did);
-            result.push(m);
-          }
+      const parts = await group.participants();
+      for (const p of parts) {
+        if (p.isGroup) {
+          const sub = this.registry.resolve(p.did);
+          if (sub) await walk(sub, depth + 1);
+        } else if (!result.has(p.did)) {
+          result.set(p.did, p);
         }
       }
     };
-
-    await resolve(this, 0);
-    return result;
+    await walk(this, 0);
+    return [...result.values()];
   }
 
-  /**
-   * §5.1.9 — delegateCapability(memberDid, predicate, scope)
-   * Creates a ZCAP and stores it in the group's shared graph.
-   */
-  async delegateCapability(
-    memberDid: string,
-    predicate: string,
-    scope: string,
-  ): Promise<void> {
+  // ── Capability delegation ─────────────────────────────────────────────────
+
+  async delegateCapability(opts: {
+    invoker: string;
+    actions: string[];
+    resource?: string;
+    caveats?: Parameters<typeof createCapability>[4] extends { caveats?: infer C } ? C : never;
+    expires?: string;
+    transitiveToParticipants?: boolean;
+  }): Promise<ReturnType<typeof createCapability> & { transitiveToParticipants?: boolean }> {
     const zcap = createCapability(
-      memberDid,
-      [predicate],
-      { within: scope, graph: this.graph.uri },
-      this.did,
+      opts.invoker,
+      opts.actions,
+      opts.resource ?? this.did,
+      this.context.getIdentity().getDID(),
+      { caveats: opts.caveats, expires: opts.expires ?? null },
     );
-
-    // Store ZCAP as triples in the shared graph
-    await this.graph.addTriple(
-      new SemanticTriple(zcap.id, JSON.stringify(zcap), 'gov://zcap_document'),
-    );
+    if (opts.transitiveToParticipants) {
+      return { ...zcap, transitiveToParticipants: true };
+    }
+    return zcap;
   }
 
-  /**
-   * §5.1.10 — resolve()
-   * Returns a DID document for this group.
-   */
-  async resolve(): Promise<Record<string, unknown>> {
-    return {
-      '@context': 'https://www.w3.org/ns/did/v1',
-      id: this.did,
-      type: 'Group',
-      name: this.name,
-      description: this.description,
-      created: new Date(this.created).toISOString(),
-      graph: this.graph.uri,
-    };
+  resolve(): Promise<DIDDocument | null> {
+    return this.resolveDIDDocument();
   }
 
-  /** Check if a DID is a known group DID */
-  private async _isGroupDid(did: string): Promise<boolean> {
-    // Check local registry first
-    if (this._registry.resolve(did)) return true;
+  // ── Liquid democracy (Spec 06 §10) ────────────────────────────────────────
 
-    // Check if the DID has a group type triple in this graph
-    const typeTriples = await this.graph.queryTriples({
-      source: did,
-      predicate: RDF.TYPE,
-      target: GROUP.TYPE,
-    });
-    return typeTriples.length > 0;
+  async delegateVote(opts: {
+    topic: string;
+    delegateTo: string;
+    validUntil?: string;
+    revocable?: boolean;
+  }): Promise<void> {
+    await this.context.addTriple({ source: this.did, predicate: VOTE.DELEGATES_TO, target: opts.delegateTo });
+    await this.context.addTriple({ source: this.did, predicate: VOTE.DELEGATES_TOPIC, target: opts.topic });
+    if (opts.validUntil) {
+      await this.context.addTriple({ source: this.did, predicate: VOTE.VALID_UNTIL, target: `"${opts.validUntil}"` });
+    }
+    if (opts.revocable !== undefined) {
+      await this.context.addTriple({ source: this.did, predicate: VOTE.REVOCABLE, target: `"${opts.revocable}"` });
+    }
   }
+
+  // ── Internals ─────────────────────────────────────────────────────────────
+
+  private async isGroupDid(did: string): Promise<boolean> {
+    if (did.startsWith('did:graph:')) return true;
+    return this.registry.isGroupDid(did);
+  }
+
+  private async resolveDIDDocument(): Promise<DIDDocument | null> {
+    const nav = globalThis.navigator;
+    const credentials = nav.credentials as unknown as CredentialsWithResolver | undefined;
+    if (!credentials?.resolve) return null;
+    return credentials.resolve(this.did);
+  }
+}
+
+function sectionRefs(doc: DIDDocument, section: DelegateSection): string[] {
+  switch (section) {
+    case 'capabilityInvocation':
+      return doc.capabilityInvocation ?? [];
+    case 'capabilityDelegation':
+      return doc.capabilityDelegation ?? [];
+    case 'assertionMethod':
+      return doc.assertionMethod ?? [];
+    case 'authentication':
+      return doc.authentication ?? [];
+  }
+}
+
+function stripLit(value: string): string {
+  if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) return value.slice(1, -1);
+  return value;
 }

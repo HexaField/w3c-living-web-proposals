@@ -1,10 +1,10 @@
 /**
  * Collaborative Document — Setup
  */
-import { install as installIdentity } from '@living-web/identity';
-import { SharedGraph, SharedGraphManager } from '@living-web/graph-sync';
-import { installShapeExtension } from '@living-web/shape-validation';
-import { PersonalGraph, SemanticTriple } from '@living-web/personal-graph';
+import { install as installIdentity, IdentityManager, DIDIdentityProvider } from '@living-web/identity';
+import { install as installPersonalGraph, Context, Triple } from '@living-web/personal-graph';
+import '@living-web/shape-validation/polyfill';
+import '@living-web/graph-sync/polyfill';
 import type { IdentityProvider } from '@living-web/personal-graph';
 import {
   PREDICATES,
@@ -16,18 +16,9 @@ import {
 } from './graph/governance.js';
 
 installIdentity();
-installShapeExtension(PersonalGraph);
+installPersonalGraph().catch(err => console.error('[living-web] install failed', err));
 
-const shapeMethods = ['addShape', 'getShapes', 'createShapeInstance', 'getShapeInstances', 'getShapeInstanceData', 'setShapeProperty', 'addToShapeCollection', 'removeFromShapeCollection'];
-for (const method of shapeMethods) {
-  if ((PersonalGraph.prototype as any)[method]) {
-    (SharedGraph.prototype as any)[method] = (PersonalGraph.prototype as any)[method];
-  }
-}
-if (!Object.getOwnPropertyDescriptor(SharedGraph.prototype, 'uuid')) {
-  Object.defineProperty(SharedGraph.prototype, 'uuid', { get() { return (this as any).uri; } });
-}
-
+const POLYFILL_PASSPHRASE = '__living-web-polyfill__';
 const SYNC_CHANNEL = 'living-web-collab-doc';
 const CURSOR_COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6', '#e91e63', '#00bcd4', '#ff5722'];
 
@@ -77,7 +68,7 @@ export interface CursorInfo {
 export interface AppState {
   did: string;
   displayName: string;
-  graph: SharedGraph;
+  context: Context;
   docId: string;
   docTitle: string;
   blocks: Block[];
@@ -93,57 +84,52 @@ export interface AppState {
   remoteCursors: Map<string, CursorInfo>;
 }
 
-class CredentialIdentity implements IdentityProvider {
-  private cred: any;
-  constructor(cred: any) { this.cred = cred; }
-  getDID(): string { return this.cred.did; }
-  getKeyURI(): string { return `${this.cred.did}#key-1`; }
-  async sign(data: Uint8Array): Promise<Uint8Array> { return this.cred.signRaw(data); }
-  getPublicKey(): Uint8Array { return this.cred.publicKey; }
-}
-
 export async function createIdentity(displayName: string): Promise<{ did: string; identity: IdentityProvider }> {
-  const cred = await (navigator.credentials as any).create({ did: { displayName } });
-  if (cred.isLocked) await cred.unlock('__living-web-polyfill__');
-  return { did: cred.did, identity: new CredentialIdentity(cred) };
+  const manager = new IdentityManager();
+  const credential = await manager.createIndividual(displayName, POLYFILL_PASSPHRASE);
+  if (credential.isLocked) await credential.unlock(POLYFILL_PASSPHRASE);
+  const provider = new DIDIdentityProvider(credential);
+  return { did: provider.getDID(), identity: provider };
 }
 
 function nextColor(index: number): string {
   return CURSOR_COLORS[index % CURSOR_COLORS.length];
 }
 
+async function ensureShapes(context: Context): Promise<void> {
+  await context.addShape('Document', JSON.stringify(DocumentShape));
+  await context.addShape('Block', JSON.stringify(BlockShape));
+  await context.addShape('Comment', JSON.stringify(CommentShape));
+  await context.addShape('CommentReply', JSON.stringify(CommentReplyShape));
+  await context.addShape('Collaborator', JSON.stringify(CollaboratorShape));
+}
+
 export async function createDoc(
   displayName: string, docTitle: string, identity: IdentityProvider, did: string,
 ): Promise<AppState> {
-  const manager = new SharedGraphManager(identity);
-  const graph = await manager.share(docTitle);
-  const g = graph as any;
+  const store = await navigator.graph.create(docTitle);
+  const context = await store.createContext({ displayName: docTitle });
+  await context.publish();
 
-  await g.addShape('Document', JSON.stringify(DocumentShape));
-  await g.addShape('Block', JSON.stringify(BlockShape));
-  await g.addShape('Comment', JSON.stringify(CommentShape));
-  await g.addShape('CommentReply', JSON.stringify(CommentReplyShape));
-  await g.addShape('Collaborator', JSON.stringify(CollaboratorShape));
+  await ensureShapes(context);
 
   const docId = `doc:${crypto.randomUUID()}`;
-  await g.createShapeInstance('Document', docId, { title: docTitle, owner: did });
+  await context.createShapeInstance('Document', docId, { title: docTitle, owner: did });
 
-  // First paragraph block
   const blockId = `block:${crypto.randomUUID()}`;
-  await g.createShapeInstance('Block', blockId, { type: 'paragraph', content: ' ', author: did });
-  await graph.addTriple(new SemanticTriple(docId, blockId, PREDICATES.HAS_BLOCK));
+  await context.createShapeInstance('Block', blockId, { type: 'paragraph', content: ' ', author: did });
+  await context.addTriple(new Triple(docId, PREDICATES.HAS_BLOCK, blockId));
 
-  // Owner collaborator
   const collabId = `collab:${crypto.randomUUID()}`;
   const color = nextColor(0);
-  await g.createShapeInstance('Collaborator', collabId, { did, name: displayName, role: 'owner', color });
-  await graph.addTriple(new SemanticTriple(docId, collabId, PREDICATES.HAS_COLLABORATOR));
+  await context.createShapeInstance('Collaborator', collabId, { did, name: displayName, role: 'owner', color });
+  await context.addTriple(new Triple(docId, PREDICATES.HAS_COLLABORATOR, collabId));
 
-  const governance = setupGovernance(graph, did);
+  const governance = setupGovernance(context, did);
   const bc = new BroadcastChannel(SYNC_CHANNEL);
 
   const state: AppState = {
-    did, displayName, graph, docId, docTitle,
+    did, displayName, context, docId, docTitle,
     blocks: [{ id: blockId, type: 'paragraph', content: '', authorDid: did, locked: false, lockedBy: null }],
     comments: [],
     collaborators: [{ id: collabId, did, name: displayName, role: 'owner', color }],
@@ -157,83 +143,80 @@ export async function createDoc(
 }
 
 export async function joinDoc(
-  displayName: string, graphUri: string, identity: IdentityProvider, did: string,
+  displayName: string, contextDid: string, identity: IdentityProvider, did: string,
 ): Promise<AppState> {
-  const manager = new SharedGraphManager(identity);
-  const graph = await manager.join(graphUri);
-  const g = graph as any;
-
-  await g.addShape('Document', JSON.stringify(DocumentShape));
-  await g.addShape('Block', JSON.stringify(BlockShape));
-  await g.addShape('Comment', JSON.stringify(CommentShape));
-  await g.addShape('CommentReply', JSON.stringify(CommentReplyShape));
-  await g.addShape('Collaborator', JSON.stringify(CollaboratorShape));
-
+  // Cross-tab join: a sibling tab on the same origin will reply via BroadcastChannel
+  // with the document state. We create a local placeholder context that mirrors the
+  // received state for display purposes.
+  const store = await navigator.graph.create(displayName);
+  const placeholderContext = await store.createContext({ displayName: 'pending-join' });
+  await placeholderContext.publish();
   const bc = new BroadcastChannel(SYNC_CHANNEL);
 
   return new Promise<AppState>((resolve) => {
     const timeout = setTimeout(() => {
-      const governance = setupGovernance(graph, did);
+      const fallbackBlockId = `block:${crypto.randomUUID()}`;
+      const governance = setupGovernance(placeholderContext, did);
       resolve({
-        did, displayName, graph,
+        did, displayName, context: placeholderContext,
         docId: 'doc:fallback', docTitle: 'Document',
-        blocks: [{ id: `block:${crypto.randomUUID()}`, type: 'paragraph', content: '', authorDid: did, locked: false, lockedBy: null }],
-        comments: [], collaborators: [{ id: `collab:${crypto.randomUUID()}`, did, name: displayName, role: 'viewer', color: nextColor(0) }],
+        blocks: [{ id: fallbackBlockId, type: 'paragraph', content: '', authorDid: did, locked: false, lockedBy: null }],
+        comments: [],
+        collaborators: [{ id: `collab:${crypto.randomUUID()}`, did, name: displayName, role: 'viewer', color: nextColor(0) }],
         governance, isOwner: false, myRole: 'viewer', bc, identity,
         governanceLogs: [], activeBlockId: null, remoteCursors: new Map(),
       });
     }, 1500);
 
     const handler = (ev: MessageEvent) => {
-      if (ev.data.type === 'doc-sync-response' && ev.data.graphUri === graphUri) {
-        clearTimeout(timeout);
-        bc.removeEventListener('message', handler);
-        const data = ev.data;
+      const msg = ev.data;
+      if (msg.type !== 'doc-sync-response' || msg.contextDid !== contextDid) return;
+      clearTimeout(timeout);
+      bc.removeEventListener('message', handler);
 
-        const governance = setupGovernance(graph, data.ownerDid);
-        // Default role: viewer (owner can promote)
-        const myRole: DocRole = 'viewer';
-        const color = nextColor(data.collaborators.length);
+      const governance = setupGovernance(placeholderContext, msg.ownerDid);
+      const myRole: DocRole = 'viewer';
+      const color = nextColor(msg.collaborators.length);
 
-        const state: AppState = {
-          did, displayName, graph,
-          docId: data.docId, docTitle: data.docTitle,
-          blocks: data.blocks,
-          comments: data.comments || [],
-          collaborators: [...data.collaborators],
-          governance, isOwner: false, myRole, bc, identity,
-          governanceLogs: [], activeBlockId: null, remoteCursors: new Map(),
-        };
+      const state: AppState = {
+        did, displayName, context: placeholderContext,
+        docId: msg.docId, docTitle: msg.docTitle,
+        blocks: msg.blocks,
+        comments: msg.comments || [],
+        collaborators: [...msg.collaborators],
+        governance, isOwner: false, myRole, bc, identity,
+        governanceLogs: [], activeBlockId: null, remoteCursors: new Map(),
+      };
 
-        const collabId = `collab:${crypto.randomUUID()}`;
-        state.collaborators.push({ id: collabId, did, name: displayName, role: myRole, color });
+      const collabId = `collab:${crypto.randomUUID()}`;
+      state.collaborators.push({ id: collabId, did, name: displayName, role: myRole, color });
 
-        bc.postMessage({
-          type: 'doc-new-collaborator',
-          graphUri: graph.uri,
-          collaborator: { id: collabId, did, name: displayName, role: myRole, color },
-        });
+      bc.postMessage({
+        type: 'doc-new-collaborator',
+        contextDid,
+        collaborator: { id: collabId, did, name: displayName, role: myRole, color },
+      });
 
-        setupCrossTabSync(state);
-        resolve(state);
-      }
+      setupCrossTabSync(state);
+      resolve(state);
     };
 
     bc.addEventListener('message', handler);
-    bc.postMessage({ type: 'doc-sync-request', graphUri, did, displayName });
+    bc.postMessage({ type: 'doc-sync-request', contextDid, did, displayName });
   });
 }
 
 function setupCrossTabSync(state: AppState): void {
-  const { bc, graph } = state;
+  const { bc, context } = state;
+  const contextDid = context.did;
 
   bc.addEventListener('message', (ev: MessageEvent) => {
     const msg = ev.data;
 
-    if (msg.type === 'doc-sync-request' && msg.graphUri === graph.uri && state.isOwner) {
+    if (msg.type === 'doc-sync-request' && msg.contextDid === contextDid && state.isOwner) {
       bc.postMessage({
         type: 'doc-sync-response',
-        graphUri: graph.uri,
+        contextDid,
         ownerDid: state.did,
         docId: state.docId,
         docTitle: state.docTitle,
@@ -243,7 +226,7 @@ function setupCrossTabSync(state: AppState): void {
       });
     }
 
-    if (msg.type === 'doc-block-update' && msg.graphUri === graph.uri && msg.did !== state.did) {
+    if (msg.type === 'doc-block-update' && msg.contextDid === contextDid && msg.did !== state.did) {
       const block = state.blocks.find(b => b.id === msg.blockId);
       if (block) {
         block.content = msg.content;
@@ -252,18 +235,15 @@ function setupCrossTabSync(state: AppState): void {
       }
     }
 
-    if (msg.type === 'doc-new-block' && msg.graphUri === graph.uri && msg.did !== state.did) {
+    if (msg.type === 'doc-new-block' && msg.contextDid === contextDid && msg.did !== state.did) {
       const idx = state.blocks.findIndex(b => b.id === msg.afterBlockId);
       const block: Block = msg.block;
-      if (idx >= 0) {
-        state.blocks.splice(idx + 1, 0, block);
-      } else {
-        state.blocks.push(block);
-      }
+      if (idx >= 0) state.blocks.splice(idx + 1, 0, block);
+      else state.blocks.push(block);
       document.dispatchEvent(new CustomEvent('doc-update', { detail: { type: 'new-block' } }));
     }
 
-    if (msg.type === 'doc-delete-block' && msg.graphUri === graph.uri && msg.did !== state.did) {
+    if (msg.type === 'doc-delete-block' && msg.contextDid === contextDid && msg.did !== state.did) {
       const idx = state.blocks.findIndex(b => b.id === msg.blockId);
       if (idx >= 0 && state.blocks.length > 1) {
         state.blocks.splice(idx, 1);
@@ -271,39 +251,38 @@ function setupCrossTabSync(state: AppState): void {
       }
     }
 
-    if (msg.type === 'doc-new-collaborator' && msg.graphUri === graph.uri) {
+    if (msg.type === 'doc-new-collaborator' && msg.contextDid === contextDid) {
       if (!state.collaborators.find(c => c.did === msg.collaborator.did)) {
         state.collaborators.push(msg.collaborator);
         document.dispatchEvent(new CustomEvent('doc-update', { detail: { type: 'collaborator' } }));
       }
     }
 
-    if (msg.type === 'doc-role-change' && msg.graphUri === graph.uri) {
+    if (msg.type === 'doc-role-change' && msg.contextDid === contextDid) {
       const collab = state.collaborators.find(c => c.did === msg.targetDid);
       if (collab) {
         collab.role = msg.newRole;
         if (msg.targetDid === state.did) {
           state.myRole = msg.newRole;
-          // Update ZCAP
           issueRoleZcap(state.governance, state.did, msg.newRole, msg.ownerDid);
         }
         document.dispatchEvent(new CustomEvent('doc-update', { detail: { type: 'role-change' } }));
       }
     }
 
-    if (msg.type === 'doc-cursor' && msg.graphUri === graph.uri && msg.did !== state.did) {
+    if (msg.type === 'doc-cursor' && msg.contextDid === contextDid && msg.did !== state.did) {
       state.remoteCursors.set(msg.did, {
         did: msg.did, name: msg.name, color: msg.color, blockId: msg.blockId,
       });
       document.dispatchEvent(new CustomEvent('doc-update', { detail: { type: 'cursor' } }));
     }
 
-    if (msg.type === 'doc-new-comment' && msg.graphUri === graph.uri && msg.did !== state.did) {
+    if (msg.type === 'doc-new-comment' && msg.contextDid === contextDid && msg.did !== state.did) {
       state.comments.push(msg.comment);
       document.dispatchEvent(new CustomEvent('doc-update', { detail: { type: 'comment' } }));
     }
 
-    if (msg.type === 'doc-new-reply' && msg.graphUri === graph.uri && msg.did !== state.did) {
+    if (msg.type === 'doc-new-reply' && msg.contextDid === contextDid && msg.did !== state.did) {
       const comment = state.comments.find(c => c.id === msg.commentId);
       if (comment) {
         comment.replies.push(msg.reply);
@@ -311,7 +290,7 @@ function setupCrossTabSync(state: AppState): void {
       }
     }
 
-    if (msg.type === 'doc-resolve-comment' && msg.graphUri === graph.uri) {
+    if (msg.type === 'doc-resolve-comment' && msg.contextDid === contextDid) {
       const comment = state.comments.find(c => c.id === msg.commentId);
       if (comment) {
         comment.resolved = true;
@@ -319,19 +298,18 @@ function setupCrossTabSync(state: AppState): void {
       }
     }
 
-    if (msg.type === 'doc-title-change' && msg.graphUri === graph.uri && msg.did !== state.did) {
+    if (msg.type === 'doc-title-change' && msg.contextDid === contextDid && msg.did !== state.did) {
       state.docTitle = msg.title;
       document.dispatchEvent(new CustomEvent('doc-update', { detail: { type: 'title' } }));
     }
   });
 
-  // Broadcast cursor position periodically
   setInterval(() => {
     if (state.activeBlockId) {
       const myCollab = state.collaborators.find(c => c.did === state.did);
       bc.postMessage({
         type: 'doc-cursor',
-        graphUri: graph.uri,
+        contextDid,
         did: state.did,
         name: state.displayName,
         color: myCollab?.color || '#5865f2',
@@ -344,7 +322,7 @@ function setupCrossTabSync(state: AppState): void {
 export function broadcastBlockUpdate(state: AppState, blockId: string, content: string, blockType?: string): void {
   state.bc.postMessage({
     type: 'doc-block-update',
-    graphUri: state.graph.uri,
+    contextDid: state.context.did,
     did: state.did,
     blockId, content, blockType,
   });
@@ -353,7 +331,7 @@ export function broadcastBlockUpdate(state: AppState, blockId: string, content: 
 export function broadcastNewBlock(state: AppState, afterBlockId: string, block: Block): void {
   state.bc.postMessage({
     type: 'doc-new-block',
-    graphUri: state.graph.uri,
+    contextDid: state.context.did,
     did: state.did,
     afterBlockId, block,
   });
@@ -362,7 +340,7 @@ export function broadcastNewBlock(state: AppState, afterBlockId: string, block: 
 export function broadcastDeleteBlock(state: AppState, blockId: string): void {
   state.bc.postMessage({
     type: 'doc-delete-block',
-    graphUri: state.graph.uri,
+    contextDid: state.context.did,
     did: state.did,
     blockId,
   });
@@ -375,7 +353,7 @@ export function promoteCollaborator(state: AppState, targetDid: string, newRole:
     issueRoleZcap(state.governance, targetDid, newRole, state.did);
     state.bc.postMessage({
       type: 'doc-role-change',
-      graphUri: state.graph.uri,
+      contextDid: state.context.did,
       targetDid, newRole, ownerDid: state.did,
     });
     document.dispatchEvent(new CustomEvent('doc-update', { detail: { type: 'role-change' } }));

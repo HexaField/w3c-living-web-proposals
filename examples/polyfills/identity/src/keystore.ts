@@ -1,5 +1,5 @@
 /**
- * Encrypted key storage — Argon2id (via @noble/hashes) + AES-256-GCM + IndexedDB
+ * Encrypted key storage — Argon2id (via @noble/hashes) + AES-256-GCM + IndexedDB.
  */
 
 import { argon2id } from '@noble/hashes/argon2.js';
@@ -14,8 +14,8 @@ export interface StoredCredential {
   algorithm: string;
   displayName: string;
   createdAt: string;
-  publicKey: string; // hex
-  encryptedPrivateKey: string; // hex(salt + iv + ciphertext)
+  publicKey: string;             // hex
+  encryptedPrivateKey: string;   // hex(salt + iv + ciphertext)
 }
 
 function openDB(): Promise<IDBDatabase> {
@@ -40,7 +40,9 @@ function idbRequest<T>(req: IDBRequest<T>): Promise<T> {
 }
 
 function hexEncode(bytes: Uint8Array): string {
-  return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+  let out = '';
+  for (const b of bytes) out += b.toString(16).padStart(2, '0');
+  return out;
 }
 
 function hexDecode(hex: string): Uint8Array {
@@ -51,18 +53,34 @@ function hexDecode(hex: string): Uint8Array {
   return bytes;
 }
 
+/**
+ * Copy bytes into a fresh ArrayBuffer-backed Uint8Array.
+ *
+ * WebCrypto's BufferSource is typed `ArrayBufferView<ArrayBuffer> | ArrayBuffer`,
+ * which excludes SharedArrayBuffer backings. Uint8Arrays from third-party
+ * libraries (@noble/hashes) are typed `Uint8Array<ArrayBufferLike>` and so do
+ * not satisfy that constraint. Copying into a freshly-allocated ArrayBuffer is
+ * the cleanest portable fix.
+ */
+function intoArrayBuffer(u: Uint8Array): Uint8Array<ArrayBuffer> {
+  const fresh = new Uint8Array(new ArrayBuffer(u.length));
+  fresh.set(u);
+  return fresh as Uint8Array<ArrayBuffer>;
+}
+
 async function deriveKey(passphrase: string, salt: Uint8Array): Promise<CryptoKey> {
-  // Argon2id: m=4096 (4MB — reduced for polyfill perf), t=3, p=1
+  // Argon2id: m=4096 (4 MB — reduced for polyfill perf), t=3, p=1.
   const keyBytes = argon2id(passphrase, salt, { t: 3, m: 4096, p: 1, dkLen: 32 });
-  return (crypto.subtle.importKey as any)('raw', keyBytes, 'AES-GCM', false, ['encrypt', 'decrypt']);
+  return crypto.subtle.importKey('raw', intoArrayBuffer(keyBytes), 'AES-GCM', false, ['encrypt', 'decrypt']);
 }
 
 async function encryptPrivateKey(privateKey: Uint8Array, passphrase: string): Promise<Uint8Array> {
   const salt = randomBytes(16);
   const iv = randomBytes(12);
   const aesKey = await deriveKey(passphrase, salt);
-  const ciphertext = new Uint8Array(await (crypto.subtle.encrypt as any)({ name: 'AES-GCM', iv }, aesKey, privateKey));
-  // Pack: salt(16) + iv(12) + ciphertext
+  const ciphertext = new Uint8Array(
+    await crypto.subtle.encrypt({ name: 'AES-GCM', iv: intoArrayBuffer(iv) }, aesKey, intoArrayBuffer(privateKey)),
+  );
   const packed = new Uint8Array(16 + 12 + ciphertext.length);
   packed.set(salt, 0);
   packed.set(iv, 16);
@@ -76,7 +94,9 @@ async function decryptPrivateKey(packed: Uint8Array, passphrase: string): Promis
   const ciphertext = packed.slice(28);
   const aesKey = await deriveKey(passphrase, salt);
   try {
-    return new Uint8Array(await (crypto.subtle.decrypt as any)({ name: 'AES-GCM', iv }, aesKey, ciphertext));
+    return new Uint8Array(
+      await crypto.subtle.decrypt({ name: 'AES-GCM', iv: intoArrayBuffer(iv) }, aesKey, intoArrayBuffer(ciphertext)),
+    );
   } catch {
     throw new DOMException('Incorrect passphrase', 'InvalidAccessError');
   }
@@ -109,17 +129,17 @@ export async function storeCredential(
 export async function loadCredential(did: string): Promise<StoredCredential | undefined> {
   const db = await openDB();
   const tx = db.transaction(STORE_NAME, 'readonly');
-  const record = await idbRequest(tx.objectStore(STORE_NAME).get(did));
+  const record = await idbRequest(tx.objectStore(STORE_NAME).get(did)) as StoredCredential | undefined;
   db.close();
-  return record || undefined;
+  return record;
 }
 
 export async function loadAllCredentials(): Promise<StoredCredential[]> {
   const db = await openDB();
   const tx = db.transaction(STORE_NAME, 'readonly');
-  const records = await idbRequest(tx.objectStore(STORE_NAME).getAll());
+  const records = await idbRequest(tx.objectStore(STORE_NAME).getAll()) as StoredCredential[];
   db.close();
-  return records || [];
+  return records;
 }
 
 export async function deleteCredential(did: string): Promise<void> {
@@ -130,21 +150,14 @@ export async function deleteCredential(did: string): Promise<void> {
 }
 
 export async function unlockPrivateKey(stored: StoredCredential, passphrase: string): Promise<Uint8Array> {
-  const encrypted = hexDecode(stored.encryptedPrivateKey);
-  return decryptPrivateKey(encrypted, passphrase);
+  return decryptPrivateKey(hexDecode(stored.encryptedPrivateKey), passphrase);
 }
 
-export async function exportEncrypted(
-  privateKey: Uint8Array,
-  exportPassphrase: string,
-): Promise<Uint8Array> {
+export async function exportEncrypted(privateKey: Uint8Array, exportPassphrase: string): Promise<Uint8Array> {
   return encryptPrivateKey(privateKey, exportPassphrase);
 }
 
-export async function importEncrypted(
-  encrypted: Uint8Array,
-  exportPassphrase: string,
-): Promise<Uint8Array> {
+export async function importEncrypted(encrypted: Uint8Array, exportPassphrase: string): Promise<Uint8Array> {
   return decryptPrivateKey(encrypted, exportPassphrase);
 }
 

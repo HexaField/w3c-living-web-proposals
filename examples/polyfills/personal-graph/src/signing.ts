@@ -1,21 +1,38 @@
-import * as ed25519 from '@noble/ed25519';
-import { sha512, sha256 } from '@noble/hashes/sha2.js';
-import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
-import canonicalize from 'canonicalize';
-import type { SemanticTriple, SignedTriple, ContentProof } from './types.js';
+/**
+ * Reifier-based triple signing.
+ *
+ * Each triple gets a reifier carrying author/timestamp/method/signature.
+ * The signed payload is SHA-256(canonical-NQuad(triple, graphDid) || timestamp).
+ */
 
-// Configure sha512 for ed25519 v3 (uses etc.sha512Sync/sha512Async)
-const etc = ed25519.etc as Record<string, unknown>;
-if (etc && !etc.sha512Sync) {
-  etc.sha512Sync = (...msgs: Uint8Array[]) => {
-    const merged = new Uint8Array(msgs.reduce((acc: number, m: Uint8Array) => acc + m.length, 0));
+import * as ed25519 from '@noble/ed25519';
+import { sha256, sha512 } from '@noble/hashes/sha2.js';
+import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
+import {
+  ed25519 as ed25519Identity,
+  encodeEd25519Multibase,
+} from '@living-web/identity';
+import { Triple, type Reifier, type SignedTriple } from './types.js';
+
+// Re-use the @noble/ed25519 instance configured by @living-web/identity
+// (it already wires the sha512 helper). Fall back to local configuration if not.
+const ed = ed25519Identity ?? ed25519;
+const ed25519Etc = ed.etc as {
+  sha512Sync?: (...msgs: Uint8Array[]) => Uint8Array;
+  sha512Async?: (...msgs: Uint8Array[]) => Promise<Uint8Array>;
+};
+if (!ed25519Etc.sha512Sync) {
+  ed25519Etc.sha512Sync = (...msgs: Uint8Array[]) => {
+    const merged = new Uint8Array(msgs.reduce((acc, m) => acc + m.length, 0));
     let offset = 0;
-    for (const m of msgs) { merged.set(m, offset); offset += m.length; }
+    for (const m of msgs) {
+      merged.set(m, offset);
+      offset += m.length;
+    }
     return sha512(merged);
   };
-  etc.sha512Async = async (...msgs: Uint8Array[]) => {
-    return (etc.sha512Sync as (...m: Uint8Array[]) => Uint8Array)(...msgs);
-  };
+  ed25519Etc.sha512Async = async (...msgs: Uint8Array[]) =>
+    ed25519Etc.sha512Sync!(...msgs);
 }
 
 export interface IdentityProvider {
@@ -25,84 +42,103 @@ export interface IdentityProvider {
   getPublicKey(): Uint8Array;
 }
 
-// Ephemeral identity — generates a new key pair per session
+/**
+ * In-memory identity for tests and fallback scenarios — generates a fresh
+ * Ed25519 keypair on construction. Not for production use.
+ */
 export class EphemeralIdentity implements IdentityProvider {
-  private privateKey: Uint8Array;
-  private publicKey: Uint8Array;
-  private did: string;
-  private ready: Promise<void>;
+  private privateKey!: Uint8Array;
+  private publicKey!: Uint8Array;
+  private did!: string;
+  private methodId!: string;
+  private readonly ready: Promise<void>;
 
   constructor() {
-    this.privateKey = ((ed25519.utils as any).randomPrivateKey || ed25519.utils.randomSecretKey)();
-    this.publicKey = new Uint8Array(0);
-    this.did = '';
     this.ready = this.init();
   }
 
-  private async init() {
-    this.publicKey = await ed25519.getPublicKeyAsync(this.privateKey);
-    const hex = bytesToHex(this.publicKey);
-    this.did = `did:key:z6Mk${hex.slice(0, 32)}`;
+  private async init(): Promise<void> {
+    type RandomFn = () => Uint8Array;
+    const utils = ed.utils as { randomPrivateKey?: RandomFn; randomSecretKey?: RandomFn };
+    const fn = utils.randomPrivateKey ?? utils.randomSecretKey;
+    if (!fn) throw new Error('No random key generator available in @noble/ed25519');
+    this.privateKey = fn();
+    this.publicKey = await ed.getPublicKeyAsync(this.privateKey);
+    const multibase = encodeEd25519Multibase(this.publicKey);
+    this.did = `did:key:${multibase}`;
+    this.methodId = `${this.did}#${multibase}`;
   }
 
-  async ensureReady() {
+  async ensureReady(): Promise<void> {
     await this.ready;
   }
 
   getDID(): string {
     return this.did;
   }
-
   getKeyURI(): string {
-    return `${this.did}#key-1`;
+    return this.methodId;
+  }
+  getPublicKey(): Uint8Array {
+    return this.publicKey;
   }
 
   async sign(data: Uint8Array): Promise<Uint8Array> {
     await this.ready;
-    return ed25519.signAsync(data, this.privateKey);
-  }
-
-  getPublicKey(): Uint8Array {
-    return this.publicKey;
+    return ed.signAsync(data, this.privateKey);
   }
 }
 
-export function computeSignaturePayload(triple: SemanticTriple, timestamp: string): Uint8Array {
-  const canonical = canonicalize({
-    source: triple.source,
-    target: triple.target,
-    predicate: triple.predicate,
-  });
-  const message = canonical + timestamp;
-  return sha256(new TextEncoder().encode(message));
+export function canonicalNQuad(t: Triple, graphDid?: string): string {
+  const target = /^[a-zA-Z][\w+\-.]*:.+/.test(t.target) || t.target.startsWith('_:')
+    ? `<${t.target}>`
+    : `"${t.target.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+  const graph = graphDid ? ` <${graphDid}>` : '';
+  return `<${t.source}> <${t.predicate}> ${target}${graph} .`;
 }
 
-export async function signTriple(
-  triple: SemanticTriple,
-  identity: IdentityProvider
-): Promise<SignedTriple> {
+export function computeSignaturePayload(triple: Triple, timestamp: string, graphDid?: string): Uint8Array {
+  return sha256(new TextEncoder().encode(canonicalNQuad(triple, graphDid) + timestamp));
+}
+
+export async function signTripleWithReifier(
+  triple: Triple,
+  identity: IdentityProvider,
+  graphDid?: string,
+): Promise<Reifier> {
   const timestamp = new Date().toISOString();
-  const payload = computeSignaturePayload(triple, timestamp);
+  const payload = computeSignaturePayload(triple, timestamp, graphDid);
   const signature = await identity.sign(payload);
-
-  const proof: ContentProof = {
-    key: identity.getKeyURI(),
-    signature: bytesToHex(signature),
-  };
-
+  const reifierId = `_:r-${bytesToHex(sha256(payload)).slice(0, 16)}`;
   return {
-    data: triple,
+    id: reifierId,
+    triple,
     author: identity.getDID(),
     timestamp,
-    proof,
+    method: identity.getKeyURI(),
+    signature: bytesToHex(signature),
   };
 }
 
-export async function verifyTripleSignature(
-  signed: SignedTriple,
-  publicKey: Uint8Array
+export async function verifyReifier(
+  reifier: Reifier,
+  publicKey: Uint8Array,
+  graphDid?: string,
 ): Promise<boolean> {
-  const payload = computeSignaturePayload(signed.data, signed.timestamp);
-  const sig = hexToBytes(signed.proof.signature);
-  return ed25519.verifyAsync(sig, payload, publicKey);
+  try {
+    const payload = computeSignaturePayload(reifier.triple, reifier.timestamp, graphDid);
+    return await ed.verifyAsync(hexToBytes(reifier.signature), payload, publicKey);
+  } catch {
+    return false;
+  }
+}
+
+/** Convert a Reifier into the SignedTriple wire shape. */
+export function reifierToSigned(reifier: Reifier): SignedTriple {
+  return {
+    data: reifier.triple,
+    author: reifier.author,
+    timestamp: reifier.timestamp,
+    proof: { method: reifier.method, signature: reifier.signature },
+  };
 }

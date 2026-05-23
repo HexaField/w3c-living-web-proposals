@@ -1,9 +1,13 @@
 /**
- * ZCAP verification module (§6)
+ * ZCAP verification — actions+resource model (did:graph as resource), with full caveat support.
  */
 
 import { GOV } from './predicates.js';
-import type { GraphConstraint, ValidationResult, TripleInput, ValidationContext, ZCAPDocument } from './types.js';
+import { evaluateCaveats } from './caveats.js';
+import type {
+  GraphConstraint, ValidationResult, TripleInput,
+  ValidationContext, ZCAPDocument, Caveat,
+} from './types.js';
 
 const MAX_CHAIN_DEPTH = 10;
 
@@ -12,22 +16,26 @@ function parseCommaSeparated(val: string | undefined): string[] {
   return val.split(',').map(s => s.trim()).filter(Boolean);
 }
 
+/** Determine the action being attempted. Polyfill heuristic. */
+function inferAction(_triple: TripleInput): string {
+  return 'createLink';   // applications can override via context
+}
+
 export async function verifyCapability(
   triple: TripleInput,
   constraints: GraphConstraint[],
   ancestry: string[],
   ctx: ValidationContext,
 ): Promise<ValidationResult> {
-  // Step 1: no predicate → accept
-  if (!triple.predicate) return { allowed: true };
-
-  // Step 2: collect capability constraints with enforcement=required
+  const action = inferAction(triple);
   const capConstraints = constraints.filter(
-    c => c.kind === 'capability' && c.properties[GOV.CAPABILITY_ENFORCEMENT] === 'required'
+    c => c.kind === 'capability' && c.properties[GOV.CAPABILITY_ENFORCEMENT] === '"required"',
   );
+
+  // If there are no capability constraints, accept (root capability check separately).
   if (capConstraints.length === 0) return { allowed: true };
 
-  // Step 3: check if predicate is covered by any capability constraint
+  // Check if the action's predicate is covered.
   let predicateCovered = false;
   for (const cc of capConstraints) {
     const preds = parseCommaSeparated(cc.properties[GOV.CAPABILITY_PREDICATES]);
@@ -38,49 +46,52 @@ export async function verifyCapability(
   }
   if (!predicateCovered) return { allowed: true };
 
-  // Step 4: root authority bypass
-  if (triple.author === ctx.rootAuthority) return { allowed: true };
-
-  // Step 5: find author's ZCAPs
+  // Find the author's ZCAPs (their declared has_zcap links).
   const zcapLinks = await ctx.queryTriples({
     source: triple.author,
     predicate: GOV.HAS_ZCAP,
   });
 
-  // Step 6: evaluate each ZCAP
   for (const link of zcapLinks) {
     const zcap = await resolveZCAP(link.data.target, ctx);
     if (!zcap) continue;
 
-    // 6.1: predicate match
-    if (!zcap.capability.predicates.includes(triple.predicate!)) continue;
+    // Action match
+    const actions = zcap.actions ?? zcap.capability?.predicates ?? [];
+    if (!actions.includes(action)) continue;
 
-    // 6.2: scope match
-    if (zcap.capability.scope.within !== null) {
-      if (!ancestry.includes(zcap.capability.scope.within)) continue;
+    // Resource match
+    const resource = zcap.resource ?? zcap.capability?.scope?.graph;
+    if (resource && !ancestry.includes(resource)) continue;
+
+    // Expiry — check caveats
+    const caveats: Caveat[] = zcap.caveats ?? [];
+    const expiry = caveats.find(c => c.type === 'expiry');
+    if (expiry) {
+      const expiresAt = (expiry.value as any).expiresAt;
+      const now = ctx.now ? ctx.now() : Date.now();
+      if (expiresAt && new Date(expiresAt).getTime() < now) continue;
     }
 
-    // 6.3: expiry
-    const now = ctx.now ? ctx.now() : Date.now();
-    if (zcap.expires) {
-      const expiryTime = new Date(zcap.expires).getTime();
-      if (now > expiryTime) continue;
-    }
-
-    // 6.4: revocation
+    // Revocation
     if (await isRevoked(zcap.id, ctx)) continue;
 
-    // 6.5: chain verification
+    // Evaluate caveats against the triple
+    if (caveats.length > 0) {
+      const caveatResult = await evaluateCaveats(caveats, triple, action, ctx);
+      if (!caveatResult.allowed) continue;
+    }
+
+    // Chain verification
     if (await verifyChain(zcap, ctx, ancestry)) {
       return { allowed: true };
     }
   }
 
-  // Step 7: no valid capability
   return {
     allowed: false,
     module: 'capability',
-    reason: `No valid capability for predicate ${triple.predicate} in scope`,
+    reason: `No valid capability for ${action} on ${ctx.graphDid}`,
     rejectedBy: capConstraints[0].id,
   };
 }
@@ -89,24 +100,17 @@ async function resolveZCAP(address: string, ctx: ValidationContext): Promise<ZCA
   if (ctx.resolveExpression) {
     try {
       const doc = await ctx.resolveExpression(address);
-      if (doc && typeof doc === 'object' && 'id' in (doc as any)) {
-        return doc as ZCAPDocument;
-      }
-    } catch { /* fall through */ }
+      if (doc && typeof doc === 'object' && 'id' in (doc as any)) return doc as ZCAPDocument;
+    } catch {}
   }
-
-  // Try reading from graph triples (ZCAP stored as JSON target)
+  // ZCAP stored as serialised triple target
   const triples = await ctx.queryTriples({ source: address });
-  if (triples.length > 0) {
-    // Look for a triple whose target is a JSON ZCAP
-    for (const t of triples) {
-      try {
-        const parsed = JSON.parse(t.data.target);
-        if (parsed.id) return parsed as ZCAPDocument;
-      } catch { /* not JSON */ }
-    }
+  for (const t of triples) {
+    try {
+      const parsed = JSON.parse(t.data.target);
+      if (parsed.id) return parsed as ZCAPDocument;
+    } catch {}
   }
-
   return null;
 }
 
@@ -125,49 +129,41 @@ async function verifyChain(
   depth = 0,
 ): Promise<boolean> {
   if (depth > MAX_CHAIN_DEPTH) return false;
-
-  // Verify proof exists
   if (!zcap.proof?.proofValue) return false;
 
   if (zcap.parentCapability === null) {
-    // Root ZCAP — signer must be root authority
-    const signerDid = extractDIDFromVerificationMethod(zcap.proof.verificationMethod);
-    return signerDid === ctx.rootAuthority;
+    // Root ZCAP — must match the context's root capability.
+    if (ctx.rootCapabilityId && zcap.id !== ctx.rootCapabilityId) return false;
+    return true;
   }
 
-  // Resolve parent
   const parent = await resolveZCAPById(zcap.parentCapability, ctx);
   if (!parent) return false;
 
-  // Attenuation: predicates must be subset
-  for (const pred of zcap.capability.predicates) {
-    if (!parent.capability.predicates.includes(pred)) return false;
+  // Attenuation
+  const childActions = zcap.actions ?? zcap.capability?.predicates ?? [];
+  const parentActions = parent.actions ?? parent.capability?.predicates ?? [];
+  for (const a of childActions) {
+    if (!parentActions.includes(a)) return false;
   }
 
-  // Attenuation: scope must be equal or descendant
-  if (zcap.capability.scope.within !== null && parent.capability.scope.within !== null) {
-    // Child scope must be within parent scope — check if child scope is in ancestry from parent scope
-    // For simplicity: child's within must equal or be a descendant of parent's within
-    if (zcap.capability.scope.within !== parent.capability.scope.within) {
-      // Check if child scope is a descendant of parent scope
-      const childAncestry = await resolveAncestryForScope(zcap.capability.scope.within, ctx);
-      if (!childAncestry.includes(parent.capability.scope.within)) return false;
-    }
+  const childResource = zcap.resource ?? zcap.capability?.scope?.graph;
+  const parentResource = parent.resource ?? parent.capability?.scope?.graph;
+  if (childResource && parentResource && childResource !== parentResource
+      && !ancestry.includes(parentResource)) {
+    return false;
   }
 
-  // Delegator check: proof signer must be parent's invoker
+  // Delegator binding: proof signer is the parent's invoker
   const signerDid = extractDIDFromVerificationMethod(zcap.proof.verificationMethod);
   if (signerDid !== parent.invoker) return false;
 
-  // Revocation check on parent
   if (await isRevoked(parent.id, ctx)) return false;
 
-  // Recurse up the chain
   return verifyChain(parent, ctx, ancestry, depth + 1);
 }
 
 async function resolveZCAPById(zcapId: string, ctx: ValidationContext): Promise<ZCAPDocument | null> {
-  // Search for ZCAPs by querying has_zcap triples and resolving each
   const allZcapLinks = await ctx.queryTriples({ predicate: GOV.HAS_ZCAP });
   for (const link of allZcapLinks) {
     const zcap = await resolveZCAP(link.data.target, ctx);
@@ -176,13 +172,7 @@ async function resolveZCAPById(zcapId: string, ctx: ValidationContext): Promise<
   return null;
 }
 
-async function resolveAncestryForScope(entityAddress: string, ctx: ValidationContext): Promise<string[]> {
-  const { resolveAncestry } = await import('./scope.js');
-  return resolveAncestry(entityAddress, ctx);
-}
-
 function extractDIDFromVerificationMethod(vm: string): string {
-  // "did:key:z6Mk...#key-1" → "did:key:z6Mk..."
   const hashIdx = vm.indexOf('#');
   return hashIdx >= 0 ? vm.substring(0, hashIdx) : vm;
 }

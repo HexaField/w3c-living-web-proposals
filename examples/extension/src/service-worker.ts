@@ -11,8 +11,8 @@ let currentIdentity: { did: string; displayName: string } | null = null;
 // Restore identity from storage on startup
 chrome.storage.local.get(['livingWebIdentity'], (result) => {
   if (result.livingWebIdentity) {
-    currentIdentity = result.livingWebIdentity;
-    console.info('[Living Web SW] Restored identity:', currentIdentity?.did);
+    currentIdentity = result.livingWebIdentity as { did: string; displayName: string };
+    console.info('[Living Web SW] Restored identity:', currentIdentity.did);
   }
 });
 
@@ -46,7 +46,7 @@ chrome.runtime.onMessage.addListener((message: ExtensionMessage, _sender, sendRe
         type: 'STATUS',
         identity: currentIdentity,
         graphs: [],
-        sharedGraphs: [],
+        mountedContexts: [],
         active: true,
       };
       sendResponse(status);

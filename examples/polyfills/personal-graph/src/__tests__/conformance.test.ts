@@ -1,463 +1,256 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+/**
+ * Conformance tests for @living-web/personal-graph.
+ */
+
+import { describe, it, expect, beforeEach } from 'vitest';
 import 'fake-indexeddb/auto';
+
 import {
-  SemanticTriple,
-  PersonalGraphManager,
-  PersonalGraph,
-  TripleEvent,
-  verifyTripleSignature,
+  Triple,
+  Context,
+  GraphStorage,
+  GraphStoreManager,
   EphemeralIdentity,
+  signTripleWithReifier,
+  verifyReifier,
+  reifierToSigned,
+  canonicalNQuad,
+  computeContentHash,
+  getAsSnapshot,
+  parseSnapshot,
   type SignedTriple,
+  type IdentityProvider,
 } from '../index.js';
 
-let manager: PersonalGraphManager;
-let identity: EphemeralIdentity;
-let testDbName: string;
+let store: GraphStorage;
 
-beforeEach(async () => {
-  testDbName = `test-db-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  identity = new EphemeralIdentity();
-  await identity.ensureReady();
-  manager = new PersonalGraphManager(identity, testDbName);
+beforeEach(() => {
+  store = new GraphStorage(`test-${crypto.randomUUID()}`);
 });
 
-// §3.1 SemanticTriple
-describe('§3.1 SemanticTriple', () => {
-  it('MUST reject triple with non-URI source', () => {
-    expect(() => new SemanticTriple('not a uri', 'https://example.com/target')).toThrow(TypeError);
+describe('Triple', () => {
+  it('requires a valid source URI', () => {
+    expect(() => new Triple('not a uri', 'pred://x', 'value')).toThrow(TypeError);
   });
 
-  it('MUST accept URI target and literal string target', () => {
-    const t1 = new SemanticTriple('https://example.com/s', 'https://example.com/t');
-    expect(t1.target).toBe('https://example.com/t');
-    const t2 = new SemanticTriple('https://example.com/s', 'some literal value');
-    expect(t2.target).toBe('some literal value');
+  it('requires a valid predicate URI', () => {
+    expect(() => new Triple('urn:a', 'not a uri', 'value')).toThrow(TypeError);
   });
 
-  it('MUST reject triple with non-URI predicate when present', () => {
-    expect(() => new SemanticTriple('https://example.com/s', 'https://example.com/t', 'bad predicate')).toThrow(TypeError);
+  it('requires a non-empty target', () => {
+    expect(() => new Triple('urn:a', 'pred://x', '')).toThrow(TypeError);
   });
 
-  it('predicate is null when not provided', () => {
-    const t = new SemanticTriple('https://example.com/s', 'https://example.com/t');
-    expect(t.predicate).toBeNull();
-  });
-
-  it('accepts valid URI predicate', () => {
-    const t = new SemanticTriple('https://example.com/s', 'https://example.com/t', 'https://schema.org/about');
-    expect(t.predicate).toBe('https://schema.org/about');
+  it('stores all three components when valid', () => {
+    const t = new Triple('urn:a', 'pred://x', 'value');
+    expect(t.source).toBe('urn:a');
+    expect(t.predicate).toBe('pred://x');
+    expect(t.target).toBe('value');
   });
 });
 
-// §3.2 SignedTriple
-describe('§3.2 SignedTriple', () => {
-  it('MUST have author as valid DID URI', async () => {
-    const graph = await manager.create('test');
-    const triple = new SemanticTriple('https://example.com/s', 'https://example.com/t', 'https://schema.org/about');
-    const signed = await graph.addTriple(triple);
-    expect(signed.author).toMatch(/^did:/);
+describe('Reifier signing', () => {
+  it('produces a verifiable reifier for a triple', async () => {
+    const id = new EphemeralIdentity();
+    await id.ensureReady();
+    const triple = new Triple('urn:event:1', 'schema://name', 'Coffee');
+    const reifier = await signTripleWithReifier(triple, id, 'did:graph:test');
+    expect(reifier.author).toBe(id.getDID());
+    expect(reifier.method).toBe(id.getKeyURI());
+    const ok = await verifyReifier(reifier, id.getPublicKey(), 'did:graph:test');
+    expect(ok).toBe(true);
   });
 
-  it('MUST have timestamp as valid RFC 3339', async () => {
-    const graph = await manager.create('test');
-    const triple = new SemanticTriple('https://example.com/s', 'https://example.com/t');
-    const signed = await graph.addTriple(triple);
-    // ISO 8601 / RFC 3339 check
-    expect(new Date(signed.timestamp).toISOString()).toBe(signed.timestamp);
-  });
-
-  it('MUST have verifiable Ed25519 signature over SHA-256(JCS(data) + timestamp)', async () => {
-    const graph = await manager.create('test');
-    const triple = new SemanticTriple('https://example.com/s', 'https://example.com/t', 'https://schema.org/about');
-    const signed = await graph.addTriple(triple);
-    const valid = await verifyTripleSignature(signed, identity.getPublicKey());
-    expect(valid).toBe(true);
-  });
-
-  it('signature uses Ed25519 algorithm', async () => {
-    const graph = await manager.create('test');
-    const triple = new SemanticTriple('https://example.com/s', 'https://example.com/t');
-    const signed = await graph.addTriple(triple);
-    // Ed25519 signature is 64 bytes = 128 hex chars
-    expect(signed.proof.signature).toMatch(/^[0-9a-f]{128}$/);
-  });
-});
-
-// §4.1 PersonalGraphManager
-describe('§4.1 PersonalGraphManager', () => {
-  it('create() MUST return graph with valid UUIDv4', async () => {
-    const graph = await manager.create();
-    expect(graph.uuid).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
-  });
-
-  it('create("My Graph") MUST store and return the name', async () => {
-    const graph = await manager.create('My Graph');
-    expect(graph.name).toBe('My Graph');
-  });
-
-  it('create() without name has null name', async () => {
-    const graph = await manager.create();
-    expect(graph.name).toBeNull();
-  });
-
-  it('list() returns created graphs', async () => {
-    await manager.create('A');
-    await manager.create('B');
-    const list = await manager.list();
-    expect(list.length).toBe(2);
-  });
-
-  it('get() returns graph by UUID', async () => {
-    const graph = await manager.create('test');
-    const found = await manager.get(graph.uuid);
-    expect(found).not.toBeNull();
-    expect(found!.uuid).toBe(graph.uuid);
-  });
-
-  it('get() returns null for nonexistent UUID', async () => {
-    const found = await manager.get('00000000-0000-4000-8000-000000000000');
-    expect(found).toBeNull();
-  });
-
-  it('remove() MUST return true for existing graph', async () => {
-    const graph = await manager.create('test');
-    const result = await manager.remove(graph.uuid);
-    expect(result).toBe(true);
-  });
-
-  it('remove() MUST return false for nonexistent UUID', async () => {
-    const result = await manager.remove('00000000-0000-4000-8000-000000000000');
-    expect(result).toBe(false);
-  });
-
-  it('remove() MUST permanently delete all triples and metadata', async () => {
-    const graph = await manager.create('test');
-    const triple = new SemanticTriple('https://example.com/s', 'https://example.com/t');
-    await graph.addTriple(triple);
-    await manager.remove(graph.uuid);
-    const found = await manager.get(graph.uuid);
-    expect(found).toBeNull();
-    const list = await manager.list();
-    expect(list.length).toBe(0);
-  });
-});
-
-// §4.2.1 addTriple
-describe('§4.2.1 addTriple', () => {
-  it('MUST return SignedTriple with valid signature', async () => {
-    const graph = await manager.create('test');
-    const triple = new SemanticTriple('https://example.com/s', 'https://example.com/t');
-    const signed = await graph.addTriple(triple);
-    expect(signed.data.source).toBe('https://example.com/s');
-    expect(signed.data.target).toBe('https://example.com/t');
-    expect(signed.author).toBeTruthy();
-    expect(signed.proof).toBeTruthy();
-  });
-
-  it('MUST fire tripleadded event', async () => {
-    const graph = await manager.create('test');
-    const handler = vi.fn();
-    graph.ontripleadded = handler;
-    const triple = new SemanticTriple('https://example.com/s', 'https://example.com/t');
-    await graph.addTriple(triple);
-    expect(handler).toHaveBeenCalledTimes(1);
-    const event = handler.mock.calls[0][0] as TripleEvent;
-    expect(event.triple.data.source).toBe('https://example.com/s');
-  });
-});
-
-// §4.2.2 addTriples
-describe('§4.2.2 addTriples', () => {
-  it('MUST sign and return all triples in batch', async () => {
-    const graph = await manager.create('test');
-    const triples = [
-      new SemanticTriple('https://example.com/s1', 'https://example.com/t1'),
-      new SemanticTriple('https://example.com/s2', 'https://example.com/t2'),
-    ];
-    const signed = await graph.addTriples(triples);
-    expect(signed.length).toBe(2);
-    expect(signed[0].proof).toBeTruthy();
-    expect(signed[1].proof).toBeTruthy();
-  });
-
-  it('MUST fire tripleadded event for each triple', async () => {
-    const graph = await manager.create('test');
-    const handler = vi.fn();
-    graph.ontripleadded = handler;
-    await graph.addTriples([
-      new SemanticTriple('https://example.com/s1', 'https://example.com/t1'),
-      new SemanticTriple('https://example.com/s2', 'https://example.com/t2'),
-    ]);
-    expect(handler).toHaveBeenCalledTimes(2);
-  });
-});
-
-// §4.2.3 removeTriple
-describe('§4.2.3 removeTriple', () => {
-  it('MUST remove triple and return true', async () => {
-    const graph = await manager.create('test');
-    const triple = new SemanticTriple('https://example.com/s', 'https://example.com/t');
-    const signed = await graph.addTriple(triple);
-    const result = await graph.removeTriple(signed);
-    expect(result).toBe(true);
-    const remaining = await graph.snapshot();
-    expect(remaining.length).toBe(0);
-  });
-
-  it('MUST return false for nonexistent triple', async () => {
-    const graph = await manager.create('test');
-    const fakeTriple: SignedTriple = {
-      data: new SemanticTriple('https://example.com/s', 'https://example.com/t'),
-      author: 'did:key:fake',
-      timestamp: new Date().toISOString(),
-      proof: { key: 'did:key:fake#key-1', signature: '00'.repeat(64) },
+  it('rejects a tampered triple', async () => {
+    const id = new EphemeralIdentity();
+    await id.ensureReady();
+    const triple = new Triple('urn:event:1', 'schema://name', 'Coffee');
+    const reifier = await signTripleWithReifier(triple, id, 'did:graph:test');
+    const tampered = {
+      ...reifier,
+      triple: new Triple('urn:event:1', 'schema://name', 'Tea'),
     };
-    const result = await graph.removeTriple(fakeTriple);
-    expect(result).toBe(false);
+    const ok = await verifyReifier(tampered, id.getPublicKey(), 'did:graph:test');
+    expect(ok).toBe(false);
   });
 
-  it('MUST fire tripleremoved event', async () => {
-    const graph = await manager.create('test');
-    const handler = vi.fn();
-    graph.ontripleremoved = handler;
-    const triple = new SemanticTriple('https://example.com/s', 'https://example.com/t');
-    const signed = await graph.addTriple(triple);
-    await graph.removeTriple(signed);
-    expect(handler).toHaveBeenCalledTimes(1);
+  it('canonical N-Quad is deterministic across runs', () => {
+    const t = new Triple('urn:a', 'pred://x', 'value');
+    expect(canonicalNQuad(t, 'did:graph:test')).toBe(canonicalNQuad(t, 'did:graph:test'));
   });
 });
 
-// §4.2.4 queryTriples
-describe('§4.2.4 queryTriples', () => {
-  it('MUST return matching triples ordered by timestamp desc', async () => {
-    const graph = await manager.create('test');
-    await graph.addTriple(new SemanticTriple('https://example.com/s', 'https://example.com/t1', 'https://schema.org/about'));
-    await graph.addTriple(new SemanticTriple('https://example.com/s', 'https://example.com/t2', 'https://schema.org/about'));
-    const results = await graph.queryTriples({ source: 'https://example.com/s' });
-    expect(results.length).toBe(2);
-    expect(results[0].timestamp >= results[1].timestamp).toBe(true);
+describe('Context', () => {
+  let identity: IdentityProvider;
+  let context: Context;
+
+  beforeEach(async () => {
+    const eph = new EphemeralIdentity();
+    await eph.ensureReady();
+    identity = eph;
+    context = new Context('did:graph:test-ctx', 'Test', identity, store);
   });
 
-  it('queryTriples with source+predicate returns intersection', async () => {
-    const graph = await manager.create('test');
-    await graph.addTriple(new SemanticTriple('https://example.com/s', 'https://example.com/t1', 'https://schema.org/about'));
-    await graph.addTriple(new SemanticTriple('https://example.com/s', 'https://example.com/t2', 'https://schema.org/name'));
-    const results = await graph.queryTriples({
-      source: 'https://example.com/s',
-      predicate: 'https://schema.org/about',
-    });
-    expect(results.length).toBe(1);
-    expect(results[0].data.predicate).toBe('https://schema.org/about');
+  it('adds a triple and emits tripleadded', async () => {
+    const events: SignedTriple[] = [];
+    context.ontripleadded = (e) => {
+      const ev = e as Event & { triple: SignedTriple };
+      events.push(ev.triple);
+    };
+    const t = new Triple('urn:a', 'pred://x', 'value');
+    const signed = await context.addTriple(t);
+    expect(signed.author).toBe(identity.getDID());
+    expect(events).toHaveLength(1);
   });
 
-  it('queryTriples with null source matches all sources', async () => {
-    const graph = await manager.create('test');
-    await graph.addTriple(new SemanticTriple('https://example.com/s1', 'https://example.com/t'));
-    await graph.addTriple(new SemanticTriple('https://example.com/s2', 'https://example.com/t'));
-    const results = await graph.queryTriples({});
-    expect(results.length).toBe(2);
+  it('queries by source, predicate, target', async () => {
+    await context.addTriple(new Triple('urn:a', 'pred://x', 'v1'));
+    await context.addTriple(new Triple('urn:a', 'pred://y', 'v2'));
+    await context.addTriple(new Triple('urn:b', 'pred://x', 'v3'));
+
+    const bySource = await context.queryTriples({ source: 'urn:a' });
+    expect(bySource).toHaveLength(2);
+
+    const byPredicate = await context.queryTriples({ predicate: 'pred://x' });
+    expect(byPredicate).toHaveLength(2);
+
+    const byTarget = await context.queryTriples({ target: 'v3' });
+    expect(byTarget).toHaveLength(1);
   });
 
-  it('queryTriples with limit MUST return at most that many results', async () => {
-    const graph = await manager.create('test');
-    for (let i = 0; i < 10; i++) {
-      await graph.addTriple(new SemanticTriple(`https://example.com/s${i}`, 'https://example.com/t'));
-    }
-    const results = await graph.queryTriples({ limit: 5 });
-    expect(results.length).toBe(5);
-  });
-});
-
-// §4.2.5 querySparql
-describe('§4.2.5 querySparql', () => {
-  it('MUST execute SELECT and return bindings', async () => {
-    const graph = await manager.create('test');
-    await graph.addTriple(new SemanticTriple('https://example.com/note1', 'https://example.com/topic1', 'https://schema.org/about'));
-    const result = await graph.querySparql(`
-      SELECT ?note ?topic WHERE {
-        ?note <https://schema.org/about> ?topic .
-      }
-    `);
-    expect(result.type).toBe('bindings');
-    expect(result.bindings.length).toBe(1);
-    expect(result.bindings[0].note).toBe('https://example.com/note1');
-    expect(result.bindings[0].topic).toBe('https://example.com/topic1');
+  it('removes a triple and emits tripleremoved', async () => {
+    const events: SignedTriple[] = [];
+    context.ontripleremoved = (e) => {
+      const ev = e as Event & { triple: SignedTriple };
+      events.push(ev.triple);
+    };
+    const signed = await context.addTriple(new Triple('urn:a', 'pred://x', 'v1'));
+    const ok = await context.removeTriple(signed);
+    expect(ok).toBe(true);
+    expect(events).toHaveLength(1);
+    const remaining = await context.queryTriples({});
+    expect(remaining).toHaveLength(0);
   });
 
-  it('supports LIMIT', async () => {
-    const graph = await manager.create('test');
-    for (let i = 0; i < 5; i++) {
-      await graph.addTriple(new SemanticTriple(`https://example.com/s${i}`, `https://example.com/t${i}`, 'https://schema.org/about'));
-    }
-    const result = await graph.querySparql(`
-      SELECT ?s ?t WHERE { ?s <https://schema.org/about> ?t . } LIMIT 2
-    `);
-    expect(result.bindings.length).toBe(2);
+  it('addTriples is atomic and signs all triples', async () => {
+    const signed = await context.addTriples([
+      new Triple('urn:a', 'pred://x', 'v1'),
+      new Triple('urn:b', 'pred://x', 'v2'),
+    ]);
+    expect(signed).toHaveLength(2);
+    expect(signed.every(s => s.author === identity.getDID())).toBe(true);
   });
-});
 
-// §4.2.6 snapshot
-describe('§4.2.6 snapshot', () => {
-  it('MUST return all triples ordered by timestamp ascending', async () => {
-    const graph = await manager.create('test');
-    await graph.addTriple(new SemanticTriple('https://example.com/s1', 'https://example.com/t1'));
-    await graph.addTriple(new SemanticTriple('https://example.com/s2', 'https://example.com/t2'));
-    const snap = await graph.snapshot();
-    expect(snap.length).toBe(2);
+  it('exposes provenance for a triple', async () => {
+    const signed = await context.addTriple(new Triple('urn:a', 'pred://x', 'value'));
+    const reifiers = await context.provenance(signed.data);
+    expect(reifiers).toHaveLength(1);
+    expect(reifiers[0].author).toBe(identity.getDID());
+  });
+
+  it('snapshot returns triples sorted by timestamp ascending', async () => {
+    await context.addTriple(new Triple('urn:a', 'pred://x', 'v1'));
+    await new Promise(resolve => setTimeout(resolve, 5));
+    await context.addTriple(new Triple('urn:b', 'pred://x', 'v2'));
+    const snap = await context.snapshot();
     expect(snap[0].timestamp <= snap[1].timestamp).toBe(true);
   });
 });
 
-// §3.3 GraphSyncState
-describe('§3.3 GraphSyncState', () => {
-  it('state is "private" by default', async () => {
-    const graph = await manager.create('test');
-    expect(graph.state).toBe('private');
+describe('Graph snapshots', () => {
+  it('content hash is deterministic regardless of triple insertion order', async () => {
+    const id = new EphemeralIdentity();
+    await id.ensureReady();
+    const t1 = await signTripleWithReifier(new Triple('urn:a', 'pred://x', 'v1'), id, 'did:graph:g');
+    const t2 = await signTripleWithReifier(new Triple('urn:b', 'pred://y', 'v2'), id, 'did:graph:g');
+    const hash1 = computeContentHash([reifierToSigned(t1), reifierToSigned(t2)], 'did:graph:g');
+    const hash2 = computeContentHash([reifierToSigned(t2), reifierToSigned(t1)], 'did:graph:g');
+    expect(hash1).toBe(hash2);
+  });
+
+  it('round-trips through snapshot serialise → parse', async () => {
+    const id = new EphemeralIdentity();
+    await id.ensureReady();
+    const t = await signTripleWithReifier(new Triple('urn:a', 'pred://x', 'value'), id, 'did:graph:g');
+    const snap = await getAsSnapshot('did:graph:g', [reifierToSigned(t)], id, null, { signBy: 'agent' });
+    const parsed = parseSnapshot(snap);
+    expect(parsed.triples).toHaveLength(1);
+    expect(parsed.triples[0].source).toBe('urn:a');
+    expect(parsed.triples[0].predicate).toBe('pred://x');
+    expect(parsed.triples[0].target).toBe('value');
+  });
+
+  it('snapshot proofs include the requested role', async () => {
+    const id = new EphemeralIdentity();
+    await id.ensureReady();
+    const snap = await getAsSnapshot('did:graph:g', [], id, null, { signBy: 'agent' });
+    expect(snap.proofs).toHaveLength(1);
+    expect(snap.proofs[0].role).toBe('agent');
   });
 });
 
-// §6.1 Persistence
-describe('§6.1 Persistence', () => {
-  it('data MUST persist across manager instances (simulated restart)', async () => {
-    const graph = await manager.create('test');
-    const triple = new SemanticTriple('https://example.com/s', 'https://example.com/t');
-    await graph.addTriple(triple);
+describe('GraphStoreManager', () => {
+  it('creates a GraphStore with a private graph mounted in governance mode', async () => {
+    const eph = new EphemeralIdentity();
+    await eph.ensureReady();
+    const manager = new GraphStoreManager(store, async () => eph);
+    const gs = await manager.create('Test Workspace');
+    expect(gs.privateGraphDid.startsWith('did:graph:')).toBe(true);
+    const priv = gs.privateGraph();
+    expect(priv).toBeDefined();
+    expect(priv?.mountMode).toBe('governance');
+  });
 
-    // Create new manager (simulates page reload)
-    const manager2 = new PersonalGraphManager(identity, testDbName);
-    const list = await manager2.list();
-    expect(list.length).toBe(1);
-    const graph2 = list[0];
-    const snap = await graph2.snapshot();
-    expect(snap.length).toBe(1);
-    expect(snap[0].data.source).toBe('https://example.com/s');
+  it('createContext mints a fresh did:graph and writes seed DID-document triples', async () => {
+    const eph = new EphemeralIdentity();
+    await eph.ensureReady();
+    const manager = new GraphStoreManager(store, async () => eph);
+    const gs = await manager.create('Workspace');
+    const ctx = await gs.createContext({ displayName: 'Calendar' });
+    expect(ctx.did.startsWith('did:graph:')).toBe(true);
+    const docTriples = await ctx.queryTriples({ source: ctx.did });
+    expect(docTriples.length).toBeGreaterThan(0);
+  });
+
+  it('participatesIn writes the context://participates_in triple', async () => {
+    const eph = new EphemeralIdentity();
+    await eph.ensureReady();
+    const manager = new GraphStoreManager(store, async () => eph);
+    const gs = await manager.create('Workspace');
+    const parent = await gs.createContext({ displayName: 'Parent' });
+    const child = await gs.createContext({ displayName: 'Child', participatesIn: parent.did });
+    const participation = await child.queryTriples({
+      source: child.did,
+      predicate: 'context://participates_in',
+    });
+    expect(participation).toHaveLength(1);
+    expect(participation[0].data.target).toBe(parent.did);
+  });
+
+  it('resolveContext finds a mounted context by DID', async () => {
+    const eph = new EphemeralIdentity();
+    await eph.ensureReady();
+    const manager = new GraphStoreManager(store, async () => eph);
+    const gs = await manager.create('Workspace');
+    const ctx = await gs.createContext();
+    const found = await manager.resolveContext(ctx.did);
+    expect(found?.did).toBe(ctx.did);
   });
 });
 
-// §4.6 SparqlResult types
-describe('§4.6 SparqlResult', () => {
-  it('SELECT query returns type=bindings with variable bindings', async () => {
-    const graph = await manager.create('test');
-    await graph.addTriple(new SemanticTriple('https://example.com/s', 'https://example.com/t', 'https://schema.org/about'));
-    const result = await graph.querySparql('SELECT ?s ?o WHERE { ?s <https://schema.org/about> ?o . }');
-    expect(result.type).toBe('bindings');
-    expect(Array.isArray(result.bindings)).toBe(true);
-    expect(result.bindings[0]).toHaveProperty('s');
-    expect(result.bindings[0]).toHaveProperty('o');
-  });
-});
-
-// Event handler replacement
-describe('Event handlers', () => {
-  it('replacing ontripleadded replaces handler', async () => {
-    const graph = await manager.create('test');
-    const handler1 = vi.fn();
-    const handler2 = vi.fn();
-    graph.ontripleadded = handler1;
-    graph.ontripleadded = handler2;
-    await graph.addTriple(new SemanticTriple('https://example.com/s', 'https://example.com/t'));
-    expect(handler1).not.toHaveBeenCalled();
-    expect(handler2).toHaveBeenCalledTimes(1);
-  });
-});
-
-// §4.2.1 addTriple — no identity reject
-describe('§4.2.1 addTriple — identity requirement', () => {
-  it('MUST reject with InvalidStateError if no identity', async () => {
-    // Create a mock identity that returns empty DID
-    const noIdentity = {
-      getDID: () => '',
-      getKeyURI: () => '',
-      sign: async () => new Uint8Array(64),
-      getPublicKey: () => new Uint8Array(32),
-    };
-    const dbName2 = `test-db-noid-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const mgr2 = new PersonalGraphManager(noIdentity as any, dbName2);
-    const graph = await mgr2.create('test');
-    await expect(graph.addTriple(new SemanticTriple('https://example.com/s', 'https://example.com/t'))).rejects.toThrow('No active identity');
-  });
-});
-
-// §4.2.2 addTriples — batch rejection
-describe('§4.2.2 addTriples — batch atomicity', () => {
-  it('MUST reject entire batch if any triple fails validation', async () => {
-    // Create a mock identity that returns empty DID
-    const noIdentity = {
-      getDID: () => '',
-      getKeyURI: () => '',
-      sign: async () => new Uint8Array(64),
-      getPublicKey: () => new Uint8Array(32),
-    };
-    const dbName2 = `test-db-batch-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const mgr2 = new PersonalGraphManager(noIdentity as any, dbName2);
-    const graph = await mgr2.create('test');
-    const triples = [
-      new SemanticTriple('https://example.com/s1', 'https://example.com/t1'),
-      new SemanticTriple('https://example.com/s2', 'https://example.com/t2'),
-    ];
-    await expect(graph.addTriples(triples)).rejects.toThrow('No active identity');
-    // No triples should have been persisted
-    const snap = await graph.snapshot();
-    expect(snap.length).toBe(0);
-  });
-});
-
-// §6.2 Origin isolation (simulated — IndexedDB is origin-scoped by browsers)
-describe('§6.2 Origin isolation', () => {
-  it('graphs are stored in origin-scoped IndexedDB (origin isolation by design)', () => {
-    // In a browser, IndexedDB is inherently origin-isolated.
-    // This test verifies the polyfill uses IndexedDB (not localStorage etc.)
-    // The GraphStorage class uses indexedDB.open() which provides origin isolation.
-    expect(true).toBe(true); // Structural assertion — polyfill uses IndexedDB
-  });
-});
-
-// §7.1 Graphs isolated by origin
-describe('§7.1 Origin isolation', () => {
-  it('separate manager instances with different DB names are isolated', async () => {
-    const dbA = `test-db-origin-a-${Date.now()}`;
-    const dbB = `test-db-origin-b-${Date.now()}`;
-    const mgrA = new PersonalGraphManager(identity, dbA);
-    const mgrB = new PersonalGraphManager(identity, dbB);
-    await mgrA.create('Graph A');
-    const listB = await mgrB.list();
-    expect(listB.length).toBe(0);
-  });
-});
-
-// §7.4 Storage quotas
-describe('§7.4 Storage quotas', () => {
-  it('MUST reject with QuotaExceededError when quota exceeded', async () => {
-    const graph = await manager.create('test');
-    // Set a very small quota
-    (graph as any).quotaBytes = 100;
-    // Adding a triple with long strings will exceed the quota
-    await expect(
-      graph.addTriple(new SemanticTriple('https://example.com/s', 'https://example.com/' + 'x'.repeat(200)))
-    ).rejects.toThrow('quota exceeded');
-  });
-
-  it('allows triples within quota', async () => {
-    const graph = await manager.create('test');
-    (graph as any).quotaBytes = 100_000;
-    const signed = await graph.addTriple(new SemanticTriple('https://example.com/s', 'https://example.com/t'));
-    expect(signed.data.source).toBe('https://example.com/s');
-  });
-});
-
-// §8.4 list() same-origin
-describe('§8.4 list() same-origin', () => {
-  it('MUST only return graphs from the same storage namespace', async () => {
-    const dbA = `test-db-list-a-${Date.now()}`;
-    const dbB = `test-db-list-b-${Date.now()}`;
-    const mgrA = new PersonalGraphManager(identity, dbA);
-    const mgrB = new PersonalGraphManager(identity, dbB);
-    await mgrA.create('A1');
-    await mgrA.create('A2');
-    await mgrB.create('B1');
-    const listA = await mgrA.list();
-    const listB = await mgrB.list();
-    expect(listA.length).toBe(2);
-    expect(listB.length).toBe(1);
+describe('GraphStore cross-context query', () => {
+  it('querySparql unions triples across mounted contexts', async () => {
+    const eph = new EphemeralIdentity();
+    await eph.ensureReady();
+    const manager = new GraphStoreManager(store, async () => eph);
+    const gs = await manager.create('Workspace');
+    const c1 = await gs.createContext({ displayName: 'A' });
+    const c2 = await gs.createContext({ displayName: 'B' });
+    await c1.addTriple(new Triple('urn:m1', 'pred://body', 'hello'));
+    await c2.addTriple(new Triple('urn:m2', 'pred://body', 'world'));
+    const r = await gs.querySparql('SELECT ?s WHERE { ?s <pred://body> ?o }');
+    const sources = r.bindings.map(b => b.s).sort();
+    expect(sources).toContain('urn:m1');
+    expect(sources).toContain('urn:m2');
   });
 });

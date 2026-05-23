@@ -1,7 +1,7 @@
 /**
  * Governance setup for P2P VCS
  */
-import { SharedGraph } from '@living-web/graph-sync';
+import { Context } from '@living-web/personal-graph';
 import {
   createGovernanceLayer,
   createCapability,
@@ -9,6 +9,9 @@ import {
   type ZCAPDocument,
 } from '@living-web/governance';
 import { PREDICATES } from './shapes.js';
+
+/** Back-compat: Context is what the previous SharedGraph alias now resolves to. */
+type SharedGraph = Context;
 
 const OWNER_PREDICATES = [
   PREDICATES.REPO_NAME, PREDICATES.REPO_DESCRIPTION,
@@ -42,8 +45,14 @@ export interface GovernanceState {
 }
 
 export function setupGovernance(graph: SharedGraph, ownerDid: string): GovernanceState {
-  const layer = createGovernanceLayer(graph, { rootAuthority: ownerDid });
-  const rootZcap = createCapability(ownerDid, OWNER_PREDICATES, { within: null, graph: graph.uri }, ownerDid);
+  const layer = createGovernanceLayer(graph, { enforcementMode: 'open' });
+  const rootZcap = createCapability(
+    ownerDid,
+    ['createLink', 'removeLink', 'updateProperty', 'updateSHACL', 'updateGovernance'],
+    graph.did,
+    ownerDid,
+    { caveats: [{ type: 'predicate', value: { allowed: OWNER_PREDICATES } }] },
+  );
   layer.storeExpression(rootZcap.id, rootZcap);
 
   return {
@@ -56,7 +65,10 @@ export function setupGovernance(graph: SharedGraph, ownerDid: string): Governanc
 }
 
 export function issueContributorZcap(state: GovernanceState, did: string, ownerDid: string): ZCAPDocument {
-  const zcap = delegateCapability(state.rootZcap, did, ownerDid, { subsetPredicates: CONTRIBUTOR_PREDICATES });
+  const zcap = delegateCapability(state.rootZcap, did, ownerDid, {
+    subsetActions: ['createLink', 'updateProperty'],
+    additionalCaveats: [{ type: 'predicate', value: { allowed: CONTRIBUTOR_PREDICATES } }],
+  });
   state.layer.storeExpression(zcap.id, zcap);
   state.zcaps.set(did, zcap);
   return zcap;

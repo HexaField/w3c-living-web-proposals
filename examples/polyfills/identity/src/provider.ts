@@ -1,31 +1,27 @@
 /**
- * IdentityProvider — integration with @living-web/personal-graph
- * Matches the IdentityProvider interface from personal-graph's signing.ts
+ * DIDIdentityProvider — adapter that exposes a DIDCredential as the
+ * IdentityProvider shape consumed by @living-web/personal-graph.
  */
 
 import type { DIDCredential } from './credential.js';
 
 export class DIDIdentityProvider {
-  private credential: DIDCredential;
-
-  constructor(credential: DIDCredential) {
-    this.credential = credential;
-  }
+  constructor(private readonly credential: DIDCredential) {}
 
   getDID(): string {
     return this.credential.did;
   }
 
+  /** The specific verification method id producing signatures. */
   getKeyURI(): string {
-    const multibaseKey = this.credential.did.slice('did:key:'.length);
-    return `${this.credential.did}#${multibaseKey}`;
-  }
-
-  async sign(data: Uint8Array): Promise<Uint8Array> {
-    return this.credential.signRaw(data);
+    return this.credential.methodId;
   }
 
   getPublicKey(): Uint8Array {
     return this.credential.publicKey;
+  }
+
+  async sign(data: Uint8Array): Promise<Uint8Array> {
+    return this.credential.signRaw(data);
   }
 }

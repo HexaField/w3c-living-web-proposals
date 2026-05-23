@@ -1,27 +1,30 @@
-export { SharedGraph } from './shared-graph.js';
-export { SharedGraphManager } from './manager.js';
-export { SyncProtocolRegistry } from './protocol-registry.js';
-export { DefaultSyncModule, computeTripleId } from './default-sync-module.js';
-export { parseGraphURI, buildGraphURI, isGraphURI } from './graph-uri.js';
-export { GraphDiff, SignalEvent, PeerEvent, SyncStateChangeEvent, DiffEvent } from './types.js';
-export { createGraphDiff, computeRevision } from './diff.js';
-export { YjsBridge, tripleKey } from './yjs-bridge.js';
+/**
+ * @living-web/graph-sync — peer-to-peer Context sync.
+ *
+ * Importing this package augments `Context.prototype` (via {@link installSyncExtension})
+ * with publish/peers/diff/signal APIs as defined in the P2P Graph Sync spec.
+ */
+
+export {
+  ContextDiff,
+  DiffEvent,
+  SignalEvent,
+  PeerEvent,
+  SyncStateChangeEvent,
+} from './types.js';
+
 export type {
-  SyncState,
-  OnlinePeer,
+  ContextSyncState,
   Peer,
-  SharedGraphOptions,
-  SharedGraphInfo,
-  RevisionNode,
-  GraphSyncProtocol,
-  SyncProtocolFactory,
+  CapabilityProof,
+  SpaceTopology,
+  PublishOptions,
+  PublishedContext,
+  SyncSpaceInfo,
+  SyncModuleInfo,
   ValidationResult,
 } from './types.js';
-export type { ParsedGraphURI } from './graph-uri.js';
-export type { GraphSyncModule, ModuleConfig, GraphReader, GraphWriter } from './default-sync-module.js';
-export { DefaultModuleLoader, contentHash, contentHashBytes } from './module-loader.js';
-export type { SyncModuleLoader } from './module-loader.js';
-export { WasmSyncModuleAdapter } from './wasm-module-adapter.js';
-export type { WasmSyncModuleInstance } from './wasm-module-adapter.js';
-export { registerSyncWorker } from './sw-sync.js';
-export type { SyncWorkerOptions, SyncWorkerHandle } from './sw-sync.js';
+
+export { deriveSpaceUri } from './space.js';
+export { createContextDiff, computeRevision } from './diff.js';
+export { installSyncExtension } from './sync-extension.js';

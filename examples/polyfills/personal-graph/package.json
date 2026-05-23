@@ -27,6 +27,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@living-web/identity": "workspace:*",
     "@noble/ed25519": "^3.0.1",
     "@noble/hashes": "^2.0.1",
     "canonicalize": "^2.1.0",

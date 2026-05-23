@@ -7,7 +7,7 @@ const identityCreate = document.getElementById('identityCreate')!;
 const identityDid = document.getElementById('identityDid')!;
 const identityName = document.getElementById('identityName')!;
 const graphsList = document.getElementById('graphsList')!;
-const sharedGraphsList = document.getElementById('sharedGraphsList')!;
+const mountedContextsList = document.getElementById('sharedGraphsList')!;
 const createIdentityBtn = document.getElementById('createIdentityBtn')!;
 const displayNameInput = document.getElementById('displayNameInput') as HTMLInputElement;
 
@@ -36,15 +36,15 @@ function renderGraphs(graphs: StatusResponse['graphs']) {
   ).join('');
 }
 
-function renderSharedGraphs(graphs: StatusResponse['sharedGraphs']) {
-  if (graphs.length === 0) {
-    sharedGraphsList.innerHTML = '<p class="empty">No shared graphs</p>';
+function renderMountedContexts(contexts: StatusResponse['mountedContexts']) {
+  if (contexts.length === 0) {
+    mountedContextsList.innerHTML = '<p class="empty">No mounted contexts</p>';
     return;
   }
-  sharedGraphsList.innerHTML = graphs.map(g =>
+  mountedContextsList.innerHTML = contexts.map(c =>
     `<div class="graph-item">
-      <span class="graph-name">${g.name}</span>
-      <span class="graph-meta">${g.peerCount} peers · ${g.syncState}</span>
+      <span class="graph-name">${c.displayName ?? c.graphDid}</span>
+      <span class="graph-meta">${c.peerCount} peers · ${c.syncState}</span>
     </div>`
   ).join('');
 }
@@ -61,7 +61,7 @@ async function loadStatus() {
     }
 
     renderGraphs(response.graphs);
-    renderSharedGraphs(response.sharedGraphs);
+    renderMountedContexts(response.mountedContexts);
   } catch {
     statusDot.classList.add('inactive');
     showCreateIdentity();

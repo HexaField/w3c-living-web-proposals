@@ -40,7 +40,7 @@ export function renderApp(root: HTMLElement, state: AppState): void {
     titleInput.value = state.docTitle;
     titleInput.addEventListener('change', () => {
       state.docTitle = titleInput.value;
-      state.bc.postMessage({ type: 'doc-title-change', graphUri: state.graph.uri, did: state.did, title: titleInput.value });
+      state.bc.postMessage({ type: 'doc-title-change', contextDid: state.context.did, did: state.did, title: titleInput.value });
     });
     if (!state.isOwner) titleInput.readOnly = true;
 
@@ -55,7 +55,7 @@ export function renderApp(root: HTMLElement, state: AppState): void {
     shareBtn.className = 'share-btn';
     shareBtn.textContent = '🔗 Share';
     shareBtn.addEventListener('click', () => {
-      navigator.clipboard?.writeText(state.graph.uri);
+      navigator.clipboard?.writeText(state.context.did);
       shareBtn.textContent = '✓ Copied!';
       setTimeout(() => { shareBtn.textContent = '🔗 Share'; }, 2000);
     });
@@ -279,7 +279,7 @@ export function renderApp(root: HTMLElement, state: AppState): void {
           };
           comment.replies.push(reply);
           state.bc.postMessage({
-            type: 'doc-new-reply', graphUri: state.graph.uri,
+            type: 'doc-new-reply', contextDid: state.context.did,
             did: state.did, commentId: comment.id, reply,
           });
           render();
@@ -292,7 +292,7 @@ export function renderApp(root: HTMLElement, state: AppState): void {
           resolveBtn.addEventListener('click', () => {
             comment.resolved = true;
             state.bc.postMessage({
-              type: 'doc-resolve-comment', graphUri: state.graph.uri, commentId: comment.id,
+              type: 'doc-resolve-comment', contextDid: state.context.did, commentId: comment.id,
             });
             render();
           });
@@ -345,7 +345,7 @@ export function renderApp(root: HTMLElement, state: AppState): void {
         };
         state.comments.push(comment);
         state.bc.postMessage({
-          type: 'doc-new-comment', graphUri: state.graph.uri,
+          type: 'doc-new-comment', contextDid: state.context.did,
           did: state.did, comment,
         });
         state.governanceLogs.push({ text: `Comment by ${state.displayName} ACCEPTED`, accepted: true, time: Date.now() });

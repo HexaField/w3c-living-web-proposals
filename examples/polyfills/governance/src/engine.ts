@@ -1,5 +1,8 @@
 /**
- * GraphGovernanceEngine — main orchestrator (§9)
+ * GraphGovernanceEngine — main orchestrator (Spec 05 §13).
+ *
+ * Operates on a single context (did:graph). Scope inheritance walks
+ * `context://participates_in` links upward through the agent's GraphStore.
  */
 
 import { GOV } from './predicates.js';
@@ -17,6 +20,7 @@ import type {
   ConstraintHandler,
   ValidationHistoryEntry,
   ZCAPDocument,
+  EnforcementMode,
 } from './types.js';
 
 export class GraphGovernanceEngine {
@@ -30,59 +34,84 @@ export class GraphGovernanceEngine {
     this._historyMaxSize = opts?.historyMaxSize ?? 1000;
   }
 
-  get context(): ValidationContext {
-    return this._ctx;
+  get context(): ValidationContext { return this._ctx; }
+
+  async getEnforcementMode(): Promise<EnforcementMode> {
+    const triples = await this._ctx.queryTriples({
+      source: this._ctx.graphDid,
+      predicate: GOV.ENFORCEMENT_MODE,
+    });
+    if (triples.length === 0) return 'open';
+    const raw = triples[0].data.target.replace(/^"|"$/g, '');
+    if (raw === 'enforced' || raw === 'announced' || raw === 'open') return raw;
+    return 'open';
+  }
+
+  /** Update the context's enforcement mode (requires updateGovernance capability — not checked here). */
+  async setEnforcementMode(mode: EnforcementMode): Promise<void> {
+    this._ctx.enforcementMode = mode;
   }
 
   /**
-   * Validate a triple against all governance constraints (§9.1).
-   * Order: scope resolution → capability → credential → temporal → content → custom
+   * Validate a triple against all governance constraints.
+   * Order: scope → capability → credential → temporal → content → custom.
+   * Capability checks honour the enforcement mode (open/announced/enforced).
    */
   async validate(triple: TripleInput): Promise<ValidationResult> {
-    // Step 1: Scope resolution
-    const ancestry = await resolveAncestry(triple.source, this._ctx);
+    // Refresh enforcement mode from graph (cheap query)
+    this._ctx.enforcementMode = await this.getEnforcementMode();
+
+    // Step 1: scope resolution (holonic, via participates_in)
+    const ancestry = await resolveAncestry(this._ctx.graphDid, this._ctx);
     const allConstraints = await collectConstraints(ancestry, this._ctx);
     const constraints = applyPrecedence(allConstraints);
 
-    // Step 2: Capability verification
+    // Step 2: capability — honours enforcement mode
     const capResult = await verifyCapability(triple, constraints, ancestry, this._ctx);
     if (!capResult.allowed) {
-      this._recordHistory(triple, capResult);
-      return capResult;
+      if (this._ctx.enforcementMode === 'open') {
+        // Open mode: skip the rejection
+      } else if (this._ctx.enforcementMode === 'announced') {
+        // Announced mode: record but accept
+        this._recordHistory(triple, { ...capResult, allowed: true, announcedRejection: capResult.reason });
+      } else {
+        this._recordHistory(triple, capResult);
+        return capResult;
+      }
     }
 
-    // Step 3: Credential verification
+    // Step 3: credential (always enforced regardless of mode)
     const credResult = await verifyCredential(triple, constraints, this._ctx);
     if (!credResult.allowed) {
       this._recordHistory(triple, credResult);
       return credResult;
     }
 
-    // Step 4: Temporal verification
+    // Step 4: temporal (always enforced)
     const tempResult = await verifyTemporal(triple, constraints, ancestry, this._ctx);
     if (!tempResult.allowed) {
       this._recordHistory(triple, tempResult);
       return tempResult;
     }
 
-    // Step 5: Content verification
+    // Step 5: content (always enforced)
     const contentResult = await verifyContent(triple, constraints, this._ctx);
     if (!contentResult.allowed) {
       this._recordHistory(triple, contentResult);
       return contentResult;
     }
 
-    // Step 6: Custom constraint kinds
+    // Step 6: custom constraints
     const customConstraints = constraints.filter(
-      c => !['capability', 'temporal', 'content', 'credential'].includes(c.kind)
+      c => !['capability', 'temporal', 'content', 'credential'].includes(c.kind),
     );
     for (const cc of customConstraints) {
       const handler = this._customHandlers.get(cc.kind);
       if (handler) {
-        const result = handler.validate(triple, cc, this._ctx);
-        if (!result.allowed) {
-          this._recordHistory(triple, result);
-          return result;
+        const r = await handler.validate(triple, cc, this._ctx);
+        if (!r.allowed) {
+          this._recordHistory(triple, r);
+          return r;
         }
       }
     }
@@ -92,76 +121,51 @@ export class GraphGovernanceEngine {
     return result;
   }
 
-  /**
-   * Get all constraints applicable to an entity (§9.2)
-   */
-  async constraintsFor(entityAddress: string): Promise<GraphConstraint[]> {
-    const ancestry = await resolveAncestry(entityAddress, this._ctx);
+  async constraintsFor(contextDid: string = this._ctx.graphDid): Promise<GraphConstraint[]> {
+    const ancestry = await resolveAncestry(contextDid, this._ctx);
     const allConstraints = await collectConstraints(ancestry, this._ctx);
     return applyPrecedence(allConstraints);
   }
 
-  /**
-   * Get current identity's valid capabilities (§9.3)
-   */
   async myCapabilities(myDid: string): Promise<CapabilityInfo[]> {
     const zcapLinks = await this._ctx.queryTriples({
       source: myDid,
       predicate: GOV.HAS_ZCAP,
     });
-
     const caps: CapabilityInfo[] = [];
     const now = this._ctx.now ? this._ctx.now() : Date.now();
-
     for (const link of zcapLinks) {
       const zcap = await this._resolveZCAP(link.data.target);
       if (!zcap) continue;
-
-      // Check expiry
-      if (zcap.expires) {
-        const expiryTime = new Date(zcap.expires).getTime();
-        if (now > expiryTime) continue;
-      }
-
-      // Check revocation
+      const expiryCaveat = (zcap.caveats ?? []).find(c => c.type === 'expiry');
+      const expiresAt = (expiryCaveat?.value as any)?.expiresAt ?? zcap.expires ?? null;
+      if (expiresAt && new Date(expiresAt).getTime() < now) continue;
       const revocations = await this._ctx.queryTriples({
         predicate: GOV.REVOKES_CAPABILITY,
         target: zcap.id,
       });
       if (revocations.length > 0) continue;
-
       caps.push({
         id: zcap.id,
-        predicates: zcap.capability.predicates,
-        scope: zcap.capability.scope.within,
-        expires: zcap.expires ?? null,
+        actions: zcap.actions ?? zcap.capability?.predicates ?? [],
+        resource: zcap.resource ?? zcap.capability?.scope?.graph ?? this._ctx.graphDid,
+        caveats: zcap.caveats ?? [],
+        expires: expiresAt,
       });
     }
-
     return caps;
   }
 
-  /**
-   * Register a custom constraint kind
-   */
   registerConstraintKind(handler: ConstraintHandler): void {
     this._customHandlers.set(handler.kind, handler);
   }
 
-  /**
-   * Get validation history
-   */
   getValidationHistory(opts?: { limit?: number }): ValidationHistoryEntry[] {
     const limit = opts?.limit ?? this._history.length;
     return this._history.slice(-limit);
   }
 
-  /**
-   * Reload (clear caches — in this polyfill, no-op since we query live)
-   */
-  reload(): void {
-    this._history = [];
-  }
+  reload(): void { this._history = []; }
 
   private _recordHistory(triple: TripleInput, result: ValidationResult): void {
     this._history.push({
@@ -169,19 +173,15 @@ export class GraphGovernanceEngine {
       result,
       timestamp: this._ctx.now ? this._ctx.now() : Date.now(),
     });
-    if (this._history.length > this._historyMaxSize) {
-      this._history.shift();
-    }
+    if (this._history.length > this._historyMaxSize) this._history.shift();
   }
 
   private async _resolveZCAP(address: string): Promise<ZCAPDocument | null> {
     if (this._ctx.resolveExpression) {
       try {
         const doc = await this._ctx.resolveExpression(address);
-        if (doc && typeof doc === 'object' && 'id' in (doc as any)) {
-          return doc as ZCAPDocument;
-        }
-      } catch { /* fall through */ }
+        if (doc && typeof doc === 'object' && 'id' in (doc as any)) return doc as ZCAPDocument;
+      } catch { /* fallthrough */ }
     }
     return null;
   }

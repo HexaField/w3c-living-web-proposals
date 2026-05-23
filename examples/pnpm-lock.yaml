@@ -64,6 +64,9 @@ importers:
 
   demos/community-chat:
     dependencies:
+      '@living-web/flows':
+        specifier: workspace:*
+        version: link:../../polyfills/flows
       '@living-web/governance':
         specifier: workspace:*
         version: link:../../polyfills/governance
@@ -179,12 +182,18 @@ importers:
 
   extension:
     dependencies:
+      '@living-web/flows':
+        specifier: workspace:*
+        version: link:../polyfills/flows
       '@living-web/governance':
         specifier: workspace:*
         version: link:../polyfills/governance
       '@living-web/graph-sync':
         specifier: workspace:*
         version: link:../polyfills/graph-sync
+      '@living-web/group-identity':
+        specifier: workspace:*
+        version: link:../polyfills/group-identity
       '@living-web/identity':
         specifier: workspace:*
         version: link:../polyfills/identity
@@ -204,6 +213,37 @@ importers:
       vite:
         specifier: ^8.0.3
         version: 8.0.3(@emnapi/core@1.9.2)(@emnapi/runtime@1.9.2)(@types/node@25.5.2)(esbuild@0.27.7)(tsx@4.21.0)
+
+  polyfills/flows:
+    dependencies:
+      '@living-web/governance':
+        specifier: workspace:*
+        version: link:../governance
+      '@living-web/personal-graph':
+        specifier: workspace:*
+        version: link:../personal-graph
+      '@noble/hashes':
+        specifier: ^2.0.1
+        version: 2.0.1
+      uuid:
+        specifier: ^13.0.0
+        version: 13.0.0
+    devDependencies:
+      '@types/uuid':
+        specifier: ^11.0.0
+        version: 11.0.0
+      fake-indexeddb:
+        specifier: ^6.2.5
+        version: 6.2.5
+      tsup:
+        specifier: ^8.5.1
+        version: 8.5.1(postcss@8.5.8)(tsx@4.21.0)(typescript@6.0.2)
+      typescript:
+        specifier: ^6.0.2
+        version: 6.0.2
+      vitest:
+        specifier: ^4.1.2
+        version: 4.1.2(@types/node@25.5.2)(vite@8.0.3(@emnapi/core@1.9.2)(@emnapi/runtime@1.9.2)(@types/node@25.5.2)(esbuild@0.27.7)(tsx@4.21.0))
 
   polyfills/governance:
     dependencies:
@@ -358,6 +398,9 @@ importers:
 
   polyfills/personal-graph:
     dependencies:
+      '@living-web/identity':
+        specifier: workspace:*
+        version: link:../identity
       '@noble/ed25519':
         specifier: ^3.0.1
         version: 3.0.1

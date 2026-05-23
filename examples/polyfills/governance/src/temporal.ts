@@ -19,9 +19,6 @@ export async function verifyTemporal(
   const temporalConstraints = constraints.filter(c => c.kind === 'temporal');
   if (temporalConstraints.length === 0) return { allowed: true };
 
-  // Root authority bypass
-  if (triple.author === ctx.rootAuthority) return { allowed: true };
-
   const tripleTimestamp = new Date(triple.timestamp).getTime();
 
   for (const tc of temporalConstraints) {

@@ -1,6 +1,6 @@
 # Living Web Graph Relay
 
-A minimal WebSocket relay server for P2P graph sync. Peers connect via WebSocket, are grouped by graph ID, and messages are forwarded to all other peers in the same group.
+A minimal WebSocket relay server for P2P graph sync. Peers connect via WebSocket, are grouped by sync-space id, and messages are forwarded to every other peer in the same space.
 
 The relay is intentionally a "dumb pipe" — it has **no authority** over data and simply relays bytes between participants.
 
@@ -17,9 +17,9 @@ pnpm start
 
 ### Environment Variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PORT`   | `4000`  | Listen port |
+| Variable | Default   | Description |
+|----------|-----------|-------------|
+| `PORT`   | `4000`    | Listen port |
 | `HOST`   | `0.0.0.0` | Bind address |
 
 ## Protocol
@@ -27,21 +27,10 @@ pnpm start
 Peers connect to:
 
 ```
-ws://<host>:<port>/graph/<graphId>
+ws://<host>:<port>/space/<spaceId>
 ```
 
-- All messages from a peer are forwarded to every other peer in the same `graphId` room.
+- `spaceId` is the sync-space identifier derived from the chosen topology (see [P2P Graph Sync §7](../../drafts/03_p2p-graph-sync.md)).
+- All messages from a peer are forwarded to every other peer in the same `spaceId` room.
 - Binary and text messages are both supported.
-- The relay does not inspect or validate message contents.
-
-## Graph URI Integration
-
-The relay endpoint maps to the `graph://` URI scheme:
-
-```
-graph://localhost:4000/<graphId>?module=default
-       ^^^^^^^^^^^^^^^
-       relay endpoint
-```
-
-The polyfill parses this and connects `ws://localhost:4000/graph/<graphId>`.
+- The relay does not inspect or validate message contents — authorisation is per graph DID and enforced by the sync module on each peer.

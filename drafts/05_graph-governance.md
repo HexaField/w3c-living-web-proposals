@@ -1,20 +1,21 @@
-# Graph Governance: Constraint Enforcement for Shared Linked Data Graphs
+# Graph Governance: Constraint Enforcement for Linked Data Contexts
 
 **W3C Draft Community Group Report**
 
 **Latest published version:** This document
+**Editor:** [TBD]
 
-**Editors:**
+---
 
-- [Editor Name], [Affiliation]
+## Abstract
 
-**Abstract:**
+This specification defines a framework for expressing and enforcing governance rules over linked data contexts. A **context** is a named graph identified by a `did:graph:...` DID (see [[PERSONAL-LINKED-DATA-GRAPHS]]). Governance rules are themselves graph data — triples with well-known `governance://` predicates that constrain who can add triples, how often, with what content, and under what identity requirements. ZCAPs target context DIDs as their resource; capability chains trace to each context's **own root capability** (constitutionalised at context creation). No principal sits above the structure — authority is the accumulated history of delegations made by participants. Three explicit **enforcement modes** (Open / Announced / Enforced) let communities crystallise governance gradually. This specification builds on W3C ZCAP-LD [[ZCAP-LD]], W3C Verifiable Credentials [[VC-DATA-MODEL-2.0]], W3C SHACL [[SHACL]] (via [[SHAPE-VALIDATION]]), and the DID-document delegate model in [[DECENTRALISED-IDENTITY]].
 
-This specification defines a framework for expressing and enforcing governance rules over shared linked data graphs. Governance rules are themselves graph data — triples with well-known predicates that constrain who can add triples, how often, with what content, and under what identity requirements. Enforcement happens at the sync protocol layer, making governance consensus-enforced across all peers. This specification builds on W3C ZCAP-LD [[ZCAP-LD]] for capability delegation, W3C Verifiable Credentials [[VC-DATA-MODEL-2.0]] for identity attestation, and W3C SHACL [[SHACL]] for schema validation.
+---
 
-**Status of This Document:**
+## Status of This Document
 
-This is a draft community group report. It has no official standing.
+This document is a draft Community Group Report. It has no official W3C standing.
 
 ---
 
@@ -24,18 +25,22 @@ This is a draft community group report. It has no official standing.
 2. [Conformance](#2-conformance)
 3. [Terminology](#3-terminology)
 4. [Data Model](#4-data-model)
-5. [Scope Resolution Algorithm](#5-scope-resolution-algorithm)
-6. [ZCAP Verification Algorithm](#6-zcap-verification-algorithm)
-7. [Temporal Verification Algorithm](#7-temporal-verification-algorithm)
-8. [Content Verification Algorithm](#8-content-verification-algorithm)
-9. [Governance Engine API](#9-governance-engine-api)
-10. [Integration with Sync Protocol](#10-integration-with-sync-protocol)
-11. [Rule Evolution](#11-rule-evolution)
-12. [Security Considerations](#12-security-considerations)
-13. [Privacy Considerations](#13-privacy-considerations)
-14. [Examples](#14-examples)
-15. [Full Predicate Reference Table](#15-full-predicate-reference-table)
-16. [References](#16-references)
+5. [Enforcement Modes](#5-enforcement-modes)
+6. [Scope Resolution (Context Nesting)](#6-scope-resolution-context-nesting)
+7. [ZCAP Verification Algorithm](#7-zcap-verification-algorithm)
+8. [Capability Attenuation](#8-capability-attenuation)
+9. [Caveat Vocabulary](#9-caveat-vocabulary)
+10. [Governance of DID-Document Delegates](#10-governance-of-did-document-delegates)
+11. [Temporal Verification Algorithm](#11-temporal-verification-algorithm)
+12. [Content Verification Algorithm](#12-content-verification-algorithm)
+13. [Governance API on Context](#13-governance-api-on-context)
+14. [Integration with Sync Protocol](#14-integration-with-sync-protocol)
+15. [Rule Evolution](#15-rule-evolution)
+16. [Security Considerations](#16-security-considerations)
+17. [Privacy Considerations](#17-privacy-considerations)
+18. [Examples](#18-examples)
+19. [Predicate Reference Table](#19-predicate-reference-table)
+20. [References](#20-references)
 
 ---
 
@@ -43,48 +48,59 @@ This is a draft community group report. It has no official standing.
 
 ### 1.1 Motivation
 
-Shared linked data graphs — graphs where multiple autonomous agents contribute triples via a peer-to-peer sync protocol — face a fundamental governance problem: without enforceable rules, any agent with sync access can add any triple. There is no inherent mechanism to restrict who may contribute, what content is acceptable, how frequently contributions may occur, or what identity attestations are required.
+Contexts face a fundamental governance problem: without enforceable rules, any agent with sync access can add any triple. There is no inherent mechanism to restrict who may contribute, what content is acceptable, how frequently contributions may occur, or what identity attestations are required.
 
-Application-layer enforcement is insufficient. In a decentralised architecture, applications (user interfaces, scripts, autonomous agents) are swappable by design. An application that refuses to display certain triples or blocks certain actions provides no guarantee — another application can bypass those restrictions entirely. The application layer is not a sovereignty boundary.
+Application-layer enforcement is insufficient. Applications are swappable by design; an application that refuses to display certain triples provides no guarantee — another application can bypass the restrictions. **The application layer is not an authorisation boundary.**
 
-The sync protocol is the sovereignty boundary. It is the one component that all peers in a shared graph MUST agree on and execute. Triples that fail sync-layer validation are rejected before entering the network. No peer accepts them, regardless of which application submitted them. This makes the sync protocol the correct enforcement point for governance rules.
+**The sync protocol is the authorisation boundary.** Triples that fail sync-layer validation are rejected before entering the network. No peer accepts them, regardless of which application submitted them. This makes the sync protocol the correct enforcement point for governance rules.
 
-This specification defines a governance framework where:
+### 1.2 Authority Is Constituted, Not Granted
 
-- **Rules are data, not code.** Governance rules are expressed as triples with well-known predicates in the `governance://` namespace. They are stored in the same graph they govern and propagate via the same sync protocol as content.
-- **Enforcement is ontology-agnostic.** The governance engine does not understand what entities represent (messages, documents, tasks, social posts). It understands constraint predicates and checks them generically against incoming triples.
-- **Scope inheritance** allows constraints to cascade down entity hierarchies. A constraint on a parent entity applies to all descendants unless overridden by a more-specific constraint.
-- **Consensus enforcement** means that every peer evaluates the same rules against the same data and arrives at the same validation result. No peer can selectively ignore governance.
+When a context comes into existence, a single **root capability** is minted as a ZCAP, signed by the creator using their `did:key` (or, for a context created within a parent context, signed by a `capabilityDelegation` delegate of the parent's `did:graph`).
 
-### 1.2 Design Principles
+From that moment, the structure of who-can-do-what is the accumulated history of delegations made by participants according to the governance rules they themselves defined. No principal sits above the structure. The creator initially holds the root capability and MAY delegate or rotate it — but as soon as they delegate it, others have equal standing under the new rules. Authority is **constituted**, not granted.
 
-1. **Ontology-agnostic:** Constraints reference predicates and entity addresses, never application-specific entity names or types. The governance engine operates on the graph's structural properties.
-2. **Rules as data:** Governance rules are triples. Adding, modifying, or removing rules is done by adding, modifying, or removing triples — using the same sync protocol as content. No code deployment, software update, or migration is required.
-3. **Scope inheritance:** Constraints attached to an entity apply to that entity and all its descendants in the graph hierarchy. This allows broad policies at the root and targeted overrides deeper in the tree.
-4. **Consensus-enforced:** The sync protocol's validation callback evaluates constraints. All peers run the same logic on the same data, producing deterministic accept/reject decisions.
-5. **Fail-closed:** When in doubt — unresolvable content, unavailable credential services, ambiguous constraint state — the governance engine SHOULD reject rather than accept.
+### 1.3 ZCAPs Target Graph DIDs
 
-### 1.3 Use Cases
+The critical architectural decision: **a `did:graph:...` is the canonical resource of a ZCAP**. A capability that grants "createLink in `did:graph:abc...`" is portable across every GraphStore and every agent that mounts that context — because the context itself is canonically identified.
 
-**Community moderation.** A shared graph serving as a community forum can enforce role-based permissions (who may post), rate limits (slow mode), content policies (no external URLs, maximum message length), and identity requirements (proof of humanity). These rules are defined by community administrators as graph data and enforced identically by all peers.
+### 1.4 Enforcement Modes
 
-**Collaborative workspaces.** A shared graph used for collaborative document editing can restrict which agents may modify which sections, require specific credentials for access, and rate-limit bulk operations to prevent accidental flooding.
+Communities crystallise governance over time, not all at once. This specification defines three explicit enforcement modes ([§5](#5-enforcement-modes)):
 
-**Peer-to-peer social networks.** Shared graphs backing social applications can prevent spam through temporal constraints, restrict content types through content policies, and require identity attestations through credential requirements — all without a central server making trust decisions.
+| Mode | Behaviour |
+|---|---|
+| **Open** | No ZCAP checking. Anyone with sync access can write. The default for fresh contexts. |
+| **Announced** | ZCAPs are stored and verifiable, but not enforced. Provides an audit trail. |
+| **Enforced** | ZCAP verification is mandatory on every write. No valid capability chain → write rejected. |
 
-**Multi-agent systems.** Shared graphs where both human and AI agents participate can enforce governance over AI agent behaviour — rate-limiting automated contributions, requiring capability tokens for specific actions, and restricting content patterns.
+### 1.5 Design Principles
+
+1. **Ontology-agnostic.** Constraints reference predicates and DIDs, never application-specific entity names. The engine operates on structural properties.
+2. **Rules as data.** Governance rules are triples. Modifying rules uses the same sync protocol as content.
+3. **Context nesting.** Constraints attached to a parent context apply to child contexts that declare `context://participates_in <parent>`. Participation is declared from below; no parent can override a child's local rules.
+4. **Consensus-enforced.** All peers run the same logic on the same data, producing deterministic accept/reject decisions.
+5. **Fail-closed.** When in doubt — unresolvable content, unavailable credential services, ambiguous constraint state — the engine SHOULD reject.
+6. **Constitutionalisation.** Each constituent context's root capability is bootstrapped from its creating context's delegation but becomes the new context's own root. The creating context cannot reach into the new context's governance after bootstrap.
+
+### 1.6 Use Cases
+
+- **Community moderation.** Role-based permissions, rate limits, content policies, identity requirements — defined as graph data, enforced identically by all peers.
+- **Collaborative workspaces.** Multiple agents collaborate on a document context with section-level capabilities and shape-conformance caveats.
+- **Peer-to-peer social.** Spam prevention via temporal constraints, content restrictions via content policies, identity attestations via credential requirements — no central server.
+- **Multi-agent systems.** Contexts where both human and AI agents participate enforce governance over AI behaviour — rate-limiting, capability tokens, content patterns.
 
 ---
 
 ## 2. Conformance
 
-The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in [[RFC2119]].
+The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" are to be interpreted as described in [[RFC2119]] and [[RFC8174]].
 
-A conforming **governance engine** is a software component that implements the algorithms in Sections 5 through 8 and exposes the API defined in Section 9.
+A conforming **governance engine** is a software component that implements the algorithms in Sections [§6](#6-scope-resolution-context-nesting) through [§12](#12-content-verification-algorithm), supports all three enforcement modes ([§5](#5-enforcement-modes)), and exposes the API defined in [§13](#13-governance-api-on-context).
 
-A conforming **sync protocol** is a peer-to-peer graph synchronisation protocol that calls a conforming governance engine's `validate()` method before accepting any incoming triple, as specified in Section 10.
+A conforming **sync protocol** is a peer-to-peer graph synchronisation protocol that calls a conforming governance engine's `validate()` method before accepting any incoming triple ([§14](#14-integration-with-sync-protocol)).
 
-A conforming **application** is a user-facing or programmatic interface that MAY call the governance engine's query methods to determine allowed actions, but MUST NOT be relied upon as an enforcement point.
+A conforming **application** MAY call the governance engine's query methods to determine allowed actions, but MUST NOT be relied upon as an enforcement point.
 
 ---
 
@@ -92,44 +108,50 @@ A conforming **application** is a user-facing or programmatic interface that MAY
 
 <dl>
 
-<dt>Semantic Triple</dt>
-<dd>A directed, labelled relationship consisting of a source (subject), predicate (label), and target (object). The fundamental unit of data in a linked data graph.</dd>
+<dt>Context</dt>
+<dd>A named graph identified by a <code>did:graph:...</code> DID. The unit of governance. See [[PERSONAL-LINKED-DATA-GRAPHS]] §3.3.</dd>
+
+<dt>Triple</dt>
+<dd>A directed, labelled relationship (source, predicate, target). See [[PERSONAL-LINKED-DATA-GRAPHS]] §3.1.</dd>
 
 <dt>Constraint</dt>
-<dd>A set of triples with well-known <code>governance://</code> predicates that defines a governance rule. Constraints are classified by kind: capability, temporal, content, or credential.</dd>
+<dd>A set of triples with <code>governance://</code> predicates defining a governance rule. Classified by kind: capability, temporal, content, or credential.</dd>
 
 <dt>Constraint Binding</dt>
-<dd>A triple linking a constraint to the entity it governs: <code>&lt;entity&gt; -[governance://has_constraint]→ &lt;constraint&gt;</code>.</dd>
+<dd>A triple linking a constraint to the context it governs: <code>&lt;context-did&gt; -[governance://has_constraint]→ &lt;constraint&gt;</code>.</dd>
 
 <dt>Scope Chain</dt>
-<dd>The ordered list of ancestors of a triple's source, obtained by walking <code>has_child</code> relationships in reverse from the source up to the graph root. Constraints attached at any level in the scope chain apply to the triple.</dd>
+<dd>The ordered list of contexts an incoming write traverses: the target context plus its ancestors discovered by walking <code>context://participates_in</code> links upward.</dd>
 
-<dt>Root Authority</dt>
-<dd>The agent who created the shared graph. The root authority holds implicit capability over all predicates and all scopes. The root authority's decentralised identifier is stored in the graph metadata.</dd>
+<dt>Root Capability</dt>
+<dd>The ZCAP minted when a context comes into existence. Initially held by the creator; delegatable like any other ZCAP.</dd>
+
+<dt>Bootstrap Constitutionalisation</dt>
+<dd>The process by which a child context's root capability is delegated from its creating context's delegation. Once written into the child's graph, the bootstrap becomes the child's own root. The creating context cannot subsequently modify the child's internal governance.</dd>
 
 <dt>Capability</dt>
-<dd>An authorization token, conforming to [[ZCAP-LD]], that grants a specific agent permission to create triples with specific predicates within a specific scope. Capabilities are delegatable, revocable, and cryptographically verifiable.</dd>
+<dd>An authorisation token conforming to [[ZCAP-LD]] that grants a specific agent (or a graph DID) permission to perform specific actions on a specific resource (a context DID). Delegatable, attenuable, revocable, cryptographically verifiable.</dd>
+
+<dt>Caveat</dt>
+<dd>A constraint that narrows a ZCAP. Each delegation in a chain MAY add caveats but MUST NOT remove them. See [§9](#9-caveat-vocabulary).</dd>
+
+<dt>Enforcement Mode</dt>
+<dd>One of Open, Announced, or Enforced. A property of a context governing how the engine treats capability checks.</dd>
 
 <dt>Credential Requirement</dt>
-<dd>A constraint that requires triple authors to hold a specific type of Verifiable Credential [[VC-DATA-MODEL-2.0]] before their triples are accepted in a given scope.</dd>
+<dd>A constraint that requires triple authors to hold a specific type of Verifiable Credential [[VC-DATA-MODEL-2.0]].</dd>
 
 <dt>Temporal Constraint</dt>
-<dd>A constraint that limits the rate at which an agent can create matching triples within a scope — expressed as minimum intervals between triples and/or maximum counts within sliding time windows.</dd>
+<dd>A constraint that limits the rate at which an agent can create matching triples.</dd>
 
 <dt>Content Constraint</dt>
-<dd>A constraint that validates the content of a triple's target — checking text length, blocked patterns, URL policies, and media type restrictions.</dd>
+<dd>A constraint that validates the content of a triple's target.</dd>
 
 <dt>Governance Engine</dt>
-<dd>A software component that evaluates incoming triples against all constraints in scope and returns a validation result. Conforming implementations MUST implement the algorithms in Sections 5–8.</dd>
+<dd>A software component that evaluates incoming triples against all constraints in scope and returns a validation result.</dd>
 
 <dt>Validation Result</dt>
-<dd>The output of a governance engine evaluation: either acceptance or rejection, with the rejecting constraint identified.</dd>
-
-<dt>Graph Root</dt>
-<dd>The top-level entity in a shared graph's entity hierarchy. Constraints attached to the graph root apply to all triples in the graph.</dd>
-
-<dt>Entity Hierarchy</dt>
-<dd>The tree structure of entities in a graph, defined by <code>has_child</code> predicates. An entity's children are all entities for which a triple <code>&lt;parent&gt; -[has_child]→ &lt;child&gt;</code> exists.</dd>
+<dd>The output of a governance engine evaluation: ACCEPT or REJECT, with the rejecting constraint identified.</dd>
 
 </dl>
 
@@ -137,71 +159,85 @@ A conforming **application** is a user-facing or programmatic interface that MAY
 
 ## 4. Data Model
 
-This section defines the complete set of `governance://` predicates used to express governance rules as graph data. All predicates use string literal targets unless otherwise noted.
+This section defines the `governance://` predicates used to express governance rules as graph data. All predicates use string-literal targets unless otherwise noted.
 
 ### 4.1 Constraint Base Type
 
-Every constraint instance MUST have the following triples:
+Every constraint instance MUST have:
 
 ```
 <constraint-id> -[governance://entry_type]→ governance://constraint
 <constraint-id> -[governance://constraint_kind]→ <kind>
 ```
 
-Where `<kind>` is one of the following string literals:
+Where `<kind>` is one of:
 
 | Kind | Description |
-|------|-------------|
-| `"capability"` | Requires authorization tokens (ZCAPs) for triple creation |
-| `"temporal"` | Rate-limits triple creation by time intervals or counts |
+|---|---|
+| `"capability"` | Requires ZCAPs for triple creation |
+| `"temporal"` | Rate-limits triple creation |
 | `"content"` | Validates the content of triple targets |
 | `"credential"` | Requires Verifiable Credentials from triple authors |
 
-The optional predicate `governance://constraint_scope` specifies the entity this constraint applies to. If absent, the scope is inferred as the entity to which the constraint is bound (the source of the `governance://has_constraint` triple).
+The optional `governance://constraint_scope` specifies the context this constraint applies to. If absent, the scope is the context to which the constraint is bound.
 
 ### 4.2 Constraint Binding
 
-A constraint is attached to the entity it governs via:
+A constraint is attached to a context via:
 
 ```
-<entity> -[governance://has_constraint]→ <constraint-id>
+<context-did> -[governance://has_constraint]→ <constraint-id>
 ```
 
-This triple is called a **constraint binding**. An entity MAY have zero or more constraint bindings. Multiple constraints of different kinds MAY be bound to the same entity.
+A context MAY have zero or more constraint bindings.
 
-**Scope inheritance.** Constraints inherit down the entity hierarchy. A constraint bound to an entity applies to that entity and all its descendants (determined by walking `has_child` predicates). For example:
+**Context-nesting scope inheritance.** Constraints inherit *upward* via `context://participates_in` links — a triple in child context C is also subject to constraints on every parent context P where `C -[context://participates_in]→ P`. This walks upward from C toward parents, not downward from a containing entity.
 
 ```
-Graph Root
+Parent Context P
   └── governance://has_constraint → [credential requirement: proof of humanity]
-  └── Entity A
-        └── governance://has_constraint → [temporal: 30s cooldown]
-        └── Entity B
-              └── governance://has_constraint → [content: no external URLs]
+
+Child Context C  (declares context://participates_in → P, inside C's graph)
+  └── governance://has_constraint → [temporal: 30s cooldown]
+  └── writes here are subject to BOTH constraints
 ```
 
-In this hierarchy:
-- Triples under **Entity B** are subject to all three constraints: the credential requirement (inherited from root), the temporal constraint (inherited from Entity A), and the content constraint (directly bound).
-- Triples under **Entity A** (but not under B) are subject to the credential requirement and the temporal constraint.
-- Triples at the **Graph Root** are subject only to the credential requirement.
+**Override semantics.** When constraints of the same `constraint_kind` exist at multiple levels in the scope chain, the most-specific constraint (closest to the writing context) **replaces** the less-specific one of the same kind. Constraints of different kinds always accumulate.
 
-**Override semantics.** When a constraint of the same `constraint_kind` exists at multiple levels in the scope chain, the most-specific constraint (closest to the triple's source in the hierarchy) replaces — does not supplement — the less-specific constraint of the same kind. Constraints of different kinds always accumulate.
+A parent cannot reach into a child's graph to modify the child's constraints. Once the child is bootstrapped, it owns its own rules. Parent constraints inherit; they do not override.
 
-### 4.3 Governance Bootstrap
+### 4.3 Governance Bootstrap (Root Capability)
 
-When a shared graph is created, the creating agent's DID is automatically established as the root authority. The root authority MUST be recorded as a triple: `<graph-did> -[governance://root_authority]→ <creator-did>`. The root authority has implicit capability for all predicates at all scopes. No explicit ZCAP is required for the root authority.
+When a context is created, a **root capability** is minted as a ZCAP. The capability is signed:
+
+- By the creator's `did:key` if the context is created standalone.
+- By a `capabilityDelegation` delegate of the creating context's `did:graph` if the context is created as a participant of a parent.
+
+The root capability is recorded in the new context as:
+
+```
+<context-did> -[governance://root_capability]→ <cap-id>
+
+<cap-id> rdf://type           zcap://Delegation ;
+         zcap://parent        zcap://BootstrapRoot ;
+         zcap://invoker       <did:key:creator> ;
+         zcap://actions       "createLink", "removeLink", "updateSHACL", "updateGovernance" ;
+         zcap://resource      <context-did> ;
+         zcap://proof         "<signature>" ;
+         zcap://created       "2026-05-23T00:00:00Z"^^xsd:dateTime .
+```
+
+The root capability is constitutionalised — the bootstrap delegation becomes the new context's own root. The creating context cannot subsequently modify the new context's governance. Delegations from the new context's root MAY further evolve independently.
 
 ### 4.4 Governance Constraint Conflicts
 
-When concurrent governance mutations create contradictory constraints (e.g., one constraint allows URLs while another blocks them), the constraint with the most specific scope takes precedence (per §5 Scope Resolution). If scopes are equal, the constraint added by the higher-authority agent takes precedence (lower ZCAP delegation depth). If authority is equal, the constraint with the lexicographically greater constraint ID persists and the other is marked superseded.
+When concurrent governance mutations create contradictory constraints, the constraint with the most specific scope takes precedence ([§6](#6-scope-resolution-context-nesting)). If scopes are equal, the constraint added by the higher-authority agent takes precedence (lower ZCAP delegation depth). If authority is equal, the constraint with the lexicographically greater constraint ID persists.
 
 ### 4.5 Capability Constraints (ZCAP-based)
 
-A capability constraint requires triple authors to hold valid Authorization Capabilities [[ZCAP-LD]] before their triples are accepted.
+A capability constraint requires triple authors to hold valid ZCAPs [[ZCAP-LD]].
 
-#### 4.3.1 Constraint Definition
-
-A capability constraint instance MUST include:
+#### 4.5.1 Constraint Definition
 
 ```
 <constraint-id> -[governance://entry_type]→ governance://constraint
@@ -212,21 +248,21 @@ A capability constraint instance MUST include:
 Where `<enforcement-level>` is one of:
 
 | Value | Meaning |
-|-------|---------|
-| `"required"` | All triples under this scope MUST be authorized by a valid ZCAP |
-| `"optional"` | ZCAPs are checked only if present; triples without ZCAPs are accepted. Used for grant-additional-permissions patterns. |
+|---|---|
+| `"required"` | All triples under this scope MUST be authorised by a valid ZCAP |
+| `"optional"` | ZCAPs are checked only if present; absent-ZCAP triples are accepted |
 
-The optional predicate:
+Optional:
 
 ```
 <constraint-id> -[governance://capability_predicates]→ <comma-separated predicate URIs>
 ```
 
-Restricts which predicates require capability verification. If absent or empty, all predicates under the scope require verification.
+Restricts which predicates require capability verification. If absent or empty, all predicates within scope require verification.
 
-#### 4.3.2 ZCAP Document Structure
+#### 4.5.2 ZCAP Document Structure
 
-Authorization capabilities are stored as JSON-LD documents conforming to [[ZCAP-LD]], with the following structure:
+Authorisation capabilities are stored as JSON-LD documents conforming to [[ZCAP-LD]]:
 
 ```json
 {
@@ -237,20 +273,16 @@ Authorization capabilities are stored as JSON-LD documents conforming to [[ZCAP-
   "id": "urn:uuid:a1b2c3d4-e5f6-7890-abcd-ef1234567890",
   "invoker": "did:key:z6MkAgent...",
   "parentCapability": "urn:uuid:parent-cap-id",
-  "capability": {
-    "predicates": [
-      "app://body",
-      "app://reaction"
-    ],
-    "scope": {
-      "within": "<entity-address>",
-      "graph": "<shared-graph-identifier>"
-    }
-  },
-  "expires": "2026-07-01T00:00:00Z",
+  "actions": ["createLink", "removeLink"],
+  "resource": "did:graph:z6MkChannelGeneral...",
+  "caveats": [
+    { "type": "expiry", "value": { "expiresAt": "2027-01-01T00:00:00Z" } },
+    { "type": "predicate", "value": { "allowed": ["msg://has_message"] } },
+    { "type": "rateLimit", "value": { "maxPerWindow": 100, "windowSeconds": 3600 } }
+  ],
   "proof": {
     "type": "Ed25519Signature2020",
-    "created": "2026-04-03T00:00:00Z",
+    "created": "2026-05-23T00:00:00Z",
     "verificationMethod": "did:key:z6MkIssuer...#key-1",
     "proofPurpose": "capabilityDelegation",
     "proofValue": "z..."
@@ -259,57 +291,57 @@ Authorization capabilities are stored as JSON-LD documents conforming to [[ZCAP-
 ```
 
 | Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `id` | URN UUID | REQUIRED | Unique identifier for this capability |
-| `invoker` | DID [[DID-CORE]] | REQUIRED | The agent authorized to exercise this capability |
-| `parentCapability` | URN UUID or `null` | REQUIRED | Identifier of the parent capability in the delegation chain. `null` for capabilities issued directly by the root authority. |
-| `capability.predicates` | Array of URI strings | REQUIRED | Predicate URIs this capability authorizes. An empty array covers no predicates. |
-| `capability.scope.within` | URI or `null` | OPTIONAL | Entity address defining the scope subtree. `null` means the entire shared graph. |
-| `capability.scope.graph` | URI | REQUIRED | Identifier of the shared graph this capability applies to |
-| `expires` | [[RFC3339]] timestamp or `null` | OPTIONAL | Expiration time. `null` means no expiry. |
-| `proof` | Object | REQUIRED | Cryptographic proof from the issuer, conforming to [[VC-DATA-MODEL-2.0]] proof format |
+|---|---|---|---|
+| `id` | URN UUID | REQUIRED | Unique identifier |
+| `invoker` | DID | REQUIRED | The agent (or graph DID) authorised to exercise this capability |
+| `parentCapability` | URN UUID or `null` | REQUIRED | Identifier of the parent capability. `null` for the root capability. |
+| `actions` | Array of strings | REQUIRED | Actions this capability authorises ([§4.5.3](#453-actions)). |
+| `resource` | URI | REQUIRED | The context's `did:graph:...`. |
+| `caveats` | Array of caveat objects | OPTIONAL | Fine-grained constraints ([§9](#9-caveat-vocabulary)). |
+| `proof` | Object | REQUIRED | Cryptographic proof signed by the delegator. The delegator MUST be the `invoker` of the parent capability (or the holder of a `capabilityDelegation` delegate key on the parent invoker's DID document if the parent invoker is a graph DID). |
 
-#### 4.3.3 Delegation
+#### 4.5.3 Actions
 
-Capabilities support delegation chains. An agent holding a valid capability MAY delegate a subset of that capability to another agent by issuing a new ZCAP where:
+Standard actions:
 
-- `parentCapability` references the delegator's capability `id`
-- `capability.predicates` is a subset of the parent's predicates (attenuation)
-- `capability.scope.within` is equal to or a descendant of the parent's scope
-- `proof` is signed by the delegator (the `invoker` of the parent capability)
+| Action | Meaning |
+|---|---|
+| `createLink` | Author a new triple in the context |
+| `removeLink` | Remove an existing triple |
+| `updateProperty` | Modify a scalar property of a ShapeInstance |
+| `updateSHACL` | Register or modify shapes ([[SHAPE-VALIDATION]]) |
+| `updateGovernance` | Add/remove governance constraints |
+| `updateFlow` | Register or modify flows ([[GRAPH-FLOWS]]) |
+| `updateDIDDocument` | Add/remove DID-document delegates ([§10](#10-governance-of-did-document-delegates)) |
+| `mountContext` | Mount the context (used to gate read access) |
+| `delegateCapability` | Issue new delegations from this capability |
 
-Delegation chains MUST NOT exceed a depth of 10. Implementations MUST reject capabilities with deeper chains.
+Applications MAY define additional action names. The governance engine SHOULD treat unknown actions conservatively (require explicit capability).
 
-#### 4.3.4 Capability Storage
+#### 4.5.4 Capability Storage
 
-Capabilities are stored as content-addressed expressions in the graph and linked to agents via:
+Capabilities are stored as content-addressed expressions in the context they apply to:
 
 ```
 <agent-did> -[governance://has_zcap]→ <capability-expression-address>
 ```
 
-#### 4.3.5 Revocation
+#### 4.5.5 Revocation
 
-Any agent who issued or delegated a capability MAY revoke it by adding:
+Any agent who issued a capability MAY revoke it by adding:
 
 ```
 <revoking-agent-did> -[governance://revokes_capability]→ <zcap-id>
 ```
 
-Where `<zcap-id>` is the `id` field of the capability being revoked. A revocation is valid if the revoking agent is:
+Revocation is valid if the revoking agent is:
 
-- The `invoker` of the revoked capability's `parentCapability`, OR
-- The root authority of the shared graph
+- The `invoker` of the revoked capability's `parentCapability` (or a `capabilityDelegation` delegate of that invoker, if the invoker is a graph DID), OR
+- The current root-capability holder for the context.
 
-Revocation of a capability invalidates the entire delegation chain below it. If capability C was delegated to produce capability D, revoking C also invalidates D.
-
-Revocation triples propagate via the sync protocol like any other triple. There is an inherent propagation delay — see [Section 12](#12-security-considerations).
+Revoking C invalidates the entire delegation chain rooted at C.
 
 ### 4.6 Credential Requirements
-
-A credential constraint requires triple authors to hold specific Verifiable Credentials [[VC-DATA-MODEL-2.0]].
-
-Required triples on the constraint instance:
 
 ```
 <constraint-id> -[governance://entry_type]→ governance://constraint
@@ -317,775 +349,789 @@ Required triples on the constraint instance:
 <constraint-id> -[governance://requires_credential_type]→ <type-name>
 ```
 
-Where `<type-name>` is the VC `type` field value to match (e.g., `"ProofOfHumanity"`, `"CommunityMembership"`).
-
-Optional triples:
+Optional:
 
 ```
 <constraint-id> -[governance://credential_issuer_pattern]→ <did-pattern>
-```
-
-A glob-style pattern for acceptable issuer DIDs (e.g., `"did:web:greencheck.io"`, `"did:key:*"`). If absent, any issuer is accepted.
-
-```
 <constraint-id> -[governance://credential_min_age_hours]→ <integer>
 ```
 
-Minimum age of the credential in hours since its `issuanceDate`. Prevents freshly-minted credentials from satisfying the requirement. Default: `0` (no age check).
-
-**Credential storage convention.** Agents store their Verifiable Credentials as content-addressed expressions and reference them via:
-
-```
-<agent-did> -[governance://has_credential]→ <credential-expression-address>
-```
-
-The governance engine resolves the expression to read the VC document and performs the following checks:
-
-1. The VC's `type` array contains `<type-name>`
-2. The VC's `issuer` matches `<did-pattern>` (if specified)
-3. The VC's `issuanceDate` is at least `<credential_min_age_hours>` hours ago
-4. The VC's `credentialSubject` matches the triple author's DID
-5. The VC's `proof` is cryptographically valid
-6. The VC has not expired (if `expirationDate` is present)
+**Credential storage convention.** Agents store VCs as content-addressed expressions referenced via `<agent-did> -[governance://has_credential]→ <credential-expression-address>`. The engine resolves and verifies the VC.
 
 ### 4.7 Temporal Constraints
-
-A temporal constraint limits the rate at which an agent can create matching triples within a scope.
-
-Required triples on the constraint instance:
 
 ```
 <constraint-id> -[governance://entry_type]→ governance://constraint
 <constraint-id> -[governance://constraint_kind]→ "temporal"
 ```
 
-At least one of the following MUST be present; otherwise the constraint is a no-op and SHOULD be ignored:
+At least one of:
 
 ```
 <constraint-id> -[governance://temporal_min_interval_seconds]→ <integer>
-```
-
-Minimum seconds between consecutive matching triples by the same author. If the elapsed time since the author's last matching triple is less than this value, the incoming triple is rejected.
-
-```
 <constraint-id> -[governance://temporal_max_count_per_window]→ <integer>
 ```
 
-Maximum number of matching triples by the same author within a sliding time window. If the count equals or exceeds this value, the incoming triple is rejected.
+Optional:
 
 ```
-<constraint-id> -[governance://temporal_window_seconds]→ <integer>
-```
-
-Duration of the sliding time window in seconds. Default: `60`. Used only when `temporal_max_count_per_window` is specified.
-
-```
+<constraint-id> -[governance://temporal_window_seconds]→ <integer>          # default: 60
 <constraint-id> -[governance://temporal_applies_to_predicates]→ <comma-separated URIs>
 ```
 
-Restricts this temporal constraint to triples with the listed predicates. If absent or empty, the constraint applies to all predicates within scope.
-
 ### 4.8 Content Constraints
-
-A content constraint validates the textual or media content of triple targets.
-
-Required triples on the constraint instance:
 
 ```
 <constraint-id> -[governance://entry_type]→ governance://constraint
 <constraint-id> -[governance://constraint_kind]→ "content"
 ```
 
-Optional triples:
+Optional:
 
 ```
 <constraint-id> -[governance://content_applies_to_predicates]→ <comma-separated URIs>
-```
-
-Restricts this content constraint to triples with the listed predicates. If absent or empty, the constraint applies to all predicates within scope.
-
-```
 <constraint-id> -[governance://content_blocked_patterns]→ <pipe-separated regex patterns>
-```
-
-Case-insensitive regular expression patterns. If any pattern matches the resolved text content of the triple's target, the triple is rejected. Patterns are separated by the pipe character (`|`). Implementations MUST support ECMAScript regular expression syntax [[ECMA-262]].
-
-```
 <constraint-id> -[governance://content_allow_urls]→ <boolean>
-```
-
-Whether URLs are permitted in text content. Values: `"true"` or `"false"`. Default: `"true"`.
-
-```
 <constraint-id> -[governance://content_allowed_domains]→ <comma-separated domains>
-```
-
-If URLs are allowed, restrict permitted URLs to those whose domain matches one of the listed domains. If absent or empty, all domains are permitted. This predicate has no effect if `content_allow_urls` is `"false"`.
-
-```
 <constraint-id> -[governance://content_allow_media_types]→ <comma-separated MIME patterns>
-```
-
-Glob-style MIME type patterns for acceptable media attachments (e.g., `"image/*"`, `"text/plain"`). If absent or empty, all media types are permitted. If specified, only targets whose media type matches at least one pattern are accepted.
-
-```
 <constraint-id> -[governance://content_max_length]→ <integer>
 ```
 
-Maximum character count of resolved text content. If the triple's target resolves to text exceeding this length, the triple is rejected.
-
-**Target resolution.** If the triple's target is a literal string, it is used directly. If it is a content-addressed expression, the governance engine MUST resolve it to obtain text content and/or media type before evaluation.
-
 ### 4.9 Default Capability
 
-A **default capability** defines the authorization tokens that are automatically issued to agents joining the shared graph. It is not a constraint but a template stored in the graph.
+A **default capability** template — the ZCAP automatically issued to agents joining a context:
 
 ```
 <default-cap-id> -[governance://entry_type]→ governance://default_capability
-<default-cap-id> -[governance://default_capability_predicates]→ <comma-separated URIs>
-<default-cap-id> -[governance://default_capability_scope]→ <scope-entity-address>
+<default-cap-id> -[governance://default_capability_actions]→ <comma-separated actions>
+<default-cap-id> -[governance://default_capability_caveats]→ <JSON array of caveat objects>
 ```
 
-| Predicate | Description |
-|-----------|-------------|
-| `governance://default_capability_predicates` | Predicate URIs that new agents receive capability for |
-| `governance://default_capability_scope` | Entity address defining the scope of the auto-issued capability. Typically the graph root. |
-
-When an agent joins a shared graph, the graph creator (or an agent with delegation authority) SHOULD issue a ZCAP matching each `DefaultCapability` template. The governance engine does not perform issuance — it reads these templates so that join-flow implementations know what capabilities to issue.
+When an agent joins, a runtime SHOULD issue a ZCAP matching the default template. The engine does not perform issuance — it reads templates so join-flow implementations know what to issue.
 
 ### 4.10 Revocation List
 
-Revocations are stored as triples in the graph:
+Revocations are stored as triples:
 
 ```
 <revoking-agent-did> -[governance://revokes_capability]→ <zcap-id>
 ```
 
-These triples propagate via the sync protocol like any other triple. The set of all `governance://revokes_capability` triples in a shared graph constitutes the **revocation list**.
-
-Conforming governance engines MUST check the revocation list during every capability verification (see [Section 6](#6-zcap-verification-algorithm)). Specifically:
-
-1. Before accepting a capability, the engine MUST query whether any `governance://revokes_capability` triple targets that capability's `id`.
-2. If a valid revocation exists (issued by an authorized revoker — see [Section 4.3.5](#435-revocation)), the capability MUST be treated as invalid.
-3. This check MUST be performed for every capability in the delegation chain, not only the leaf capability.
-
-Implementations MUST NOT cache revocation status indefinitely. The revocation list is mutable graph data; caching strategies MUST account for newly-arriving revocation triples.
+Conforming engines MUST check the revocation list during every capability verification (every level of the chain). Engines MUST NOT cache revocation status indefinitely.
 
 ---
 
-## 5. Scope Resolution Algorithm
+## 5. Enforcement Modes
 
-This section defines how the governance engine determines which constraints apply to an incoming triple.
+This section is normative.
 
-### 5.1 Ancestry Resolution
+### 5.1 The Three Modes
 
-Given an incoming triple `(source, predicate, target)` authored by `agent`:
+A context's enforcement mode is recorded as:
 
-1. Let *current* be the triple's `source`.
-2. Let *ancestry* be an ordered list initialized with `[current]`.
-3. Let *visited* be a set initialized with `{current}`.
+```
+<context-did> -[governance://enforcement_mode]→ "open" | "announced" | "enforced"
+```
+
+If absent, the default is `"open"`.
+
+| Mode | Capability Check | Audit Trail | Use For |
+|---|---|---|---|
+| **Open** | No ZCAP checking. All writes accepted (subject to other constraints). | None | New contexts, prototyping, low-trust environments. |
+| **Announced** | ZCAPs are stored and verifiable, but not enforced. | Yes — every write is annotated with the capability chain that *would* have authorised it (or "anonymous" if none). | Transitioning into enforcement; testing rules. |
+| **Enforced** | ZCAP verification is mandatory. Writes without a valid chain are rejected. | Yes | Mature governance — production communities. |
+
+### 5.2 Mode Transitions
+
+A context can move between modes via writing the `governance://enforcement_mode` triple. The write itself is subject to governance: it requires an `updateGovernance` capability on the context. The mode change takes effect for all subsequent writes.
+
+The recommended progression is **Open → Announced → Enforced**.
+
+### 5.3 Mode-Agnostic Constraints
+
+Non-capability constraints (temporal, content, credential) apply in **all three modes**. The enforcement mode only governs whether *capability* checks are advisory or mandatory.
+
+### 5.4 Caveats and Enforcement Mode
+
+In Announced mode, caveats are checked and the result is recorded but never causes rejection. In Enforced mode, caveat violations reject the write.
+
+---
+
+## 6. Scope Resolution (Context Nesting)
+
+This section defines how the governance engine determines which constraints apply to an incoming write.
+
+### 6.1 Ancestry Resolution
+
+Given an incoming triple authored by `agent` to be written in `context`:
+
+1. Let *current* = `context`.
+2. Let *ancestry* = ordered list initialised with `[current]`.
+3. Let *visited* = set initialised with `{current}`.
 4. LOOP:
-   1. Query the graph for all triples where `predicate` is `has_child` and `target` is *current*. (That is: find all entities that declare *current* as a child.)
-   2. If no results are found, exit the loop. (*current* is either the graph root or an orphan.)
-   3. Let *parent* be the `source` of the first matching triple.
-   4. If *visited* contains *parent*, exit the loop. (Cycle detected.)
-   5. Add *parent* to *visited*.
-   6. Append *parent* to *ancestry*.
-   7. Set *current* to *parent*.
+   1. Query *current*'s graph for triples `<current> -[context://participates_in]→ ?parent`.
+   2. If no results, exit (root or unparented).
+   3. For each *parent*:
+      - Verify mutual acceptance: the parent's governance MUST contain `<parent> -[context://accepts_participation]→ <current>` signed by a `capabilityDelegation` delegate of the parent. If absent, ignore the participation claim.
+      - If *parent* is in *visited*, skip (cycle).
+      - Add *parent* to *visited* and *ancestry*. Set *current* = *parent*. Continue.
 5. Return *ancestry*.
 
-Implementations MUST enforce a maximum ancestry depth of 100. If the ancestry exceeds 100 levels, the implementation MUST truncate at 100 and log a warning.
+Implementations MUST enforce a maximum ancestry depth of 100.
 
-### 5.2 Constraint Collection
+**Why participation is mutually declared.** A child unilaterally claiming participation in any parent would allow inheritance hijacking — a malicious child could declare participation in a high-trust parent to claim its credentials. The parent's mutual `accepts_participation` link prevents this.
 
-Given *ancestry* from Step 5.1:
+### 6.2 Constraint Collection
 
-1. Let *constraints* be an empty list.
-2. For each entity in *ancestry*, at index *depth* (0 = most specific, i.e., the triple's source):
-   1. Query the graph for all triples where `source` is the entity and `predicate` is `governance://has_constraint`.
-   2. For each matching triple, resolve the `target` to a constraint instance by reading its `governance://` predicates.
-   3. Add each resolved constraint to *constraints*, tagged with *depth*.
+Given *ancestry*:
+
+1. Let *constraints* = empty list.
+2. For each context in *ancestry*, at index *depth* (0 = the write's context):
+   1. Query that context's graph for `<context> -[governance://has_constraint]→ ?c`.
+   2. Resolve each `?c` to a constraint instance, tag with *depth*, add to *constraints*.
 3. Return *constraints*.
 
-### 5.3 Precedence Rules
+### 6.3 Precedence Rules
 
-When multiple constraints of the same `constraint_kind` exist at different depths:
+- **Most-specific-context wins.** A constraint at depth 0 takes priority over one at depth 3 — for constraints of the same kind, the more specific replaces the less specific.
+- **Deny-wins at same depth.** Conflicts at the same depth resolve to rejection.
+- **Different kinds accumulate.** Capability + temporal at the same depth are both evaluated.
 
-- **Most-specific-scope wins.** A constraint at depth 0 (directly on the triple's source) takes priority over one at depth 3 (ancestor). The more-specific constraint replaces the less-specific constraint of the same kind.
-- **Deny-wins at same depth.** If two constraints at the same depth would produce conflicting results (one accepts, one rejects), rejection wins.
-- **Different kinds accumulate.** A capability constraint and a temporal constraint at the same depth are both evaluated. Only constraints of the same kind trigger override semantics.
+### 6.4 Caching
 
-### 5.4 Caching
-
-Implementations SHOULD cache scope chains (ancestry lists) and invalidate them when `has_child` or `governance://has_constraint` triples are added or removed. Scope chain computation involves repeated graph traversal, and caching significantly improves validation throughput.
+Implementations SHOULD cache ancestry chains and invalidate when participation links or constraint bindings change.
 
 ---
 
-## 6. ZCAP Verification Algorithm
+## 7. ZCAP Verification Algorithm
 
-This section defines how the governance engine verifies capability constraints for an incoming triple.
-
-**Input:** A triple `(source, predicate, target)`, the author's DID, the scope chain (from Section 5), and the graph state.
+**Input:** A triple, the author's DID, the scope chain, the graph state, the enforcement mode.
 
 **Algorithm:**
 
-1. **Extract predicate.** Let *pred* be the triple's `predicate`. If *pred* is absent (untyped triple), return ACCEPT. Untyped triples are not subject to capability constraints.
+1. **Mode check.** If enforcement mode is `"open"`, return ACCEPT. If `"announced"`, perform verification, record the result, but return ACCEPT regardless.
 
-2. **Collect capability constraints.** From the constraints collected in Section 5.2, select those with `constraint_kind` = `"capability"` and `capability_enforcement` = `"required"`. If none exist, return ACCEPT.
+2. **Extract action.** Let *action* = the operation type implied by the write (typically `createLink` for additions, `removeLink` for removals).
 
-3. **Check predicate scope.** For each capability constraint, check whether *pred* is covered:
-   1. If the constraint specifies `governance://capability_predicates`, check whether *pred* is in the comma-separated list.
-   2. If the constraint does not specify `governance://capability_predicates` (or the list is empty), all predicates are covered.
-   3. If *pred* is not covered by any capability constraint, return ACCEPT.
+3. **Collect capability constraints.** From [§6.2](#62-constraint-collection), select constraints with `constraint_kind = "capability"` and `capability_enforcement = "required"`. If none, return ACCEPT.
 
-4. **Check root authority.** If the author's DID matches the graph's root authority, return ACCEPT. The root authority has implicit capability over all predicates and scopes.
+4. **Find author's capabilities.** Query for `<author> -[governance://has_zcap]→ ?cap`, resolving each ZCAP. Include capabilities whose `invoker` is a graph DID *if* the author currently holds a `capabilityInvocation` delegate on that graph (per [[DECENTRALISED-IDENTITY]] §5).
 
-5. **Find author's capabilities.** Query the graph for all triples where `source` is the author's DID and `predicate` is `governance://has_zcap`. Resolve each `target` to a ZCAP document.
+5. **Evaluate each capability.**
+   1. **Action match.** *action* MUST be in `cap.actions`.
+   2. **Resource match.** `cap.resource` MUST equal the context's `did:graph:...` or be an ancestor in the scope chain.
+   3. **Expiry check.** If `caveats[].expiry.expiresAt` is set and exceeded, skip.
+   4. **Revocation check.** If a valid revocation targets this `cap.id`, skip.
+   5. **Caveat check.** Evaluate each caveat ([§9](#9-caveat-vocabulary)) against the operation. If any fails, skip.
+   6. **Chain verification.** Walk the parent chain:
+      1. If `chain_depth > 10`, skip.
+      2. Verify `cap.proof` signature against the public key of `proof.verificationMethod`. For graph-DID delegators, verify the method is currently in the graph's `capabilityDelegation` set.
+      3. If `parentCapability` is `null`, this MUST be the context's root capability. Validate that `cap.id` matches `<context> -[governance://root_capability]→ ?`. If so, chain is valid.
+      4. Resolve `parentCapability`. Verify attenuation ([§8](#8-capability-attenuation)). Verify the proof signer is the parent's invoker or a delegate. Verify the parent is not revoked.
+      5. Set cap = parent; increment depth.
+   7. If chain verification succeeded, return ACCEPT.
 
-6. **Evaluate each capability.** For each resolved ZCAP document:
-   1. **Predicate match:** Check that *pred* is in `capability.predicates`. If not, skip this ZCAP.
-   2. **Scope match:** If `capability.scope.within` is set, check that the referenced entity appears in the scope chain (ancestry). If not, skip this ZCAP. If `capability.scope.within` is `null`, scope matches (entire graph).
-   3. **Expiry check:** If `expires` is set and the current authoritative timestamp exceeds `expires`, skip this ZCAP.
-   4. **Revocation check:** Query the graph for triples with `predicate` = `governance://revokes_capability` and `target` = this ZCAP's `id`. If a valid revocation exists (from an authorized revoker per Section 4.3.5), skip this ZCAP.
-   5. **Chain verification:** Walk the delegation chain:
-      1. Let *current_zcap* be this ZCAP.
-      2. Let *chain_depth* = 0.
-      3. LOOP:
-         1. If *chain_depth* > 10, chain is too deep — skip this ZCAP.
-         2. Verify *current_zcap*'s `proof` signature against the public key derived from the `proof.verificationMethod` DID. If invalid, skip this ZCAP.
-         3. If `parentCapability` is `null`:
-            - The proof signer MUST be the root authority. If not, skip this ZCAP.
-            - Chain is valid. Proceed to step 6.6.
-         4. Resolve `parentCapability` to a ZCAP document.
-         5. **Attenuation check:** *current_zcap*'s `capability.predicates` MUST be a subset of the parent's. *current_zcap*'s `capability.scope.within` MUST be equal to or a descendant of the parent's scope.
-         6. **Delegator check:** The proof signer of *current_zcap* MUST be the `invoker` of the parent capability.
-         7. **Revocation check on parent:** Check the parent ZCAP against the revocation list. If revoked, skip this ZCAP.
-         8. Set *current_zcap* to the parent. Increment *chain_depth*.
-   6. If chain verification succeeded, return ACCEPT.
-
-7. **No valid capability found.** Return REJECT with:
-   - `rejectedBy`: the constraint ID
-   - `module`: `"capability"`
-   - `reason`: `"No valid capability for predicate <pred> in scope"`
+6. **No valid capability.** Return REJECT with `rejectedBy`, `module: "capability"`, `reason`.
 
 ---
 
-## 7. Temporal Verification Algorithm
+## 8. Capability Attenuation
 
-This section defines how the governance engine enforces temporal constraints for an incoming triple.
+A delegated capability MUST be a strict subset of its parent across:
 
-**Input:** A triple `(source, predicate, target)`, the author's DID, the scope chain (from Section 5), the authoritative timestamp of the incoming triple, and the graph state.
+- **Actions.** `child.actions ⊆ parent.actions`.
+- **Resource.** `child.resource` is the same context as parent's, or a child context in the scope chain.
+- **Expiry.** If parent has an `expiry` caveat, child's expiry MUST be at or before parent's.
+- **Caveats.** Every caveat on the parent MUST be present (or strictly narrowed) on the child. The child MAY add new caveats. The child MUST NOT remove caveats.
+
+The runtime MUST verify attenuation during chain walk. A capability that violates attenuation invalidates the chain.
+
+Capabilities flow downward, getting narrower, never wider.
+
+---
+
+## 9. Caveat Vocabulary
+
+This section is normative.
+
+### 9.1 Caveat Format
+
+Each caveat in a ZCAP's `caveats` array is:
+
+```json
+{ "type": "<caveat-type>", "value": { ... } }
+```
+
+### 9.2 Standard Caveat Types
+
+| Type | Purpose | `value` shape |
+|---|---|---|
+| `expiry` | Delegation expires at a time | `{ "expiresAt": "<RFC3339>" }` |
+| `predicate` | Restrict to specific predicates | `{ "allowed": ["<uri>", ...], "denied": ["<uri>", ...] }` |
+| `shape` | Link must conform to a SHACL shape | `{ "shapeIri": "<uri>" }` |
+| `property` | Restrict to specific property paths | `{ "allowed": ["<uri>", ...], "denied": ["<uri>", ...] }` |
+| `content` | SPARQL ASK on the link content | `{ "sparql": "ASK { ... }" }` |
+| `rateLimit` | Max operations per window | `{ "maxPerWindow": <int>, "windowSeconds": <int> }` |
+| `cardinality` | Max total uses of this delegation | `{ "max": <int> }` |
+| `source` | Restrict link source patterns (glob) | `{ "pattern": "<glob>" }` |
+| `target` | Restrict link target patterns (glob) | `{ "pattern": "<glob>" }` |
+| `authorOnly` | Operation must come from the original instance creator | `{}` |
+
+Applications MAY define additional caveat types; the engine MUST treat unknown caveat types conservatively (reject the operation).
+
+### 9.3 Three Levels of Granularity
+
+- **Coarse (graph-level):** `actions: [createLink], caveats: []` — "can write anything to this context."
+- **Medium (shape-level):** `+ { "type": "shape", "value": { "shapeIri": "msg://MessageShape" }}` — "can only write data conforming to MessageShape."
+- **Fine (property-level):** `+ { "type": "property", "value": { "allowed": ["msg://body"] }}` — "can only modify 'body' on existing Messages."
+
+### 9.4 SHACL/ZCAP Bridge
+
+The `shape` and `property` caveats integrate with [[SHAPE-VALIDATION]]:
+
+- **SHACL** says: "a Message has a body (string, required) and an author (URI, required)."
+- **`shape` caveat** says: "this agent can only write data conforming to MessageShape."
+- **`property` caveat** says: "this agent can only write the body property of MessageShape."
+
+The runtime validates: ZCAP grants authority → caveats narrow scope → SHACL validates structure.
+
+### 9.5 Performance
+
+Caveat evaluation is designed for negligible overhead:
+
+- `predicate`, `property` — O(1) set lookup.
+- `shape` — delegates to the SHACL engine (runs on every write anyway).
+- `content` — SPARQL ASK against an in-memory model of the write.
+- `rateLimit`, `cardinality` — counter lookup with TTL cache.
+
+---
+
+## 10. Governance of DID-Document Delegates
+
+This section is normative.
+
+The DID-document delegate model ([[DECENTRALISED-IDENTITY]] §5) gives a context shared signing authority through multiple keys listed in capability sections of its DID document. Modifying these is a write to the context's own triples and is therefore governed by this specification.
+
+### 10.1 Governed Predicates
+
+| Predicate | Effect |
+|---|---|
+| `did-document://add-method` | Add a new `verificationMethod` entry |
+| `did-document://remove-method` | Remove a `verificationMethod` and all its section memberships |
+| `did-document://grant-section` | Add a method to a capability section |
+| `did-document://revoke-section` | Remove a method from a section (without removing the method) |
+
+### 10.2 Capability Required
+
+By default, modifying the DID document requires an `updateDIDDocument` capability scoped to the context. The capability MAY carry caveats constraining which sections can be granted/revoked.
+
+The bootstrap root capability ([§4.3](#43-governance-bootstrap-root-capability)) includes `updateDIDDocument` by default. The creator can add the initial set of delegates without further ceremony.
+
+### 10.3 Delegate-of-Delegate
+
+A delegate's authority to modify the DID document is bounded:
+
+- A `capabilityInvocation` delegate may sign as the graph for ZCAP invocations, but **may not** modify the DID document unless they also hold `updateDIDDocument`.
+- A `capabilityDelegation` delegate may issue new ZCAPs from the graph DID, but **may not** add/remove DID document methods unless they also hold `updateDIDDocument`.
+
+### 10.4 Self-Rotation
+
+A delegate MAY rotate their own key by issuing a `did-document://remove-method` + `did-document://add-method` pair as an atomic operation. The default permits self-rotation. Communities that want to prevent unilateral self-rotation MAY add a content caveat requiring an additional signer.
+
+### 10.5 Non-Goal: Multisig
+
+This specification does NOT define multisig, threshold signing, or aggregate-key schemes for the graph DID itself. Shared authority is achieved through the delegate set in the DID document; "this graph said it" is satisfied by any current delegate's signature. See [[DECENTRALISED-IDENTITY]] §5.2.
+
+---
+
+## 11. Temporal Verification Algorithm
+
+**Input:** A triple, the author's DID, the scope chain, the authoritative timestamp.
 
 **Algorithm:**
 
-1. **Collect temporal constraints.** From the constraints collected in Section 5.2, select those with `constraint_kind` = `"temporal"`. If none exist, return ACCEPT.
+1. **Collect temporal constraints** with `constraint_kind = "temporal"`. If none, return ACCEPT.
 
-2. **For each temporal constraint:**
-   1. **Predicate match.** If `governance://temporal_applies_to_predicates` is specified and non-empty, check whether the triple's `predicate` is in the list. If not, skip this constraint.
-   2. **Query recent triples.** Scan the graph for triples by the same author within the constraint's scope that match the applicable predicates. These are triples where:
-      - The `source` is within the scope subtree (is the constraint's scope entity or a descendant)
-      - The `predicate` matches the constraint's `applies_to_predicates` (or any predicate if not specified)
-      - The author matches the incoming triple's author
-   3. **Interval check.** If `governance://temporal_min_interval_seconds` is specified:
-      1. Find the most recent matching triple's timestamp.
-      2. Compute *elapsed* = incoming triple's timestamp − last matching triple's timestamp (in seconds).
-      3. If *elapsed* < `temporal_min_interval_seconds`, return REJECT with:
-         - `rejectedBy`: the constraint ID
-         - `module`: `"temporal"`
-         - `reason`: `"Rate limit: wait <remaining>s"`
-   4. **Window count check.** If `governance://temporal_max_count_per_window` is specified:
-      1. Let *window* = `governance://temporal_window_seconds` (default: 60).
-      2. Count matching triples within the time range `[incoming_timestamp − window, incoming_timestamp]`.
-      3. If *count* ≥ `temporal_max_count_per_window`, return REJECT with:
-         - `rejectedBy`: the constraint ID
-         - `module`: `"temporal"`
-         - `reason`: `"Rate limit: <max> per <window>s exceeded"`
+2. **For each constraint:**
+   1. **Predicate match.** If `temporal_applies_to_predicates` is set and the triple's predicate is not listed, skip.
+   2. **Query recent triples** by the same author within scope.
+   3. **Interval check.** If `temporal_min_interval_seconds` is set, find the most recent matching triple and compute elapsed time. If too short, REJECT.
+   4. **Window count check.** If `temporal_max_count_per_window` is set, count matching triples in the sliding window. If at or above max, REJECT.
 
-3. **All temporal constraints passed.** Return ACCEPT.
+3. All passed → ACCEPT.
 
 ---
 
-## 8. Content Verification Algorithm
+## 12. Content Verification Algorithm
 
-This section defines how the governance engine enforces content constraints for an incoming triple.
-
-**Input:** A triple `(source, predicate, target)`, the scope chain (from Section 5), and the graph state.
+**Input:** A triple, the scope chain, the graph state.
 
 **Algorithm:**
 
-1. **Collect content constraints.** From the constraints collected in Section 5.2, select those with `constraint_kind` = `"content"`. If none exist, return ACCEPT.
+1. **Collect content constraints**. If none, return ACCEPT.
 
-2. **For each content constraint:**
-   1. **Predicate match.** If `governance://content_applies_to_predicates` is specified and non-empty, check whether the triple's `predicate` is in the list. If not, skip this constraint.
-   2. **Resolve target.** Resolve the triple's `target` to its content:
-      - If the target is a literal string, use it as text content with no media type.
-      - If the target is a content-addressed expression, resolve it to obtain text content and/or media type.
-      - If the target cannot be resolved (unavailable content store), the engine SHOULD reject the triple (fail-closed). See [Section 12](#12-security-considerations).
-   3. **Length check.** If `governance://content_max_length` is specified and the resolved text content exceeds that character count, return REJECT with:
-      - `rejectedBy`: the constraint ID
-      - `module`: `"content"`
-      - `reason`: `"Content exceeds maximum length of <max> characters"`
-   4. **Blocked patterns check.** If `governance://content_blocked_patterns` is specified, test each regex pattern against the resolved text content. If any pattern matches, return REJECT with:
-      - `rejectedBy`: the constraint ID
-      - `module`: `"content"`
-      - `reason`: `"Content matches blocked pattern"`
-   5. **URL policy check.** If `governance://content_allow_urls` is `"false"`, scan the text content for URLs. If any URL is found, return REJECT with:
-      - `rejectedBy`: the constraint ID
-      - `module`: `"content"`
-      - `reason`: `"URLs are not permitted"`
-   6. **Domain whitelist check.** If `governance://content_allow_urls` is `"true"` (or absent) and `governance://content_allowed_domains` is specified and non-empty, extract all URLs from the text content and verify that each URL's domain appears in the allowed domains list. If any URL's domain is not in the list, return REJECT with:
-      - `rejectedBy`: the constraint ID
-      - `module`: `"content"`
-      - `reason`: `"URL domain <domain> is not in the allowed list"`
-   7. **Media type check.** If `governance://content_allow_media_types` is specified and non-empty, and the resolved content has a media type, check that the media type matches at least one glob pattern. If no pattern matches, return REJECT with:
-      - `rejectedBy`: the constraint ID
-      - `module`: `"content"`
-      - `reason`: `"Media type <type> is not permitted"`
+2. **For each constraint:**
+   1. **Predicate match.**
+   2. **Resolve target** to text content (literal directly, or by resolving a content-addressed expression — fail-closed on resolution error).
+   3. **Length check.** REJECT if exceeds `content_max_length`.
+   4. **Blocked patterns.** REJECT if any regex matches.
+   5. **URL policy.** REJECT if `content_allow_urls = "false"` and content contains URLs.
+   6. **Domain whitelist.** REJECT if any URL's domain is not in `content_allowed_domains`.
+   7. **Media type.** REJECT if media type does not match any glob.
 
-3. **All content constraints passed.** Return ACCEPT.
+3. All passed → ACCEPT.
 
 ---
 
-## 9. Governance API on SharedGraph
-
-Governance methods are exposed directly on the `SharedGraph` interface, rather than as a separate namespace. This keeps governance tightly coupled to the shared graph it governs.
+## 13. Governance API on Context
 
 ```webidl
 [Exposed=Window,Worker]
-partial interface SharedGraph {
-  [NewObject] Promise<ValidationResult> canAddTriple(SemanticTriple triple);
-  [NewObject] Promise<sequence<GraphConstraint>> constraintsFor(USVString entityAddress);
+partial interface Context {
+  [NewObject] Promise<ValidationResult> canAddTriple(Triple triple);
+  [NewObject] Promise<sequence<GraphConstraint>> constraintsFor(USVString contextDid);
   [NewObject] Promise<sequence<CapabilityInfo>> myCapabilities();
+  [NewObject] Promise<DOMString> enforcementMode();
+  [NewObject] Promise<undefined> setEnforcementMode(EnforcementMode mode);
 };
+
+enum EnforcementMode { "open", "announced", "enforced" };
 
 dictionary ValidationResult {
   required boolean allowed;
-  USVString? module;
+  USVString? rejectedBy;       // constraint id
+  USVString? module;            // "capability" | "temporal" | "content" | "credential"
   USVString? reason;
+  DOMString? mode;              // current enforcement mode
 };
 
 dictionary GraphConstraint {
   required USVString id;
   required USVString kind;
-  required USVString scope;
-  unsigned long depth;
+  required USVString scope;       // context DID this constraint applies to
+  unsigned long depth;            // depth in the scope chain
   record<USVString, USVString> properties;
 };
 
 dictionary CapabilityInfo {
   required USVString id;
-  required sequence<USVString> predicates;
-  USVString? scope;
+  required sequence<USVString> actions;
+  required USVString resource;     // context did:graph:...
+  sequence<object> caveats;
   DOMString? expires;
 };
 ```
 
-### 9.1 `canAddTriple()`
+### 13.1 `canAddTriple()`
 
-Evaluates whether the current user's identity would be permitted to add the given triple, based on all governance constraints in scope. Implementations MUST execute the algorithms defined in Sections 5 through 8 in the following order:
+Evaluates whether the current identity would be permitted to add the triple. Executes the algorithms in [§7](#7-zcap-verification-algorithm), [§4.6](#46-credential-requirements), [§11](#11-temporal-verification-algorithm), [§12](#12-content-verification-algorithm) in order. Stops at first rejection.
 
-1. **Scope resolution** (Section 5)
-2. **Capability verification** (Section 6)
-3. **Credential verification** (Section 4.4)
-4. **Temporal verification** (Section 7)
-5. **Content verification** (Section 8)
+### 13.2 `constraintsFor()`
 
-Execution MUST stop at the first rejection. If all checks pass, the result is `{ allowed: true }`. If rejected, the result includes `module` and `reason` identifying which constraint rejected the triple.
+Returns all constraints applying to a context, including those inherited via the scope chain.
 
-**Execution order rationale.** Capability and credential checks are evaluated first because they are structurally cheap (lookup and signature verification). Temporal checks require scanning recent triples. Content checks may require expression resolution. Ordering from cheapest to most expensive minimises wasted computation on triples that would be rejected early.
+### 13.3 `myCapabilities()`
 
-### 9.2 `constraintsFor()`
+Returns valid, non-revoked, non-expired capabilities held by the current identity for this context.
 
-Returns all constraints that apply to a given entity address, including inherited constraints from ancestors. Applications MAY use this method to determine and display which actions are permitted for a given entity.
+### 13.4 `enforcementMode()` / `setEnforcementMode()`
 
-### 9.3 `myCapabilities()`
-
-Returns all valid, non-revoked, non-expired capabilities held by the current user for this shared graph. Applications MAY use this method for UI state management (e.g., enabling or disabling action buttons).
+Reads the current enforcement mode; the setter requires an `updateGovernance` capability on the context.
 
 ---
 
-## 10. Integration with Sync Protocol
+## 14. Integration with Sync Protocol
 
-This section defines how the governance engine integrates with the peer-to-peer graph sync protocol defined in [[P2P-GRAPH-SYNC]].
+### 14.1 Sync-Layer Enforcement (Normative)
 
-### 10.1 Sync-Layer Enforcement (Normative)
+A conforming sync protocol MUST evaluate governance constraints for every incoming triple before accepting it into the local replica.
 
-A conforming sync protocol MUST evaluate governance constraints for every incoming triple before accepting it into the local graph replica. Specifically:
+1. On receiving a `ContextDiff`, the sync protocol MUST evaluate every additions+removals triple against the context's governance.
+2. If `allowed: false`, the triple MUST be rejected. Rejected triples MUST NOT be stored or forwarded.
+3. The protocol MUST check the context's current enforcement mode before applying capability rules.
 
-1. When a peer receives a triple from the network (via gossip, direct sync, or any other transport mechanism), the sync protocol MUST evaluate the triple against all governance constraints before committing.
-2. If the evaluation returns `{ allowed: false }`, the triple MUST be rejected. It MUST NOT be stored in the local graph replica and MUST NOT be forwarded to other peers.
-3. If the evaluation returns `{ allowed: true }`, the triple MAY be accepted and committed.
+### 14.2 Capability Proof on ContextDiff
 
-This ensures that all peers enforce the same governance rules. A triple rejected by one honest peer will be rejected by all honest peers, because all peers evaluate the same constraints against the same graph state.
+A `ContextDiff` carries a `CapabilityProof` (the chain proving the committing agent's authority for the writes in the diff). Verification at three points:
 
-### 10.2 Pre-Validation (Informative)
+| Point | Who | What is checked |
+|---|---|---|
+| **Commit time** | Committing agent's runtime | Full SHACL + ZCAP + caveats against the agent's local state |
+| **Gossip time** | Each receiving peer | Re-verify capability chain, re-verify caveats with link content, re-verify SHACL conformance |
+| **Transport integrity** | Underlying transport (e.g., relay's validation) | Cryptographic signatures only |
 
-The runtime MAY evaluate governance constraints before submitting a triple to the sync protocol. This provides immediate feedback to the user or application without waiting for sync-layer round-trip. Pre-validation is not authoritative — the sync layer performs the definitive check.
+See [[P2P-GRAPH-SYNC]] for the wire format.
 
-### 10.3 Application Queries (Informative)
+### 14.3 Pre-Validation (Informative)
 
-Applications MAY call `constraintsFor()` and `myCapabilities()` to adapt their user interface to the current governance state. For example, an application might:
+The runtime MAY pre-validate before submitting to sync, for immediate user feedback. Pre-validation is not authoritative.
 
-- Disable a "send message" button if the user lacks the required capability
-- Display a countdown timer based on temporal constraints
-- Show which content types are permitted in a given context
+### 14.4 Application Queries (Informative)
 
-Application-layer enforcement is cosmetic. It improves user experience but MUST NOT be relied upon for security.
-
----
-
-## 11. Rule Evolution
-
-Governance rules are graph data. They are created, modified, and removed by adding and removing triples — using the same sync protocol and the same validation pipeline as content triples.
-
-### 11.1 Adding a Rule
-
-To add a governance rule, an authorized agent creates a constraint instance (a set of triples with `governance://` predicates) and binds it to an entity via a `governance://has_constraint` triple. The constraint triples propagate via sync, and all peers enforce the new rule upon receipt.
-
-### 11.2 Modifying a Rule
-
-To modify a governance rule, an authorized agent removes the existing constraint triples and adds new ones. Implementations SHOULD treat this as an atomic update if the sync protocol supports batched triple operations.
-
-### 11.3 Removing a Rule
-
-To remove a governance rule, an authorized agent removes the `governance://has_constraint` binding triple. The constraint instance becomes unbound and has no effect. Optionally, the constraint instance's own triples may also be removed.
-
-### 11.4 Propagation
-
-Constraint changes propagate via the sync protocol like any other triple. There is an inherent propagation delay between when a constraint is changed and when all peers have received and applied the change. During this window, peers may temporarily enforce different rule sets. This is an expected property of eventually-consistent systems and does not compromise security — each peer enforces the rules it has received.
-
-### 11.5 No Restart Required
-
-Because governance rules are data interpreted at runtime, no software update, process restart, or migration is required when rules change. The governance engine reads constraints from the graph on every validation (or on change notification via `reload()`).
+Applications MAY call `constraintsFor()` and `myCapabilities()` to adapt UI. Application enforcement is cosmetic; it MUST NOT be relied on for security.
 
 ---
 
-## 12. Security Considerations
+## 15. Rule Evolution
 
-### 12.1 Cryptographic Verification
+### 15.1 Adding a Rule
 
-ZCAP chain verification MUST validate all signatures cryptographically. Implementations MUST NOT accept capabilities with invalid, missing, or unverifiable signatures. The `proof.verificationMethod` DID MUST be resolvable, and the public key MUST be used to verify the `proof.proofValue`.
+An authorised agent (holding `updateGovernance` for the context) creates a constraint instance and binds it via `governance://has_constraint`. The triples propagate via sync; all peers enforce the new rule on receipt.
 
-### 12.2 Revocation Freshness
+### 15.2 Modifying a Rule
 
-Revocation checking MUST be performed on every validation invocation. Implementations MUST NOT cache "not revoked" status indefinitely. The revocation list is mutable graph data that can change at any time. Implementations MAY cache revocation status for short periods (seconds) to improve throughput, but MUST invalidate the cache when new `governance://revokes_capability` triples are received.
+Remove existing constraint triples, add new ones. SHOULD be atomic.
 
-### 12.3 Revocation Propagation Delay
+### 15.3 Removing a Rule
 
-Revocation triples propagate via the sync protocol and are subject to network latency. Between the time a capability is revoked and the time all peers receive the revocation triple, some peers may still accept triples authorized by the revoked capability. This is an inherent property of eventually-consistent systems. Implementations SHOULD minimise this window by prioritising governance-related triples in sync.
+Remove the `governance://has_constraint` binding.
 
-### 12.4 Content Resolution Availability
+### 15.4 Mode Promotion
 
-Content verification (Section 8) may require resolving content-addressed expressions to obtain text content or media types. If the content store is unavailable or slow, the governance engine SHOULD reject the triple rather than accept it (fail-closed). Implementations MAY define a timeout for content resolution, after which rejection occurs.
+Change `governance://enforcement_mode`. Subject to `updateGovernance`.
 
-### 12.5 Constraint Flooding
+### 15.5 Propagation
 
-A malicious agent with permission to create constraint triples could flood the graph with a large number of constraints, causing the governance engine to perform excessive computation on every validation. Implementations SHOULD limit the number of constraints evaluated per validation invocation. A RECOMMENDED limit is 1000 constraints per scope chain. Implementations SHOULD log a warning when this limit is approached.
+Constraint changes propagate via sync like any other triple. During the propagation window, peers may temporarily enforce different rule sets; this is inherent to eventual consistency.
 
-### 12.6 Authoritative Timestamps
+### 15.6 No Restart Required
 
-Temporal constraint enforcement depends on triple timestamps. Timestamps MUST come from the sync protocol's authoritative source (e.g., the authenticated timestamp assigned by the sync layer), NOT from the triple author's self-reported timestamp. If the sync protocol does not provide authoritative timestamps, temporal constraints cannot be reliably enforced, and implementations SHOULD disable them with a warning.
-
-### 12.7 Regex Denial of Service
-
-Content constraints support regular expression patterns for blocked content. Maliciously crafted regex patterns can cause catastrophic backtracking. Implementations MUST enforce a timeout on regex evaluation (RECOMMENDED: 10 milliseconds per pattern) and MUST reject the pattern (not the triple) if the timeout is exceeded.
-
-### 12.8 Governance Bootstrap
-
-When a shared graph is first created, no governance constraints exist. The root authority SHOULD add initial constraints (default capabilities, baseline policies) before inviting other agents. Until constraints are established, the graph is open — any agent with sync access can add any triple.
+Governance rules are interpreted at runtime.
 
 ---
 
-## 13. Privacy Considerations
+## 16. Security Considerations
 
-### 13.1 Rule Transparency
+### 16.1 Cryptographic Verification
 
-All governance rules are visible to all peers in the shared graph. There are no hidden rules. This is a design choice: agents can verify that they are subject to the same rules as all other agents, and can inspect rules before joining a shared graph. However, this means that governance policies (content restrictions, credential requirements, rate limits) are public knowledge.
+ZCAP chain verification MUST validate all signatures. For graph-DID-signed delegations, the runtime MUST resolve the graph's DID document and verify that the signing method is currently listed in `capabilityDelegation` ([[DECENTRALISED-IDENTITY]] §5).
 
-### 13.2 Capability Visibility
+### 16.2 Revocation Freshness
 
-ZCAP capabilities are stored as graph data (linked from agent DIDs via `governance://has_zcap`). This reveals which agents hold which permissions, enabling potential profiling of agent roles and authority levels. Implementations MAY explore zero-knowledge proof techniques for capability verification to mitigate this, but such techniques are out of scope for this specification.
+Revocation checking MUST be performed on every validation. Caching is permitted for short periods (seconds) but MUST invalidate on new revocation triples.
 
-### 13.3 Credential Exposure
+### 16.3 Revocation Propagation Delay
 
-Credential requirements reveal what identity attestations agents hold. When a constraint requires a "ProofOfHumanity" credential, all agents in the graph can observe which agents have linked such credentials. This is inherent to the credential-checking model and cannot be avoided without zero-knowledge credential verification schemes.
+Revocations are eventually consistent. Implementations SHOULD prioritise governance-related triples in sync.
 
-### 13.4 Activity Tracking
+### 16.4 Content Resolution Availability
 
-Temporal constraint enforcement requires the governance engine to scan recent triples by a specific author within a scope. This means the engine necessarily tracks per-agent activity patterns (frequency, timing, predicates used). While this information is already present in the graph (all triples are visible to all peers), temporal enforcement makes it operationally salient. Implementations SHOULD minimise retention of derived temporal state beyond what is needed for validation.
+If content resolution is unavailable, REJECT the triple (fail-closed).
+
+### 16.5 Constraint Flooding
+
+Limit the number of constraints evaluated per validation (RECOMMENDED: 1000 per scope chain).
+
+### 16.6 Authoritative Timestamps
+
+Temporal enforcement depends on timestamps from the sync protocol's authoritative source, NOT triple-author self-reported timestamps.
+
+### 16.7 Regex Denial of Service
+
+Implementations MUST timeout regex evaluation (RECOMMENDED: 10ms per pattern).
+
+### 16.8 Bootstrap Constitutionalisation Integrity
+
+When a context is bootstrapped from a parent, the bootstrap ZCAP MUST be verified at the child's creation time. After constitutionalisation, the parent's signing key MUST NOT have any standing in the child's governance.
+
+### 16.9 DID Document Tampering
+
+DID-document triples (`did-document://*`) are governance-controlled. An agent who modifies them without `updateDIDDocument` capability is performing an unauthorised governance write; the engine MUST reject the triple at the standard validation step.
+
+### 16.10 Mutual Participation
+
+Inheritance via `context://participates_in` MUST be mutual. Implementations that skip the `context://accepts_participation` check are vulnerable to inheritance hijacking.
 
 ---
 
-## 14. Examples
+## 17. Privacy Considerations
 
-### 14.1 Example 1: Creating a Capability-Gated Entity
+### 17.1 Rule Transparency
 
-An administrator creates an entity where only agents with a valid ZCAP can add triples.
+All governance rules are visible to peers with read access to the context. There are no hidden rules.
 
-**Step 1: Create the capability constraint.**
+### 17.2 Capability Visibility
 
+ZCAPs are stored as graph data; this reveals which agents hold which permissions.
+
+### 17.3 Credential Exposure
+
+Credential requirements reveal what identity attestations agents hold.
+
+### 17.4 Activity Tracking
+
+Temporal enforcement requires the engine to scan recent triples by a specific author.
+
+### 17.5 Enforcement Mode Disclosure
+
+A context's enforcement mode is itself public (a governance triple). Communities transitioning into Enforced mode SHOULD coordinate the change.
+
+---
+
+## 18. Examples
+
+### 18.1 Bootstrap: Creating a Context with a Root Capability
+
+```javascript
+// `me` is the user's GraphStore.
+const community = await me.createContext({ displayName: "Acme Community" });
+// The runtime mints a root capability signed by `me`.
+//
+//   <community.did>
+//     governance://root_capability  <urn:uuid:root-cap-1> .
+//   <urn:uuid:root-cap-1>
+//     zcap://invoker  <did:key:creator> ;
+//     zcap://actions  "createLink" , "removeLink" , "updateSHACL" ,
+//                     "updateGovernance" , "updateDIDDocument" ;
+//     zcap://resource <community.did> ;
+//     zcap://proof    "<signature by did:key:creator>" .
 ```
-<urn:constraint:cap-gate-1> -[governance://entry_type]→ governance://constraint
-<urn:constraint:cap-gate-1> -[governance://constraint_kind]→ "capability"
-<urn:constraint:cap-gate-1> -[governance://capability_enforcement]→ "required"
+
+### 18.2 Promote Through Enforcement Modes
+
+```javascript
+console.log(await community.enforcementMode());   // "open"
+
+// Promote to Announced while wiring up roles.
+await community.setEnforcementMode("announced");
+
+// Once confident, lock down to Enforced.
+await community.setEnforcementMode("enforced");
 ```
 
-**Step 2: Bind the constraint to the entity.**
+### 18.3 Delegate Capabilities (Admin → Moderator → Member)
 
+```javascript
+const creator = await navigator.credentials.get({ did: { kind: "individual" } });
+
+const adminCap = await creator.signCapability({
+  parentCapability: rootCap.id,
+  invoker: "did:key:z6MkAdmin...",
+  actions: ["createLink", "removeLink", "updateGovernance", "delegateCapability"],
+  resource: community.did,
+  caveats: []
+});
+
+const admin = await navigator.credentials.get({ did: { kind: "individual" } });
+const modCap = await admin.signCapability({
+  parentCapability: adminCap.id,
+  invoker: "did:key:z6MkModerator...",
+  actions: ["createLink", "removeLink"],
+  resource: community.did,
+  caveats: [
+    { type: "predicate", value: { allowed: ["msg://body", "msg://reaction"] }},
+    { type: "rateLimit", value: { maxPerWindow: 1000, windowSeconds: 3600 }}
+  ]
+});
 ```
-<urn:entity:announcements> -[governance://has_constraint]→ <urn:constraint:cap-gate-1>
+
+### 18.4 Bootstrap a Child Context (Constitutionalisation)
+
+```javascript
+const general = await me.createContext({
+  displayName: "#general",
+  participatesIn: community.did
+});
+// The runtime:
+//   1. Mints a fresh did:graph for #general.
+//   2. Issues a bootstrap ZCAP from community.did (signed by an authorised
+//      capabilityDelegation delegate of community).
+//   3. Constitutionalises it as <#general.did> -[governance://root_capability]→ ...
+//   4. Writes <#general.did> -[context://participates_in]→ <community.did>
+//      in #general's graph.
+//   5. Writes <community.did> -[context://accepts_participation]→ <#general.did>
+//      in community's graph (signed by a community capabilityDelegation delegate).
+//
+// From now on, #general governs itself. Community-level governance still applies
+// transitively, but community admins cannot reach into #general to override its
+// local rules.
 ```
 
-**Step 3: Issue a ZCAP to an authorized agent.**
+### 18.5 Capability with a Shape Caveat
 
-```json
-{
-  "@context": ["https://w3id.org/zcap/v1", "https://w3id.org/security/suites/ed25519-2020/v1"],
-  "id": "urn:uuid:zcap-announce-1",
-  "invoker": "did:key:z6MkAuthorizedAgent",
-  "parentCapability": null,
-  "capability": {
-    "predicates": ["app://body", "app://entry_type"],
-    "scope": {
-      "within": "urn:entity:announcements",
-      "graph": "urn:graph:community-1"
-    }
+```javascript
+// "This contractor can only write Messages (per MessageShape), with body
+//  predicate only, no more than 50 per hour, for the next 30 days."
+const contractorCap = await creator.signCapability({
+  parentCapability: rootCap.id,
+  invoker: "did:key:z6MkContractor...",
+  actions: ["createLink"],
+  resource: general.did,
+  caveats: [
+    { type: "expiry",    value: { expiresAt: "2026-06-22T00:00:00Z" }},
+    { type: "shape",     value: { shapeIri: "msg://MessageShape" }},
+    { type: "predicate", value: { allowed: ["msg://body"] }},
+    { type: "rateLimit", value: { maxPerWindow: 50, windowSeconds: 3600 }}
+  ]
+});
+```
+
+### 18.6 Adding a DID-Document Delegate
+
+```javascript
+const teamCred = await navigator.credentials.get({
+  did: { kind: "graph", filter: { did: team.did } }
+});
+
+await teamCred.addDelegate(
+  {
+    id: `${team.did}#key-newhire`,
+    type: "Ed25519VerificationKey2020",
+    controller: team.did,
+    publicKeyMultibase: "z6MkNewHire..."
   },
-  "proof": {
-    "type": "Ed25519Signature2020",
-    "created": "2026-04-01T00:00:00Z",
-    "verificationMethod": "did:key:z6MkRootAuthority#key-1",
-    "proofPurpose": "capabilityDelegation",
-    "proofValue": "z3FXQqFk..."
-  }
-}
+  ["capabilityInvocation", "assertionMethod"]
+);
+// Issues did-document://add-method and did-document://grant-section triples
+// to the team's context. The writes are subject to the team's
+// updateDIDDocument capability (which teamCred holds because it's currently
+// in capabilityDelegation).
 ```
 
-**Step 4: Link the ZCAP to the agent.**
+### 18.7 Rate Limit (Slow Mode)
 
-```
-<did:key:z6MkAuthorizedAgent> -[governance://has_zcap]→ <expression://zcap-announce-1>
-```
-
-**Result:** Only `did:key:z6MkAuthorizedAgent` (and the root authority) can create triples with predicates `app://body` or `app://entry_type` under `urn:entity:announcements`. All other agents' triples are rejected by the governance engine at the sync layer.
-
-### 14.2 Example 2: Adding a Rate Limit (30-Second Cooldown)
-
-An administrator adds a temporal constraint to slow down contributions.
-
-**Step 1: Create the temporal constraint.**
-
-```
-<urn:constraint:slow-mode-1> -[governance://entry_type]→ governance://constraint
-<urn:constraint:slow-mode-1> -[governance://constraint_kind]→ "temporal"
-<urn:constraint:slow-mode-1> -[governance://temporal_min_interval_seconds]→ "30"
-<urn:constraint:slow-mode-1> -[governance://temporal_applies_to_predicates]→ "app://body"
-```
-
-**Step 2: Bind the constraint to the entity.**
-
-```
-<urn:entity:general-discussion> -[governance://has_constraint]→ <urn:constraint:slow-mode-1>
+```javascript
+const slowMode = `urn:constraint:slow-${crypto.randomUUID()}`;
+await general.addTriple({
+  source: slowMode, predicate: "governance://entry_type", target: "governance://constraint"
+});
+await general.addTriple({
+  source: slowMode, predicate: "governance://constraint_kind", target: "temporal"
+});
+await general.addTriple({
+  source: slowMode, predicate: "governance://temporal_min_interval_seconds", target: "30"
+});
+await general.addTriple({
+  source: slowMode, predicate: "governance://temporal_applies_to_predicates", target: "msg://body"
+});
+await general.addTriple({
+  source: general.did, predicate: "governance://has_constraint", target: slowMode
+});
 ```
 
-**Result:** Any agent who creates a triple with predicate `app://body` under `urn:entity:general-discussion` must wait at least 30 seconds before creating another such triple. Triples with other predicates (e.g., `app://reaction`) are unaffected.
+### 18.8 Credential Requirement (Proof of Humanity at Community Root)
 
-### 14.3 Example 3: Adding a Content Policy (No External URLs, Max 2000 Characters)
-
-An administrator restricts content in a specific entity scope.
-
-**Step 1: Create the content constraint.**
-
-```
-<urn:constraint:content-policy-1> -[governance://entry_type]→ governance://constraint
-<urn:constraint:content-policy-1> -[governance://constraint_kind]→ "content"
-<urn:constraint:content-policy-1> -[governance://content_applies_to_predicates]→ "app://body"
-<urn:constraint:content-policy-1> -[governance://content_allow_urls]→ "false"
-<urn:constraint:content-policy-1> -[governance://content_max_length]→ "2000"
-```
-
-**Step 2: Bind the constraint to the entity.**
-
-```
-<urn:entity:text-only-channel> -[governance://has_constraint]→ <urn:constraint:content-policy-1>
-```
-
-**Result:** Triples with predicate `app://body` under `urn:entity:text-only-channel` are rejected if their target text contains any URL or exceeds 2000 characters.
-
-### 14.4 Example 4: Requiring a Credential to Participate (Proof of Humanity)
-
-An administrator requires all contributors to hold a "ProofOfHumanity" Verifiable Credential.
-
-**Step 1: Create the credential constraint.**
-
-```
-<urn:constraint:humanity-1> -[governance://entry_type]→ governance://constraint
-<urn:constraint:humanity-1> -[governance://constraint_kind]→ "credential"
-<urn:constraint:humanity-1> -[governance://requires_credential_type]→ "ProofOfHumanity"
-<urn:constraint:humanity-1> -[governance://credential_issuer_pattern]→ "did:web:humancheck.org"
-<urn:constraint:humanity-1> -[governance://credential_min_age_hours]→ "24"
+```javascript
+const humanity = `urn:constraint:hum-${crypto.randomUUID()}`;
+await community.addTriple({
+  source: humanity, predicate: "governance://entry_type", target: "governance://constraint"
+});
+await community.addTriple({
+  source: humanity, predicate: "governance://constraint_kind", target: "credential"
+});
+await community.addTriple({
+  source: humanity, predicate: "governance://requires_credential_type", target: "ProofOfHumanity"
+});
+await community.addTriple({
+  source: humanity, predicate: "governance://credential_issuer_pattern", target: "did:web:humancheck.org"
+});
+await community.addTriple({
+  source: community.did, predicate: "governance://has_constraint", target: humanity
+});
+// Applies transitively: every child context inherits this requirement because
+// they participate_in community.
 ```
 
-**Step 2: Bind the constraint to the graph root.**
+### 18.9 Revoking a Capability (Ban)
 
+```javascript
+await community.addTriple({
+  source: admin.did,
+  predicate: "governance://revokes_capability",
+  target: modCap.id
+});
+// Mod's chain is invalidated; sub-delegations from mod are also invalidated.
 ```
-<urn:entity:graph-root> -[governance://has_constraint]→ <urn:constraint:humanity-1>
-```
-
-**Result:** Every triple in the entire graph is subject to this credential requirement (scope inheritance from root). An agent must hold a `ProofOfHumanity` credential issued by `did:web:humancheck.org` at least 24 hours ago, and the credential's `credentialSubject` must match the agent's DID. Agents without a matching credential have all their triples rejected.
-
-### 14.5 Example 5: Delegating Capabilities (Admin → Moderator → Member)
-
-The root authority creates a hierarchy of delegated capabilities.
-
-**Step 1: Root authority issues admin ZCAP.**
-
-```json
-{
-  "id": "urn:uuid:zcap-admin",
-  "invoker": "did:key:z6MkAdmin",
-  "parentCapability": null,
-  "capability": {
-    "predicates": ["app://body", "app://reaction", "app://entry_type", "governance://has_constraint", "governance://revokes_capability"],
-    "scope": { "within": null, "graph": "urn:graph:community-1" }
-  },
-  "proof": {
-    "type": "Ed25519Signature2020",
-    "verificationMethod": "did:key:z6MkRootAuthority#key-1",
-    "proofPurpose": "capabilityDelegation",
-    "proofValue": "z..."
-  }
-}
-```
-
-**Step 2: Admin delegates moderator ZCAP (attenuated — fewer predicates).**
-
-```json
-{
-  "id": "urn:uuid:zcap-moderator",
-  "invoker": "did:key:z6MkModerator",
-  "parentCapability": "urn:uuid:zcap-admin",
-  "capability": {
-    "predicates": ["app://body", "app://reaction", "app://entry_type"],
-    "scope": { "within": null, "graph": "urn:graph:community-1" }
-  },
-  "proof": {
-    "type": "Ed25519Signature2020",
-    "verificationMethod": "did:key:z6MkAdmin#key-1",
-    "proofPurpose": "capabilityDelegation",
-    "proofValue": "z..."
-  }
-}
-```
-
-**Step 3: Moderator delegates member ZCAP (attenuated — scoped to one entity).**
-
-```json
-{
-  "id": "urn:uuid:zcap-member",
-  "invoker": "did:key:z6MkMember",
-  "parentCapability": "urn:uuid:zcap-moderator",
-  "capability": {
-    "predicates": ["app://body", "app://reaction"],
-    "scope": { "within": "urn:entity:general-discussion", "graph": "urn:graph:community-1" }
-  },
-  "proof": {
-    "type": "Ed25519Signature2020",
-    "verificationMethod": "did:key:z6MkModerator#key-1",
-    "proofPurpose": "capabilityDelegation",
-    "proofValue": "z..."
-  }
-}
-```
-
-**Result:** The delegation chain is: Root → Admin → Moderator → Member. Each step attenuates capabilities. The admin can manage governance rules. The moderator can post content graph-wide but cannot manage governance. The member can only post content (`app://body`, `app://reaction`) under `urn:entity:general-discussion`.
-
-### 14.6 Example 6: Revoking a Capability (Ban)
-
-An admin revokes a member's capability, effectively banning them from contributing.
-
-**Step 1: Add a revocation triple.**
-
-```
-<did:key:z6MkAdmin> -[governance://revokes_capability]→ "urn:uuid:zcap-member"
-```
-
-**Result:** The ZCAP `urn:uuid:zcap-member` is revoked. The governance engine detects the revocation triple during capability verification (Section 6, step 6.4) and rejects all triples from `did:key:z6MkMember` that rely on this capability. If the member had delegated capabilities to others (e.g., sub-members), those delegated capabilities are also invalidated because the chain verification (Section 6, step 6.5) walks the full delegation chain and checks revocation at every level.
-
-The revocation propagates via sync. Once all peers receive the revocation triple, the ban is enforced network-wide.
 
 ---
 
-## 15. Full Predicate Reference Table
+## 19. Predicate Reference Table
 
-The following table lists every predicate defined in this specification.
-
-| Predicate | Target Type | Description | Cardinality | Section |
-|-----------|-------------|-------------|-------------|---------|
-| `governance://entry_type` | URI (`governance://constraint` or `governance://default_capability`) | Type discriminator for governance instances | Exactly 1 per instance | 4.1, 4.7 |
-| `governance://constraint_kind` | String literal: `"capability"` \| `"temporal"` \| `"content"` \| `"credential"` | Classifies the constraint by enforcement module | Exactly 1 per constraint | 4.1 |
-| `governance://constraint_scope` | URI (entity address) | Explicit scope for the constraint. Overrides inferred scope from binding. | 0 or 1 | 4.1 |
-| `governance://has_constraint` | URI (constraint instance address) | Binds a constraint to an entity. Source is the governed entity. | 0 or many per entity | 4.2 |
-| `governance://capability_enforcement` | String literal: `"required"` \| `"optional"` | Whether ZCAP is required for triples under this scope | Exactly 1 per capability constraint | 4.3.1 |
-| `governance://capability_predicates` | Comma-separated predicate URIs | Predicates that require capability verification | 0 or 1 | 4.3.1 |
-| `governance://has_zcap` | URI (capability expression address) | Links an agent DID to a capability they hold. Source is agent DID. | 0 or many per agent | 4.3.4 |
-| `governance://revokes_capability` | URI (ZCAP `id` field, e.g., `urn:uuid:...`) | Revokes a specific capability. Source is the revoking agent DID. | 0 or many | 4.3.5, 4.8 |
-| `governance://requires_credential_type` | String literal (VC type name) | Required Verifiable Credential type | Exactly 1 per credential constraint | 4.4 |
-| `governance://credential_issuer_pattern` | String literal (DID glob pattern) | Acceptable issuer DID pattern | 0 or 1 | 4.4 |
-| `governance://credential_min_age_hours` | Integer literal | Minimum credential age in hours | 0 or 1 (default: 0) | 4.4 |
-| `governance://has_credential` | URI (credential expression address) | Links an agent DID to a Verifiable Credential. Source is agent DID. | 0 or many per agent | 4.4 |
-| `governance://temporal_min_interval_seconds` | Integer literal | Minimum seconds between matching triples by same author | 0 or 1 | 4.5 |
-| `governance://temporal_max_count_per_window` | Integer literal | Maximum matching triples per window per author | 0 or 1 | 4.5 |
-| `governance://temporal_window_seconds` | Integer literal | Sliding window duration in seconds | 0 or 1 (default: 60) | 4.5 |
-| `governance://temporal_applies_to_predicates` | Comma-separated predicate URIs | Predicates subject to this temporal constraint | 0 or 1 (default: all) | 4.5 |
-| `governance://content_applies_to_predicates` | Comma-separated predicate URIs | Predicates subject to this content constraint | 0 or 1 (default: all) | 4.6 |
-| `governance://content_blocked_patterns` | Pipe-separated regex patterns | Text patterns that cause rejection | 0 or 1 | 4.6 |
-| `governance://content_allow_urls` | String literal: `"true"` \| `"false"` | Whether URLs are permitted in text content | 0 or 1 (default: `"true"`) | 4.6 |
-| `governance://content_allowed_domains` | Comma-separated domain names | Permitted URL domains (whitelist) | 0 or 1 | 4.6 |
-| `governance://content_allow_media_types` | Comma-separated MIME glob patterns | Permitted media types for expression targets | 0 or 1 | 4.6 |
-| `governance://content_max_length` | Integer literal | Maximum character count of text content | 0 or 1 | 4.6 |
-| `governance://default_capability_predicates` | Comma-separated predicate URIs | Predicates granted to new agents by default | Exactly 1 per default capability | 4.7 |
-| `governance://default_capability_scope` | URI (entity address) | Scope for auto-issued capabilities | Exactly 1 per default capability | 4.7 |
+| Predicate | Target Type | Description |
+|---|---|---|
+| `governance://entry_type` | URI | Type discriminator for governance instances |
+| `governance://constraint_kind` | String literal | `"capability"` \| `"temporal"` \| `"content"` \| `"credential"` |
+| `governance://constraint_scope` | URI | Explicit scope (overrides inferred) |
+| `governance://has_constraint` | URI | Binds a constraint to a context |
+| `governance://root_capability` | URI | The context's root ZCAP |
+| `governance://enforcement_mode` | String literal | `"open"` \| `"announced"` \| `"enforced"` |
+| `governance://capability_enforcement` | String literal | `"required"` \| `"optional"` |
+| `governance://capability_predicates` | Comma-separated URIs | Predicates requiring capability verification |
+| `governance://has_zcap` | URI | Links an agent DID to a held capability |
+| `governance://revokes_capability` | URI (ZCAP id) | Revocation triple |
+| `governance://requires_credential_type` | String literal | VC type name |
+| `governance://credential_issuer_pattern` | String literal | Issuer DID glob |
+| `governance://credential_min_age_hours` | Integer | Minimum credential age |
+| `governance://has_credential` | URI | Links agent DID to held VC |
+| `governance://temporal_min_interval_seconds` | Integer | Min interval between matching writes |
+| `governance://temporal_max_count_per_window` | Integer | Max matching writes per window |
+| `governance://temporal_window_seconds` | Integer | Window duration (default 60) |
+| `governance://temporal_applies_to_predicates` | Comma-separated URIs | Scope of temporal constraint |
+| `governance://content_applies_to_predicates` | Comma-separated URIs | Scope of content constraint |
+| `governance://content_blocked_patterns` | Pipe-separated regex | Blocked patterns |
+| `governance://content_allow_urls` | Boolean string | Whether URLs are permitted |
+| `governance://content_allowed_domains` | Comma-separated domains | URL whitelist |
+| `governance://content_allow_media_types` | Comma-separated MIME globs | Permitted media types |
+| `governance://content_max_length` | Integer | Max character count |
+| `governance://default_capability_actions` | Comma-separated actions | Default ZCAP template |
+| `governance://default_capability_caveats` | JSON array | Default ZCAP caveats |
+| `context://participates_in` | URI (context DID) | Child declares participation in parent (in the child's graph) |
+| `context://accepts_participation` | URI (context DID) | Parent confirms acceptance (in the parent's graph, signed by a `capabilityDelegation` delegate) |
+| `did-document://add-method` | URI | Add a `verificationMethod` to a graph DID's document |
+| `did-document://remove-method` | URI | Remove a `verificationMethod` |
+| `did-document://grant-section` | URI | Add method to a capability section |
+| `did-document://revoke-section` | URI | Remove method from a capability section |
 
 ---
 
-## 16. References
+## 20. References
 
-### 16.1 Normative References
+### 20.1 Normative References
 
 <dl>
-
 <dt>[RFC2119]</dt>
-<dd>Bradner, S., "Key words for use in RFCs to Indicate Requirement Levels", BCP 14, RFC 2119, March 1997. URL: https://www.rfc-editor.org/rfc/rfc2119</dd>
+<dd>Bradner, S., "Key words for use in RFCs to Indicate Requirement Levels", BCP 14, RFC 2119, March 1997.</dd>
+
+<dt>[RFC8174]</dt>
+<dd>Leiba, B., "Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words", BCP 14, RFC 8174, May 2017.</dd>
 
 <dt>[RFC3339]</dt>
-<dd>Klyne, G. and C. Newman, "Date and Time on the Internet: Timestamps", RFC 3339, July 2002. URL: https://www.rfc-editor.org/rfc/rfc3339</dd>
+<dd>Klyne, G. and C. Newman, "Date and Time on the Internet: Timestamps", RFC 3339, July 2002.</dd>
 
 <dt>[ZCAP-LD]</dt>
-<dd>Longley, D., Sporny, M., and C. Webber, "Authorization Capabilities for Linked Data", W3C Community Group Report. URL: https://w3c-ccg.github.io/zcap-spec/</dd>
+<dd>Longley, D., Sporny, M., and C. Webber, "Authorization Capabilities for Linked Data", W3C Community Group Report. https://w3c-ccg.github.io/zcap-spec/</dd>
 
 <dt>[VC-DATA-MODEL-2.0]</dt>
-<dd>Sporny, M., et al., "Verifiable Credentials Data Model v2.0", W3C Recommendation, March 2025. URL: https://www.w3.org/TR/vc-data-model-2.0/</dd>
+<dd>Sporny, M., et al., "Verifiable Credentials Data Model v2.0", W3C Recommendation. https://www.w3.org/TR/vc-data-model-2.0/</dd>
 
 <dt>[DID-CORE]</dt>
-<dd>Sporny, M., et al., "Decentralized Identifiers (DIDs) v1.0", W3C Recommendation, July 2022. URL: https://www.w3.org/TR/did-core/</dd>
+<dd>Sporny, M., et al., "Decentralized Identifiers (DIDs) v1.0", W3C Recommendation, July 2022. https://www.w3.org/TR/did-core/</dd>
 
-<dt>[SHACL]</dt>
-<dd>Knublauch, H. and D. Kontokostas, "Shapes Constraint Language (SHACL)", W3C Recommendation, July 2017. URL: https://www.w3.org/TR/shacl/</dd>
+<dt>[DECENTRALISED-IDENTITY]</dt>
+<dd><a href="./02_decentralised-identity-web-platform.md">Decentralised Identity Integration for the Web Platform</a>.</dd>
+
+<dt>[PERSONAL-LINKED-DATA-GRAPHS]</dt>
+<dd><a href="./01_personal-linked-data-graphs.md">Personal Linked Data Graphs</a>.</dd>
 
 <dt>[ECMA-262]</dt>
-<dd>Ecma International, "ECMAScript® Language Specification". URL: https://tc39.es/ecma262/</dd>
-
+<dd>Ecma International, "ECMAScript® Language Specification". https://tc39.es/ecma262/</dd>
 </dl>
 
-### 16.2 Informative References
+### 20.2 Informative References
 
 <dl>
+<dt>[SHACL]</dt>
+<dd>Knublauch, H. and D. Kontokostas, "Shapes Constraint Language (SHACL)", W3C Recommendation, July 2017. https://www.w3.org/TR/shacl/</dd>
 
-<dt>[PERSONAL-GRAPH]</dt>
-<dd><a href="https://github.com/HexaField/w3c-living-web-proposals/blob/main/drafts/01_personal-linked-data-graphs.md">Personal Linked Data Graphs</a>. Draft. (Companion specification defining the personal graph data model.)</dd>
+<dt>[SHAPE-VALIDATION]</dt>
+<dd><a href="./04_dynamic-graph-shape-validation.md">Dynamic Graph Shape Validation</a>.</dd>
 
 <dt>[P2P-GRAPH-SYNC]</dt>
-<dd><a href="https://github.com/HexaField/w3c-living-web-proposals/blob/main/drafts/03_p2p-graph-sync.md">Peer-to-Peer Graph Synchronisation Protocol</a>. Draft. (Companion specification defining the sync protocol that enforces governance rules.)</dd>
+<dd><a href="./03_p2p-graph-sync.md">Peer-to-Peer Context Synchronisation Protocol</a>.</dd>
 
+<dt>[GRAPH-FLOWS]</dt>
+<dd><a href="./07_graph-flows.md">Graph Flows</a>.</dd>
+
+<dt>[GROUP-IDENTITY]</dt>
+<dd><a href="./06_group-identity.md">Decentralised Group Identity</a>.</dd>
 </dl>

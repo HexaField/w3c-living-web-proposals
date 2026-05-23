@@ -23,9 +23,6 @@ export async function verifyCredential(
   const credConstraints = constraints.filter(c => c.kind === 'credential');
   if (credConstraints.length === 0) return { allowed: true };
 
-  // Root authority bypass
-  if (triple.author === ctx.rootAuthority) return { allowed: true };
-
   for (const cc of credConstraints) {
     const requiredType = cc.properties[GOV.REQUIRES_CREDENTIAL_TYPE];
     if (!requiredType) continue; // malformed — skip

@@ -200,7 +200,7 @@ export function launchGame(container: HTMLElement, state: AppState): void {
             id: crypto.randomUUID(), body, authorDid: state.did, authorName: state.displayName, time: Date.now(),
           };
           state.chatMessages.push(msg);
-          state.bc.postMessage({ type: 'game-chat', graphUri: state.graph.uri, msg });
+          state.bc.postMessage({ type: 'game-chat', contextDid: state.context.did, msg });
           addGovLog(`Chat by ${state.displayName}`, true);
         } else {
           addGovLog(`Chat — ${v.reason}`, false);
@@ -267,7 +267,7 @@ export function launchGame(container: HTMLElement, state: AppState): void {
           const mesh = collectibleMeshes.get(coll.id);
           if (mesh) { scene.remove(mesh); collectibleMeshes.delete(coll.id); }
           state.bc.postMessage({
-            type: 'game-collect', graphUri: state.graph.uri,
+            type: 'game-collect', contextDid: state.context.did,
             collectibleId: coll.id, did: state.did, playerName: state.displayName,
           });
           state.chatMessages.push({
@@ -306,7 +306,7 @@ export function launchGame(container: HTMLElement, state: AppState): void {
     if (now - lastBroadcast < broadcastInterval) return;
     lastBroadcast = now;
     state.bc.postMessage({
-      type: 'game-position', graphUri: state.graph.uri,
+      type: 'game-position', contextDid: state.context.did,
       did: state.did, x: state.myPlayer.x, y: state.myPlayer.y,
       z: state.myPlayer.z, rotation: yaw,
     });

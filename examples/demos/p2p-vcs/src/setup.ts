@@ -1,33 +1,23 @@
 /**
  * P2P VCS — Setup: identity, repo create/fork, state management
  */
-import { install as installIdentity } from '@living-web/identity';
-import { SharedGraph, SharedGraphManager } from '@living-web/graph-sync';
-import { installShapeExtension } from '@living-web/shape-validation';
-import { PersonalGraph, SemanticTriple } from '@living-web/personal-graph';
-import type { IdentityProvider } from '@living-web/personal-graph';
+import { install as installIdentity, IdentityManager, DIDIdentityProvider } from '@living-web/identity';
+import { install as installPersonalGraph, Context, Triple, type IdentityProvider } from '@living-web/personal-graph';
+import '@living-web/shape-validation/polyfill';
+import '@living-web/graph-sync/polyfill';
+
 import {
   PREDICATES,
   RepositoryShape, BranchShape, CommitShape,
   TreeSnapshotShape, FileContentShape, ContributorShape,
 } from './graph/shapes.js';
-import { setupGovernance, issueContributorZcap, type GovernanceState } from './graph/governance.js';
+import { setupGovernance, issueContributorZcap, validateCommit, recordCommit, type GovernanceState } from './graph/governance.js';
 import { hashContent } from './utils/helpers.js';
 
 installIdentity();
-installShapeExtension(PersonalGraph);
+installPersonalGraph().catch(err => console.error('[living-web] install failed', err));
 
-// Patch SharedGraph with shape methods
-const shapeMethods = ['addShape', 'getShapes', 'createShapeInstance', 'getShapeInstances', 'getShapeInstanceData', 'setShapeProperty', 'addToShapeCollection', 'removeFromShapeCollection'];
-for (const method of shapeMethods) {
-  if ((PersonalGraph.prototype as any)[method]) {
-    (SharedGraph.prototype as any)[method] = (PersonalGraph.prototype as any)[method];
-  }
-}
-if (!Object.getOwnPropertyDescriptor(SharedGraph.prototype, 'uuid')) {
-  Object.defineProperty(SharedGraph.prototype, 'uuid', { get() { return (this as any).uri; } });
-}
-
+const POLYFILL_PASSPHRASE = '__living-web-polyfill__';
 const SYNC_CHANNEL = 'living-web-p2p-vcs';
 
 export interface FileEntry {
@@ -67,7 +57,7 @@ export interface Contributor {
 export interface AppState {
   did: string;
   displayName: string;
-  graph: SharedGraph;
+  context: Context;
   repoId: string;
   repoName: string;
   branches: Branch[];
@@ -82,51 +72,43 @@ export interface AppState {
   governanceLogs: { text: string; accepted: boolean; time: number }[];
   selectedFile: string | null;
   viewingCommit: string | null;
-  editingIndicators: Map<string, string>; // filePath -> displayName
-}
-
-class CredentialIdentity implements IdentityProvider {
-  private cred: any;
-  constructor(cred: any) { this.cred = cred; }
-  getDID(): string { return this.cred.did; }
-  getKeyURI(): string { return `${this.cred.did}#key-1`; }
-  async sign(data: Uint8Array): Promise<Uint8Array> { return this.cred.signRaw(data); }
-  getPublicKey(): Uint8Array { return this.cred.publicKey; }
+  editingIndicators: Map<string, string>;
 }
 
 export async function createIdentity(displayName: string): Promise<{ did: string; identity: IdentityProvider }> {
-  const cred = await (navigator.credentials as any).create({ did: { displayName } });
-  if (cred.isLocked) await cred.unlock('__living-web-polyfill__');
-  return { did: cred.did, identity: new CredentialIdentity(cred) };
+  const manager = new IdentityManager();
+  const credential = await manager.createIndividual(displayName, POLYFILL_PASSPHRASE);
+  if (credential.isLocked) await credential.unlock(POLYFILL_PASSPHRASE);
+  const provider = new DIDIdentityProvider(credential);
+  return { did: provider.getDID(), identity: provider };
+}
+
+async function registerShapes(context: Context): Promise<void> {
+  await context.addShape('Repository', JSON.stringify(RepositoryShape));
+  await context.addShape('Branch', JSON.stringify(BranchShape));
+  await context.addShape('Commit', JSON.stringify(CommitShape));
+  await context.addShape('TreeSnapshot', JSON.stringify(TreeSnapshotShape));
+  await context.addShape('FileContent', JSON.stringify(FileContentShape));
+  await context.addShape('Contributor', JSON.stringify(ContributorShape));
 }
 
 export async function createRepo(
   displayName: string, repoName: string, identity: IdentityProvider, did: string,
 ): Promise<AppState> {
-  const manager = new SharedGraphManager(identity);
-  const graph = await manager.share(repoName);
-  const g = graph as any;
+  const store = await navigator.graph.create(repoName);
+  const context = await store.createContext({ displayName: repoName });
+  await context.publish();
+  await registerShapes(context);
 
-  // Register shapes
-  await g.addShape('Repository', JSON.stringify(RepositoryShape));
-  await g.addShape('Branch', JSON.stringify(BranchShape));
-  await g.addShape('Commit', JSON.stringify(CommitShape));
-  await g.addShape('TreeSnapshot', JSON.stringify(TreeSnapshotShape));
-  await g.addShape('FileContent', JSON.stringify(FileContentShape));
-  await g.addShape('Contributor', JSON.stringify(ContributorShape));
-
-  // Create repo
   const repoId = `repo:${crypto.randomUUID()}`;
-  await g.createShapeInstance('Repository', repoId, { name: repoName, description: repoName, owner: did });
+  await context.createShapeInstance('Repository', repoId, { name: repoName, description: repoName, owner: did });
 
-  // Create initial empty snapshot
   const snapshotId = `snapshot:${crypto.randomUUID()}`;
-  await g.createShapeInstance('TreeSnapshot', snapshotId, { entries: '[]' });
+  await context.createShapeInstance('TreeSnapshot', snapshotId, { entries: '[]' });
 
-  // Create initial commit
   const commitId = `commit:${crypto.randomUUID()}`;
   const now = Date.now();
-  await g.createShapeInstance('Commit', commitId, {
+  await context.createShapeInstance('Commit', commitId, {
     message: 'Initial commit',
     author: did,
     authorName: displayName,
@@ -135,25 +117,21 @@ export async function createRepo(
     snapshot: snapshotId,
   });
 
-  // Create main branch (protected)
   const mainBranchId = `branch:${crypto.randomUUID()}`;
-  await g.createShapeInstance('Branch', mainBranchId, {
+  await context.createShapeInstance('Branch', mainBranchId, {
     name: 'main',
     headCommit: commitId,
     protected: 'true',
     createdBy: did,
   });
-  await graph.addTriple(new SemanticTriple(repoId, mainBranchId, PREDICATES.HAS_BRANCH));
+  await context.addTriple(new Triple(repoId, PREDICATES.HAS_BRANCH, mainBranchId));
+  await context.addTriple(new Triple(repoId, PREDICATES.DEFAULT_BRANCH, mainBranchId));
 
-  // Update repo default branch
-  await graph.addTriple(new SemanticTriple(repoId, mainBranchId, PREDICATES.DEFAULT_BRANCH));
-
-  // Create owner contributor
   const contribId = `contrib:${crypto.randomUUID()}`;
-  await g.createShapeInstance('Contributor', contribId, { did, name: displayName, role: 'owner' });
-  await graph.addTriple(new SemanticTriple(repoId, contribId, PREDICATES.HAS_CONTRIBUTOR));
+  await context.createShapeInstance('Contributor', contribId, { did, name: displayName, role: 'owner' });
+  await context.addTriple(new Triple(repoId, PREDICATES.HAS_CONTRIBUTOR, contribId));
 
-  const governance = setupGovernance(graph, did);
+  const governance = setupGovernance(context, did);
   const bc = new BroadcastChannel(SYNC_CHANNEL);
 
   const initialCommit: Commit = {
@@ -162,7 +140,7 @@ export async function createRepo(
   };
 
   const state: AppState = {
-    did, displayName, graph,
+    did, displayName, context,
     repoId, repoName,
     branches: [{ id: mainBranchId, name: 'main', headCommitId: commitId, protected: true, createdBy: did }],
     currentBranchId: mainBranchId,
@@ -181,26 +159,20 @@ export async function createRepo(
 }
 
 export async function forkRepo(
-  displayName: string, graphUri: string, identity: IdentityProvider, did: string,
+  displayName: string, contextDid: string, identity: IdentityProvider, did: string,
 ): Promise<AppState> {
-  const manager = new SharedGraphManager(identity);
-  const graph = await manager.join(graphUri);
-  const g = graph as any;
-
-  await g.addShape('Repository', JSON.stringify(RepositoryShape));
-  await g.addShape('Branch', JSON.stringify(BranchShape));
-  await g.addShape('Commit', JSON.stringify(CommitShape));
-  await g.addShape('TreeSnapshot', JSON.stringify(TreeSnapshotShape));
-  await g.addShape('FileContent', JSON.stringify(FileContentShape));
-  await g.addShape('Contributor', JSON.stringify(ContributorShape));
+  const store = await navigator.graph.create(displayName);
+  const placeholderContext = await store.createContext({ displayName: 'pending-fork' });
+  await placeholderContext.publish();
+  await registerShapes(placeholderContext);
 
   const bc = new BroadcastChannel(SYNC_CHANNEL);
 
   return new Promise<AppState>((resolve) => {
     const timeout = setTimeout(() => {
-      const governance = setupGovernance(graph, did);
+      const governance = setupGovernance(placeholderContext, did);
       resolve({
-        did, displayName, graph,
+        did, displayName, context: placeholderContext,
         repoId: 'repo:fallback', repoName: 'Repository',
         branches: [], currentBranchId: '',
         commits: [], workingFiles: [],
@@ -212,58 +184,57 @@ export async function forkRepo(
     }, 1500);
 
     const handler = (ev: MessageEvent) => {
-      if (ev.data.type === 'vcs-sync-response' && ev.data.graphUri === graphUri) {
-        clearTimeout(timeout);
-        bc.removeEventListener('message', handler);
-        const data = ev.data;
+      const data = ev.data;
+      if (data.type !== 'vcs-sync-response' || data.contextDid !== contextDid) return;
+      clearTimeout(timeout);
+      bc.removeEventListener('message', handler);
 
-        const governance = setupGovernance(graph, data.ownerDid);
-        issueContributorZcap(governance, did, data.ownerDid);
+      const governance = setupGovernance(placeholderContext, data.ownerDid);
+      issueContributorZcap(governance, did, data.ownerDid);
 
-        const state: AppState = {
-          did, displayName, graph,
-          repoId: data.repoId,
-          repoName: data.repoName,
-          branches: data.branches,
-          currentBranchId: data.branches[0]?.id || '',
-          commits: data.commits,
-          workingFiles: data.workingFiles || [],
-          contributors: [...data.contributors],
-          governance, isOwner: false, bc, identity,
-          governanceLogs: [], selectedFile: null, viewingCommit: null,
-          editingIndicators: new Map(),
-        };
+      const state: AppState = {
+        did, displayName, context: placeholderContext,
+        repoId: data.repoId,
+        repoName: data.repoName,
+        branches: data.branches,
+        currentBranchId: data.branches[0]?.id || '',
+        commits: data.commits,
+        workingFiles: data.workingFiles || [],
+        contributors: [...data.contributors],
+        governance, isOwner: false, bc, identity,
+        governanceLogs: [], selectedFile: null, viewingCommit: null,
+        editingIndicators: new Map(),
+      };
 
-        // Add self as contributor
-        const contribId = `contrib:${crypto.randomUUID()}`;
-        state.contributors.push({ id: contribId, did, name: displayName, role: 'contributor' });
+      const contribId = `contrib:${crypto.randomUUID()}`;
+      state.contributors.push({ id: contribId, did, name: displayName, role: 'contributor' });
 
-        bc.postMessage({
-          type: 'vcs-new-contributor',
-          graphUri: graph.uri,
-          contributor: { id: contribId, did, name: displayName, role: 'contributor' },
-        });
+      bc.postMessage({
+        type: 'vcs-new-contributor',
+        contextDid,
+        contributor: { id: contribId, did, name: displayName, role: 'contributor' },
+      });
 
-        setupCrossTabSync(state);
-        resolve(state);
-      }
+      setupCrossTabSync(state);
+      resolve(state);
     };
 
     bc.addEventListener('message', handler);
-    bc.postMessage({ type: 'vcs-sync-request', graphUri, did, displayName });
+    bc.postMessage({ type: 'vcs-sync-request', contextDid, did, displayName });
   });
 }
 
 function setupCrossTabSync(state: AppState): void {
-  const { bc, graph } = state;
+  const { bc, context } = state;
+  const contextDid = context.did;
 
   bc.addEventListener('message', (ev: MessageEvent) => {
     const msg = ev.data;
 
-    if (msg.type === 'vcs-sync-request' && msg.graphUri === graph.uri && state.isOwner) {
+    if (msg.type === 'vcs-sync-request' && msg.contextDid === contextDid && state.isOwner) {
       bc.postMessage({
         type: 'vcs-sync-response',
-        graphUri: graph.uri,
+        contextDid,
         ownerDid: state.did,
         repoId: state.repoId,
         repoName: state.repoName,
@@ -274,40 +245,35 @@ function setupCrossTabSync(state: AppState): void {
       });
     }
 
-    if (msg.type === 'vcs-new-commit' && msg.graphUri === graph.uri && msg.commit.authorDid !== state.did) {
+    if (msg.type === 'vcs-new-commit' && msg.contextDid === contextDid && msg.commit.authorDid !== state.did) {
       state.commits.push(msg.commit);
-      // Update branch head
       const branch = state.branches.find(b => b.id === msg.branchId);
       if (branch) branch.headCommitId = msg.commit.id;
-      // Update working files if on same branch
       if (msg.branchId === state.currentBranchId) {
         state.workingFiles = msg.commit.files;
       }
       document.dispatchEvent(new CustomEvent('vcs-update', { detail: { type: 'commit' } }));
     }
 
-    if (msg.type === 'vcs-new-branch' && msg.graphUri === graph.uri) {
+    if (msg.type === 'vcs-new-branch' && msg.contextDid === contextDid) {
       if (!state.branches.find(b => b.id === msg.branch.id)) {
         state.branches.push(msg.branch);
         document.dispatchEvent(new CustomEvent('vcs-update', { detail: { type: 'branch' } }));
       }
     }
 
-    if (msg.type === 'vcs-new-contributor' && msg.graphUri === graph.uri) {
+    if (msg.type === 'vcs-new-contributor' && msg.contextDid === contextDid) {
       if (!state.contributors.find(c => c.did === msg.contributor.did)) {
         state.contributors.push(msg.contributor);
-        if (state.isOwner) {
-          issueContributorZcap(state.governance, msg.contributor.did, state.did);
-        }
+        if (state.isOwner) issueContributorZcap(state.governance, msg.contributor.did, state.did);
         document.dispatchEvent(new CustomEvent('vcs-update', { detail: { type: 'contributor' } }));
       }
     }
 
-    if (msg.type === 'vcs-editing' && msg.graphUri === graph.uri && msg.did !== state.did) {
+    if (msg.type === 'vcs-editing' && msg.contextDid === contextDid && msg.did !== state.did) {
       if (msg.filePath) {
         state.editingIndicators.set(msg.filePath, msg.displayName);
       } else {
-        // Clear
         for (const [k, v] of state.editingIndicators) {
           if (v === msg.displayName) state.editingIndicators.delete(k);
         }
@@ -317,46 +283,37 @@ function setupCrossTabSync(state: AppState): void {
   });
 }
 
-/**
- * Create a commit in the current branch
- */
+/** Create a commit in the current branch. */
 export async function createCommit(
   state: AppState, message: string, files: FileEntry[],
 ): Promise<{ success: boolean; reason?: string }> {
   const branch = state.branches.find(b => b.id === state.currentBranchId);
   if (!branch) return { success: false, reason: 'No branch selected' };
 
-  const validation = (await import('./graph/governance.js')).validateCommit(
-    state.governance, state.did, branch.protected, state.isOwner,
-  );
-
+  const validation = validateCommit(state.governance, state.did, branch.protected, state.isOwner);
   if (!validation.allowed) {
     state.governanceLogs.push({ text: `Commit by ${state.displayName} on ${branch.name} REJECTED — ${validation.reason}`, accepted: false, time: Date.now() });
     document.dispatchEvent(new CustomEvent('vcs-update', { detail: { type: 'governance' } }));
     return { success: false, reason: validation.reason };
   }
 
-  const g = state.graph as any;
   const now = Date.now();
 
-  // Create file content instances
   for (const file of files) {
     const hash = await hashContent(file.content);
     file.hash = hash;
     file.contentId = `file:${crypto.randomUUID()}`;
-    await g.createShapeInstance('FileContent', file.contentId, {
+    await state.context.createShapeInstance('FileContent', file.contentId, {
       path: file.path, content: file.content, hash,
     });
   }
 
-  // Create tree snapshot
   const snapshotId = `snapshot:${crypto.randomUUID()}`;
   const entries = JSON.stringify(files.map(f => ({ path: f.path, contentId: f.contentId })));
-  await g.createShapeInstance('TreeSnapshot', snapshotId, { entries });
+  await state.context.createShapeInstance('TreeSnapshot', snapshotId, { entries });
 
-  // Create commit
   const commitId = `commit:${crypto.randomUUID()}`;
-  await g.createShapeInstance('Commit', commitId, {
+  await state.context.createShapeInstance('Commit', commitId, {
     message,
     author: state.did,
     authorName: state.displayName,
@@ -375,18 +332,16 @@ export async function createCommit(
   branch.headCommitId = commitId;
   state.workingFiles = [...files];
 
-  // Record for rate limiting
-  (await import('./graph/governance.js')).recordCommit(state.governance, state.did);
+  recordCommit(state.governance, state.did);
 
   state.governanceLogs.push({
     text: `Commit by ${state.displayName} on ${branch.name} ACCEPTED`,
     accepted: true, time: Date.now(),
   });
 
-  // Broadcast
   state.bc.postMessage({
     type: 'vcs-new-commit',
-    graphUri: state.graph.uri,
+    contextDid: state.context.did,
     branchId: state.currentBranchId,
     commit,
   });
@@ -395,9 +350,7 @@ export async function createCommit(
   return { success: true };
 }
 
-/**
- * Create a new branch from current branch HEAD
- */
+/** Create a new branch from current branch HEAD. */
 export function createBranch(state: AppState, name: string): Branch {
   const currentBranch = state.branches.find(b => b.id === state.currentBranchId);
   const headCommit = currentBranch?.headCommitId || '';
@@ -411,14 +364,12 @@ export function createBranch(state: AppState, name: string): Branch {
   };
 
   state.branches.push(branch);
-  state.bc.postMessage({ type: 'vcs-new-branch', graphUri: state.graph.uri, branch });
+  state.bc.postMessage({ type: 'vcs-new-branch', contextDid: state.context.did, branch });
   document.dispatchEvent(new CustomEvent('vcs-update', { detail: { type: 'branch' } }));
   return branch;
 }
 
-/**
- * Switch to a branch — load its files from the head commit
- */
+/** Switch to a branch — load its files from the head commit. */
 export function switchBranch(state: AppState, branchId: string): void {
   state.currentBranchId = branchId;
   const branch = state.branches.find(b => b.id === branchId);
@@ -433,13 +384,10 @@ export function switchBranch(state: AppState, branchId: string): void {
   document.dispatchEvent(new CustomEvent('vcs-update', { detail: { type: 'branch-switch' } }));
 }
 
-/**
- * Broadcast editing indicator
- */
 export function broadcastEditing(state: AppState, filePath: string | null): void {
   state.bc.postMessage({
     type: 'vcs-editing',
-    graphUri: state.graph.uri,
+    contextDid: state.context.did,
     did: state.did,
     displayName: state.displayName,
     filePath,

@@ -66,10 +66,10 @@ export const RepositoryShape: ShapeDefinition = {
     { path: PREDICATES.DEFAULT_BRANCH, name: 'defaultBranch', datatype: 'xsd:string' },
   ],
   constructor: [
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.ENTRY_TYPE, target: PREDICATES.REPOSITORY },
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.REPO_NAME, target: 'name' },
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.REPO_DESCRIPTION, target: 'description' },
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.REPO_OWNER, target: 'owner' },
+    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.ENTRY_TYPE, target: PREDICATES.REPOSITORY },
+    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.REPO_NAME, target: 'name' },
+    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.REPO_DESCRIPTION, target: 'description' },
+    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.REPO_OWNER, target: 'owner' },
   ],
 };
 
@@ -83,11 +83,11 @@ export const BranchShape: ShapeDefinition = {
     { path: PREDICATES.BRANCH_CREATED_BY, name: 'createdBy', datatype: 'xsd:string', minCount: 1, maxCount: 1 },
   ],
   constructor: [
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.ENTRY_TYPE, target: PREDICATES.BRANCH },
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.BRANCH_NAME, target: 'name' },
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.HEAD_COMMIT, target: 'headCommit' },
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.BRANCH_PROTECTED, target: 'protected' },
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.BRANCH_CREATED_BY, target: 'createdBy' },
+    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.ENTRY_TYPE, target: PREDICATES.BRANCH },
+    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.BRANCH_NAME, target: 'name' },
+    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.HEAD_COMMIT, target: 'headCommit' },
+    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.BRANCH_PROTECTED, target: 'protected' },
+    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.BRANCH_CREATED_BY, target: 'createdBy' },
   ],
 };
 
@@ -104,13 +104,13 @@ export const CommitShape: ShapeDefinition = {
     { path: PREDICATES.HAS_SNAPSHOT, name: 'snapshot', datatype: 'xsd:string', minCount: 1, maxCount: 1 },
   ],
   constructor: [
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.ENTRY_TYPE, target: PREDICATES.COMMIT },
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.COMMIT_MESSAGE, target: 'message' },
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.COMMIT_AUTHOR, target: 'author' },
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.COMMIT_AUTHOR_NAME, target: 'authorName' },
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.COMMIT_TIME, target: 'time' },
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.PARENT_COMMIT, target: 'parentCommit' },
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.HAS_SNAPSHOT, target: 'snapshot' },
+    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.ENTRY_TYPE, target: PREDICATES.COMMIT },
+    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.COMMIT_MESSAGE, target: 'message' },
+    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.COMMIT_AUTHOR, target: 'author' },
+    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.COMMIT_AUTHOR_NAME, target: 'authorName' },
+    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.COMMIT_TIME, target: 'time' },
+    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.PARENT_COMMIT, target: 'parentCommit' },
+    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.HAS_SNAPSHOT, target: 'snapshot' },
   ],
 };
 
@@ -121,8 +121,8 @@ export const TreeSnapshotShape: ShapeDefinition = {
     { path: PREDICATES.SNAPSHOT_ENTRIES, name: 'entries', datatype: 'xsd:string', minCount: 1, maxCount: 1 },
   ],
   constructor: [
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.ENTRY_TYPE, target: PREDICATES.TREE_SNAPSHOT },
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.SNAPSHOT_ENTRIES, target: 'entries' },
+    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.ENTRY_TYPE, target: PREDICATES.TREE_SNAPSHOT },
+    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.SNAPSHOT_ENTRIES, target: 'entries' },
   ],
 };
 
@@ -135,10 +135,10 @@ export const FileContentShape: ShapeDefinition = {
     { path: PREDICATES.FILE_HASH, name: 'hash', datatype: 'xsd:string', minCount: 1, maxCount: 1 },
   ],
   constructor: [
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.ENTRY_TYPE, target: PREDICATES.FILE_CONTENT },
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.FILE_PATH, target: 'path' },
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.FILE_CONTENT_DATA, target: 'content' },
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.FILE_HASH, target: 'hash' },
+    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.ENTRY_TYPE, target: PREDICATES.FILE_CONTENT },
+    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.FILE_PATH, target: 'path' },
+    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.FILE_CONTENT_DATA, target: 'content' },
+    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.FILE_HASH, target: 'hash' },
   ],
 };
 
@@ -151,9 +151,9 @@ export const ContributorShape: ShapeDefinition = {
     { path: PREDICATES.CONTRIBUTOR_ROLE, name: 'role', datatype: 'xsd:string', minCount: 1, maxCount: 1 },
   ],
   constructor: [
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.ENTRY_TYPE, target: PREDICATES.CONTRIBUTOR },
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.CONTRIBUTOR_DID, target: 'did' },
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.CONTRIBUTOR_NAME, target: 'name' },
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.CONTRIBUTOR_ROLE, target: 'role' },
+    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.ENTRY_TYPE, target: PREDICATES.CONTRIBUTOR },
+    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.CONTRIBUTOR_DID, target: 'did' },
+    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.CONTRIBUTOR_NAME, target: 'name' },
+    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.CONTRIBUTOR_ROLE, target: 'role' },
   ],
 };

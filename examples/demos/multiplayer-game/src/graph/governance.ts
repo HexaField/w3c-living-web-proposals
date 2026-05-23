@@ -1,7 +1,7 @@
 /**
  * Governance for multiplayer game
  */
-import { SharedGraph } from '@living-web/graph-sync';
+import { Context } from '@living-web/personal-graph';
 import {
   createGovernanceLayer,
   createCapability,
@@ -9,6 +9,8 @@ import {
   type ZCAPDocument,
 } from '@living-web/governance';
 import { PREDICATES } from './shapes.js';
+
+type SharedGraph = Context;
 
 const PLAYER_PREDICATES = [
   PREDICATES.PLAYER_X, PREDICATES.PLAYER_Y, PREDICATES.PLAYER_Z,
@@ -38,11 +40,13 @@ export interface GovernanceState {
 }
 
 export function setupGovernance(graph: SharedGraph, ownerDid: string): GovernanceState {
-  const layer = createGovernanceLayer(graph, { rootAuthority: ownerDid });
+  const layer = createGovernanceLayer(graph, { enforcementMode: 'open' });
   const rootZcap = createCapability(
-    ownerDid, ADMIN_PREDICATES,
-    { within: null, graph: graph.uri },
     ownerDid,
+    ['createLink', 'removeLink', 'updateProperty', 'updateSHACL', 'updateGovernance'],
+    graph.did,
+    ownerDid,
+    { caveats: [{ type: 'predicate', value: { allowed: ADMIN_PREDICATES } }] },
   );
   layer.storeExpression(rootZcap.id, rootZcap);
 
@@ -57,7 +61,10 @@ export function setupGovernance(graph: SharedGraph, ownerDid: string): Governanc
 export function issuePlayerZcap(state: GovernanceState, playerDid: string, ownerDid: string): ZCAPDocument {
   const zcap = delegateCapability(
     state.rootZcap, playerDid, ownerDid,
-    { subsetPredicates: PLAYER_PREDICATES },
+    {
+      subsetActions: ['createLink', 'updateProperty'],
+      additionalCaveats: [{ type: 'predicate', value: { allowed: PLAYER_PREDICATES } }],
+    },
   );
   state.layer.storeExpression(zcap.id, zcap);
   state.zcaps.set(playerDid, zcap);

@@ -4,7 +4,7 @@
 import type { AppState, CanvasShapeData } from '../setup.js';
 import { validateShapeAction } from '../graph/governance.js';
 import { PREDICATES } from '../graph/shapes.js';
-import { SemanticTriple } from '@living-web/personal-graph';
+import { Triple } from '@living-web/personal-graph';
 
 interface DrawState {
   drawing: boolean;
@@ -112,7 +112,7 @@ export function renderApp(container: HTMLElement, state: AppState): void {
       vis.addEventListener('click', (e) => {
         e.stopPropagation();
         layer.visible = !layer.visible;
-        state.bc.postMessage({ type: 'canvas-layer-toggle', graphUri: state.graph.uri, layerId: layer.id, visible: layer.visible });
+        state.bc.postMessage({ type: 'canvas-layer-toggle', contextDid: state.context.did, layerId: layer.id, visible: layer.visible });
         renderLayers();
         renderShapes();
       });
@@ -126,7 +126,7 @@ export function renderApp(container: HTMLElement, state: AppState): void {
         layer.locked = !layer.locked;
         if (layer.locked) state.governance.lockedLayers.add(layer.id);
         else state.governance.lockedLayers.delete(layer.id);
-        state.bc.postMessage({ type: 'canvas-layer-lock', graphUri: state.graph.uri, layerId: layer.id, locked: layer.locked });
+        state.bc.postMessage({ type: 'canvas-layer-lock', contextDid: state.context.did, layerId: layer.id, locked: layer.locked });
         renderLayers();
       });
 
@@ -156,7 +156,7 @@ export function renderApp(container: HTMLElement, state: AppState): void {
       };
       state.layers.push(newLayer);
       state.activeLayerId = newLayer.id;
-      state.bc.postMessage({ type: 'canvas-layer-add', graphUri: state.graph.uri, layer: newLayer });
+      state.bc.postMessage({ type: 'canvas-layer-add', contextDid: state.context.did, layer: newLayer });
       renderLayers();
     });
     rightPanel.appendChild(addBtn);
@@ -239,7 +239,7 @@ export function renderApp(container: HTMLElement, state: AppState): void {
                 document.removeEventListener('mousemove', onMove);
                 document.removeEventListener('mouseup', onUp);
                 state.bc.postMessage({
-                  type: 'canvas-shape-move', graphUri: state.graph.uri,
+                  type: 'canvas-shape-move', contextDid: state.context.did,
                   shapeId: shape.id, x: shape.x, y: shape.y, did: state.did,
                 });
                 addGovLog(`Move shape by ${state.displayName}`, true);
@@ -253,7 +253,7 @@ export function renderApp(container: HTMLElement, state: AppState): void {
               const idx = state.shapes.findIndex(s => s.id === shape.id);
               if (idx !== -1) state.shapes.splice(idx, 1);
               state.bc.postMessage({
-                type: 'canvas-shape-delete', graphUri: state.graph.uri,
+                type: 'canvas-shape-delete', contextDid: state.context.did,
                 shapeId: shape.id, did: state.did,
               });
               addGovLog(`Delete shape by ${state.displayName}`, true);
@@ -371,7 +371,7 @@ export function renderApp(container: HTMLElement, state: AppState): void {
         text, fontSize: 16 + state.currentStrokeWidth * 2, author: state.did,
       };
       state.shapes.push(shape);
-      state.bc.postMessage({ type: 'canvas-shape-add', graphUri: state.graph.uri, shape });
+      state.bc.postMessage({ type: 'canvas-shape-add', contextDid: state.context.did, shape });
       addGovLog(`Text shape by ${state.displayName}`, true);
       renderShapes();
       return;
@@ -423,7 +423,7 @@ export function renderApp(container: HTMLElement, state: AppState): void {
 
     // Broadcast cursor position
     state.bc.postMessage({
-      type: 'canvas-cursor', graphUri: state.graph.uri,
+      type: 'canvas-cursor', contextDid: state.context.did,
       cursor: { did: state.did, name: state.displayName, color: state.myColor, x: pt.x, y: pt.y, tool: state.currentTool },
     });
 
@@ -459,7 +459,7 @@ export function renderApp(container: HTMLElement, state: AppState): void {
       previewEl.setAttribute('d', d);
       // Broadcast in-progress stroke
       state.bc.postMessage({
-        type: 'canvas-stroke-progress', graphUri: state.graph.uri,
+        type: 'canvas-stroke-progress', contextDid: state.context.did,
         did: state.did, stroke: state.currentStroke, strokeWidth: state.currentStrokeWidth, d,
       });
     }
@@ -512,7 +512,7 @@ export function renderApp(container: HTMLElement, state: AppState): void {
 
     if (shape && (shape.width !== 0 || shape.height !== 0 || shape.type === 'path' || shape.type === 'line')) {
       state.shapes.push(shape);
-      state.bc.postMessage({ type: 'canvas-shape-add', graphUri: state.graph.uri, shape });
+      state.bc.postMessage({ type: 'canvas-shape-add', contextDid: state.context.did, shape });
       addGovLog(`${shape.type} shape by ${state.displayName} on ${state.layers.find(l => l.id === state.activeLayerId)?.name || 'layer'}`, true);
       renderShapes();
     }

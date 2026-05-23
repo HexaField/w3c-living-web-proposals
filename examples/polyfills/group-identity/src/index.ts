@@ -1,4 +1,4 @@
 export { Group } from './group.js';
-export { GroupManager, DefaultGroupRegistry } from './polyfill.js';
-export { GROUP, RDF } from './types.js';
-export type { Member, GroupOptions, GroupRegistry } from './types.js';
+export { DefaultGroupRegistry, installGroupExtension } from './extension.js';
+export { GROUP, CONTEXT, RDF, VOTE } from './types.js';
+export type { Participant, GroupOptions, GroupRegistry } from './types.js';

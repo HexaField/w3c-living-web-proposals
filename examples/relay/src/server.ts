@@ -2,13 +2,18 @@ import { WebSocketServer, WebSocket } from 'ws';
 import type { IncomingMessage } from 'http';
 
 /**
- * Living Web Graph Relay Server
+ * Living Web Relay Server.
  *
- * A minimal "dumb pipe" relay that groups WebSocket connections by graph ID
- * and forwards messages between peers in the same group. The relay has NO
- * authority over data — it simply relays bytes between participants.
+ * A minimal "dumb pipe" that groups WebSocket connections by sync-space hash
+ * and forwards messages between peers in the same space. The relay has no
+ * authority over data — it relays bytes between participants and never
+ * inspects message contents.
  *
- * Peers connect to: ws://<host>:<port>/graph/<graphId>
+ * Path:  ws://<host>:<port>/space/<spaceId>
+ *
+ * In a Privacy-Tiered or Fully-Partitioned topology, each space carries diffs
+ * for a single context (or a set of public contexts). Authorisation is per
+ * graph-DID and enforced by the sync module on each peer.
  */
 
 export interface RelayOptions {
@@ -20,29 +25,27 @@ export function createRelay(opts: RelayOptions = {}) {
   const port = opts.port ?? 4000;
   const host = opts.host ?? '0.0.0.0';
 
-  // Map of graphId → Set<WebSocket>
   const rooms = new Map<string, Set<WebSocket>>();
 
   const wss = new WebSocketServer({ port, host });
 
   wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
-    // Extract graphId from URL path: /graph/<graphId>
-    const match = req.url?.match(/^\/graph\/(.+)$/);
+    const url = req.url ?? '';
+    const match = url.match(/^\/space\/(.+)$/);
     if (!match) {
-      ws.close(4000, 'Invalid path — expected /graph/<graphId>');
+      ws.close(4000, 'Invalid path — expected /space/<spaceId>');
       return;
     }
+    const spaceId = decodeURIComponent(match[1]);
+    const roomKey = `space:${spaceId}`;
+    const roomLabel = `space "${spaceId}"`;
 
-    const graphId = decodeURIComponent(match[1]);
-
-    // Join room
-    if (!rooms.has(graphId)) rooms.set(graphId, new Set());
-    const room = rooms.get(graphId)!;
+    if (!rooms.has(roomKey)) rooms.set(roomKey, new Set());
+    const room = rooms.get(roomKey)!;
     room.add(ws);
 
-    console.log(`[relay] peer joined graph "${graphId}" (${room.size} peers)`);
+    console.log(`[relay] peer joined ${roomLabel} (${room.size} peers)`);
 
-    // Forward messages to all other peers in the room
     ws.on('message', (data: Buffer | ArrayBuffer | Buffer[], isBinary: boolean) => {
       for (const peer of room) {
         if (peer !== ws && peer.readyState === WebSocket.OPEN) {
@@ -51,20 +54,20 @@ export function createRelay(opts: RelayOptions = {}) {
       }
     });
 
-    // Leave room on disconnect
     ws.on('close', () => {
       room.delete(ws);
-      console.log(`[relay] peer left graph "${graphId}" (${room.size} peers)`);
-      if (room.size === 0) rooms.delete(graphId);
+      console.log(`[relay] peer left ${roomLabel} (${room.size} peers)`);
+      if (room.size === 0) rooms.delete(roomKey);
     });
 
     ws.on('error', (err) => {
-      console.error(`[relay] WebSocket error in graph "${graphId}":`, err.message);
+      console.error(`[relay] WebSocket error in ${roomLabel}:`, err.message);
     });
   });
 
   wss.on('listening', () => {
-    console.log(`[relay] Living Web Graph Relay listening on ${host}:${port}`);
+    console.log(`[relay] Living Web Relay listening on ${host}:${port}`);
+    console.log(`[relay] Route: /space/<spaceId>`);
   });
 
   return {

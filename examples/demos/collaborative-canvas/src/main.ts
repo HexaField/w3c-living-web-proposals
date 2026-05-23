@@ -59,20 +59,20 @@ function showSetup(): void {
     try {
       const { did, identity } = await createIdentity(displayName);
       const state = await createCanvas(displayName, canvasName, identity, did);
-      window.location.hash = state.graph.uri;
+      window.location.hash = state.context.did;
       launchApp(state);
     } catch (e) { alert('Failed: ' + (e as Error).message); }
   });
 
   document.getElementById('btn-join')?.addEventListener('click', async () => {
     const displayName = (document.getElementById('display-name') as HTMLInputElement).value.trim();
-    const graphUri = (document.getElementById('graph-uri') as HTMLInputElement).value.trim();
+    const contextDid = (document.getElementById('graph-uri') as HTMLInputElement).value.trim();
     if (!displayName) { alert('Please enter a display name'); return; }
-    if (!graphUri) { alert('Please enter a graph URI'); return; }
+    if (!contextDid) { alert('Please enter a context DID'); return; }
     try {
       const { did, identity } = await createIdentity(displayName);
-      const state = await joinCanvas(displayName, graphUri, identity, did);
-      window.location.hash = graphUri;
+      const state = await joinCanvas(displayName, contextDid, identity, did);
+      window.location.hash = contextDid;
       launchApp(state);
     } catch (e) { alert('Failed: ' + (e as Error).message); }
   });

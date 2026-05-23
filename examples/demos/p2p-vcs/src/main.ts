@@ -67,7 +67,7 @@ function showSetup(): void {
     try {
       const { did, identity } = await createIdentity(displayName);
       const state = await createRepo(displayName, repoName, identity, did);
-      window.location.hash = state.graph.uri;
+      window.location.hash = state.context.did;
       launchApp(state);
     } catch (e) {
       console.error('Failed to create repo:', e);
@@ -77,13 +77,13 @@ function showSetup(): void {
 
   document.getElementById('btn-fork')?.addEventListener('click', async () => {
     const displayName = (document.getElementById('display-name') as HTMLInputElement).value.trim();
-    const graphUri = (document.getElementById('graph-uri') as HTMLInputElement).value.trim();
+    const contextDid = (document.getElementById('graph-uri') as HTMLInputElement).value.trim();
     if (!displayName) { alert('Please enter a display name'); return; }
-    if (!graphUri) { alert('Please enter a graph URI'); return; }
+    if (!contextDid) { alert('Please enter a context DID'); return; }
     try {
       const { did, identity } = await createIdentity(displayName);
-      const state = await forkRepo(displayName, graphUri, identity, did);
-      window.location.hash = graphUri;
+      const state = await forkRepo(displayName, contextDid, identity, did);
+      window.location.hash = contextDid;
       launchApp(state);
     } catch (e) {
       console.error('Failed to fork:', e);

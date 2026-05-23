@@ -1,13 +1,19 @@
 /**
- * Setup — identity creation, community create/join
+ * Setup — identity, GraphStore, community context, group convenience layer.
+ *
+ * A community is a Group (a Context with a did:graph DID). Channels, roles,
+ * members are entities within the community's context. Role sub-groups are
+ * separate contexts that participate_in the community.
  */
 
-import { install as installIdentity } from '@living-web/identity';
-import { SharedGraph, SharedGraphManager } from '@living-web/graph-sync';
-import { installShapeExtension } from '@living-web/shape-validation';
-import { PersonalGraph, SemanticTriple } from '@living-web/personal-graph';
-import type { IdentityProvider } from '@living-web/personal-graph';
-import { GroupManager, DefaultGroupRegistry, type Group } from '@living-web/group-identity';
+import { install as installIdentity, IdentityManager, DIDIdentityProvider } from '@living-web/identity';
+import { install as installPersonalGraph, Triple, Context, GraphStore, type IdentityProvider } from '@living-web/personal-graph';
+import '@living-web/shape-validation/polyfill';
+import '@living-web/graph-sync/polyfill';
+import '@living-web/group-identity/polyfill';
+import '@living-web/flows/polyfill';
+
+import type { Group } from '@living-web/group-identity';
 import {
   CommunityShape, ChannelShape, MessageShape, RoleShape, MemberShape,
   PREDICATES,
@@ -16,25 +22,7 @@ import {
   setupGovernance, issueMemberZcap, issueAdminZcap, type GovernanceState,
 } from './governance.js';
 
-// Install polyfills
-installIdentity();
-installShapeExtension(PersonalGraph);
-
-// Patch SharedGraph prototype with shape methods from PersonalGraph
-// SharedGraph has the same triple API (addTriple, queryTriples, removeTriple)
-const shapeMethods = ['addShape', 'getShapes', 'createShapeInstance', 'getShapeInstances', 'getShapeInstanceData', 'setShapeProperty', 'addToShapeCollection', 'removeFromShapeCollection'];
-for (const method of shapeMethods) {
-  if ((PersonalGraph.prototype as any)[method]) {
-    (SharedGraph.prototype as any)[method] = (PersonalGraph.prototype as any)[method];
-  }
-}
-// SharedGraph uses `uri` instead of `uuid` — add compatibility getter
-if (!Object.getOwnPropertyDescriptor(SharedGraph.prototype, 'uuid')) {
-  Object.defineProperty(SharedGraph.prototype, 'uuid', {
-    get() { return (this as any).uri; },
-  });
-}
-
+const POLYFILL_PASSPHRASE = '__living-web-polyfill__';
 const SYNC_CHANNEL = 'living-web-community-chat';
 
 export interface ChatMessage {
@@ -44,22 +32,23 @@ export interface ChatMessage {
   authorDid: string;
   authorName: string;
   timestamp: number;
-  reactions: Map<string, Set<string>>; // emoji -> set of DIDs
+  reactions: Map<string, Set<string>>;
 }
 
 export interface AppState {
   did: string;
   displayName: string;
-  graph: SharedGraph;
-  group: Group | null;       // The community Group (Spec 06)
-  groupDid: string;          // The community's group DID
+  store: GraphStore;
+  context: Context;
+  group: Group | null;
+  groupDid: string;
   communityId: string;
   communityName: string;
   channels: { id: string; name: string }[];
   roles: { id: string; name: string; color: string; position: number }[];
-  roleGroups: Map<string, Group>; // role name -> sub-group
+  roleGroups: Map<string, Group>;
   members: { id: string; did: string; name: string; roleIds: string[] }[];
-  messages: Map<string, ChatMessage[]>; // channelId -> messages
+  messages: Map<string, ChatMessage[]>;
   governance: GovernanceState;
   isOwner: boolean;
   bc: BroadcastChannel;
@@ -67,23 +56,35 @@ export interface AppState {
   governanceLogs: { text: string; accepted: boolean; time: number }[];
 }
 
-/** Wrapper to adapt DIDCredential to IdentityProvider interface */
-class CredentialIdentity implements IdentityProvider {
-  private cred: any;
-  constructor(cred: any) { this.cred = cred; }
-  getDID(): string { return this.cred.did; }
-  getKeyURI(): string { return `${this.cred.did}#key-1`; }
-  async sign(data: Uint8Array): Promise<Uint8Array> {
-    return this.cred.signRaw(data);
-  }
-  getPublicKey(): Uint8Array { return this.cred.publicKey; }
+let installed = false;
+async function ensurePolyfills(): Promise<void> {
+  if (installed) return;
+  installIdentity();
+  await installPersonalGraph();
+  installed = true;
 }
 
 export async function createIdentity(displayName: string): Promise<{ did: string; identity: IdentityProvider }> {
-  const cred = await (navigator.credentials as any).create({ did: { displayName } });
-  if (cred.isLocked) await cred.unlock('__living-web-polyfill__');
-  const identity = new CredentialIdentity(cred);
-  return { did: cred.did, identity };
+  await ensurePolyfills();
+  const manager = new IdentityManager();
+  const credential = await manager.createIndividual(displayName, POLYFILL_PASSPHRASE);
+  if (credential.isLocked) await credential.unlock(POLYFILL_PASSPHRASE);
+  const provider = new DIDIdentityProvider(credential);
+  return { did: provider.getDID(), identity: provider };
+}
+
+async function getOrCreateStore(name: string): Promise<GraphStore> {
+  const stores = await navigator.graph.list();
+  if (stores.length > 0) return stores[0];
+  return navigator.graph.create(name);
+}
+
+async function registerShapes(context: Context): Promise<void> {
+  await context.addShape('Community', JSON.stringify(CommunityShape));
+  await context.addShape('Channel', JSON.stringify(ChannelShape));
+  await context.addShape('Message', JSON.stringify(MessageShape));
+  await context.addShape('Role', JSON.stringify(RoleShape));
+  await context.addShape('Member', JSON.stringify(MemberShape));
 }
 
 export async function createCommunity(
@@ -92,25 +93,21 @@ export async function createCommunity(
   identity: IdentityProvider,
   did: string,
 ): Promise<AppState> {
-  // Create a Group for the community (Spec 06)
-  const registry = new DefaultGroupRegistry();
-  const groupMgr = new GroupManager(identity, registry);
-  const communityGroup = await groupMgr.createGroup({ name: communityName, description: `Community: ${communityName}` });
-  const graph = communityGroup.graph;
-  const g = graph as any;
+  await ensurePolyfills();
+  const store = await getOrCreateStore(`${displayName}'s workspace`);
 
-  // Register shapes
-  await g.addShape('Community', JSON.stringify(CommunityShape));
-  await g.addShape('Channel', JSON.stringify(ChannelShape));
-  await g.addShape('Message', JSON.stringify(MessageShape));
-  await g.addShape('Role', JSON.stringify(RoleShape));
-  await g.addShape('Member', JSON.stringify(MemberShape));
+  const communityGroup = await store.createGroup({
+    name: communityName,
+    description: `Community: ${communityName}`,
+    enforcementMode: 'open',
+  });
+  const context = communityGroup.context;
+  await context.publish();
+  await registerShapes(context);
 
-  // Create community
   const communityId = `community:${crypto.randomUUID()}`;
-  await g.createShapeInstance('Community', communityId, { name: communityName });
+  await context.createShapeInstance('Community', communityId, { name: communityName });
 
-  // Create roles — each role is a sub-group of the community (Spec 06 holonic nesting)
   const roles: AppState['roles'] = [];
   const roleGroupsMap = new Map<string, Group>();
   for (const [name, color, pos] of [
@@ -120,37 +117,35 @@ export async function createCommunity(
     ['Member', '#2ecc71', '40'],
   ] as const) {
     const roleId = `role:${crypto.randomUUID()}`;
-    await g.createShapeInstance('Role', roleId, { name, color, position: pos });
-    await graph.addTriple(new SemanticTriple(communityId, roleId, PREDICATES.HAS_CHILD));
+    await context.createShapeInstance('Role', roleId, { name, color, position: pos });
+    await context.addTriple(new Triple(communityId, PREDICATES.HAS_CHILD, roleId));
 
-    // Create a sub-group for this role
-    const roleGroup = await groupMgr.createGroup({ name: `${communityName}/${name}` });
-    await communityGroup.addMember(roleGroup.did); // holonic nesting
+    const roleGroup = await store.createGroup({
+      name: `${communityName}/${name}`,
+      participatesIn: communityGroup.did,
+    });
+    await communityGroup.invite(roleGroup.did);
     roleGroupsMap.set(name, roleGroup);
-
     roles.push({ id: roleId, name, color, position: Number(pos) });
   }
 
-  // Create general channel
   const generalId = `channel:${crypto.randomUUID()}`;
-  await g.createShapeInstance('Channel', generalId, { name: 'general' });
-  await graph.addTriple(new SemanticTriple(communityId, generalId, PREDICATES.HAS_CHILD));
+  await context.createShapeInstance('Channel', generalId, { name: 'general' });
+  await context.addTriple(new Triple(communityId, PREDICATES.HAS_CHILD, generalId));
 
-  // Create owner member
   const memberId = `member:${crypto.randomUUID()}`;
-  await g.createShapeInstance('Member', memberId, { did, displayName });
-  await graph.addTriple(new SemanticTriple(communityId, memberId, PREDICATES.HAS_CHILD));
-  await graph.addTriple(new SemanticTriple(memberId, roles[0].id, PREDICATES.HAS_ROLE));
+  await context.createShapeInstance('Member', memberId, { did, displayName });
+  await context.addTriple(new Triple(communityId, PREDICATES.HAS_CHILD, memberId));
+  await context.addTriple(new Triple(memberId, PREDICATES.HAS_ROLE, roles[0].id));
 
-  // Add owner to the Owner role sub-group
   const ownerRoleGroup = roleGroupsMap.get('Owner');
-  if (ownerRoleGroup) await ownerRoleGroup.addMember(did);
+  if (ownerRoleGroup) await ownerRoleGroup.invite(did);
 
-  const governance = setupGovernance(graph, did);
+  const governance = setupGovernance(context, did);
   const bc = new BroadcastChannel(SYNC_CHANNEL);
 
   const state: AppState = {
-    did, displayName, graph,
+    did, displayName, store, context,
     group: communityGroup,
     groupDid: communityGroup.did,
     communityId, communityName,
@@ -171,30 +166,33 @@ export async function createCommunity(
 
 export async function joinCommunity(
   displayName: string,
-  graphUri: string,
+  groupDid: string,
   identity: IdentityProvider,
   did: string,
 ): Promise<AppState> {
-  const manager = new SharedGraphManager(identity);
-  const graph = await manager.join(graphUri);
-  const g = graph as any;
+  await ensurePolyfills();
+  const store = await getOrCreateStore(`${displayName}'s workspace`);
 
-  await g.addShape('Community', JSON.stringify(CommunityShape));
-  await g.addShape('Channel', JSON.stringify(ChannelShape));
-  await g.addShape('Message', JSON.stringify(MessageShape));
-  await g.addShape('Role', JSON.stringify(RoleShape));
-  await g.addShape('Member', JSON.stringify(MemberShape));
+  // For the polyfill: in this single-origin demo, both tabs share IndexedDB.
+  // The "join" path uses the BroadcastChannel sync-response from the owner tab.
+  let context: Context;
+  try {
+    context = await store.mount(groupDid, { mode: 'write' });
+  } catch {
+    context = await store.createContext({ displayName: 'Joined Community' });
+  }
+  await context.publish();
+  await registerShapes(context);
 
   const bc = new BroadcastChannel(SYNC_CHANNEL);
 
   return new Promise<AppState>((resolve) => {
     const timeout = setTimeout(() => {
-      // No owner tab found — minimal state
-      const governance = setupGovernance(graph, did);
+      const governance = setupGovernance(context, did);
       resolve({
-        did, displayName, graph,
+        did, displayName, store, context,
         group: null,
-        groupDid: '',
+        groupDid,
         communityId: `community:fallback`,
         communityName: 'Community',
         channels: [{ id: `channel:general`, name: 'general' }],
@@ -208,109 +206,83 @@ export async function joinCommunity(
     }, 1000);
 
     const handler = (ev: MessageEvent) => {
-      if (ev.data.type === 'sync-response' && ev.data.graphUri === graphUri) {
-        clearTimeout(timeout);
-        bc.removeEventListener('message', handler);
+      const data = ev.data;
+      if (data.type !== 'sync-response' || data.groupDid !== groupDid) return;
+      clearTimeout(timeout);
+      bc.removeEventListener('message', handler);
 
-        const data = ev.data;
-        const governance = setupGovernance(graph, data.ownerDid);
-        issueMemberZcap(governance, did, graph.uri, data.ownerDid);
+      const governance = setupGovernance(context, data.ownerDid);
+      issueMemberZcap(governance, did, context.did, data.ownerDid);
 
-        // Copy existing governance state
-        if (data.slowModeChannels) {
-          for (const [k, v] of Object.entries(data.slowModeChannels)) {
-            governance.slowModeChannels.set(k, v as number);
-          }
+      if (data.slowModeChannels) for (const [k, v] of Object.entries(data.slowModeChannels)) governance.slowModeChannels.set(k, v as number);
+      if (data.readOnlyChannels) for (const ch of data.readOnlyChannels) governance.readOnlyChannels.add(ch as string);
+      if (data.bannedDids) for (const d of data.bannedDids) governance.bannedDids.add(d as string);
+
+      const messages = new Map<string, ChatMessage[]>();
+      if (data.messages) {
+        for (const [chId, msgs] of Object.entries(data.messages)) {
+          messages.set(chId, (msgs as ChatMessage[]).map(m => ({
+            ...m,
+            reactions: new Map(Object.entries(m.reactions || {}).map(([emoji, dids]) => [emoji, new Set(dids as unknown as string[])])),
+          })));
         }
-        if (data.readOnlyChannels) {
-          for (const ch of data.readOnlyChannels) {
-            governance.readOnlyChannels.add(ch as string);
-          }
-        }
-        if (data.bannedDids) {
-          for (const d of data.bannedDids) {
-            governance.bannedDids.add(d as string);
-          }
-        }
-
-        const messages = new Map<string, ChatMessage[]>();
-        if (data.messages) {
-          for (const [chId, msgs] of Object.entries(data.messages)) {
-            messages.set(chId, (msgs as any[]).map(m => ({
-              ...m,
-              reactions: new Map(Object.entries(m.reactions || {}).map(
-                ([emoji, dids]) => [emoji, new Set(dids as string[])]
-              )),
-            })));
-          }
-        }
-        // Ensure all channels have entries
-        for (const ch of data.channels) {
-          if (!messages.has(ch.id)) messages.set(ch.id, []);
-        }
-
-        const state: AppState = {
-          did, displayName, graph,
-          group: null, // Joined groups don't have local Group object yet
-          groupDid: data.groupDid || '',
-          communityId: data.communityId,
-          communityName: data.communityName,
-          channels: data.channels,
-          roles: data.roles,
-          roleGroups: new Map(),
-          members: [...data.members],
-          messages,
-          governance, isOwner: false, bc, identity,
-          governanceLogs: [],
-        };
-
-        // Add self as member
-        const memberId = `member:${crypto.randomUUID()}`;
-        const memberRole = state.roles.find(r => r.name === 'Member');
-        state.members.push({ id: memberId, did, name: displayName, roleIds: memberRole ? [memberRole.id] : [] });
-
-        // Broadcast new member
-        bc.postMessage({
-          type: 'new-member',
-          graphUri: graph.uri,
-          member: { id: memberId, did, name: displayName, roleIds: memberRole ? [memberRole.id] : [] },
-        });
-
-        setupCrossTabSync(state);
-        resolve(state);
       }
+      for (const ch of data.channels) if (!messages.has(ch.id)) messages.set(ch.id, []);
+
+      const state: AppState = {
+        did, displayName, store, context,
+        group: null,
+        groupDid: data.groupDid || groupDid,
+        communityId: data.communityId,
+        communityName: data.communityName,
+        channels: data.channels,
+        roles: data.roles,
+        roleGroups: new Map(),
+        members: [...data.members],
+        messages,
+        governance, isOwner: false, bc, identity,
+        governanceLogs: [],
+      };
+
+      const memberId = `member:${crypto.randomUUID()}`;
+      const memberRole = state.roles.find(r => r.name === 'Member');
+      state.members.push({ id: memberId, did, name: displayName, roleIds: memberRole ? [memberRole.id] : [] });
+
+      bc.postMessage({
+        type: 'new-member',
+        groupDid: state.groupDid,
+        member: { id: memberId, did, name: displayName, roleIds: memberRole ? [memberRole.id] : [] },
+      });
+
+      setupCrossTabSync(state);
+      resolve(state);
     };
 
     bc.addEventListener('message', handler);
-    bc.postMessage({ type: 'sync-request', graphUri, did, displayName });
+    bc.postMessage({ type: 'sync-request', groupDid, did, displayName });
   });
 }
 
-function serializeMessages(messages: Map<string, ChatMessage[]>): Record<string, any[]> {
-  const out: Record<string, any[]> = {};
+function serializeMessages(messages: Map<string, ChatMessage[]>): Record<string, unknown[]> {
+  const out: Record<string, unknown[]> = {};
   for (const [chId, msgs] of messages) {
     out[chId] = msgs.map(m => ({
       ...m,
-      reactions: Object.fromEntries(
-        Array.from(m.reactions.entries()).map(([emoji, dids]) => [emoji, Array.from(dids)])
-      ),
+      reactions: Object.fromEntries([...m.reactions.entries()].map(([emoji, dids]) => [emoji, [...dids]])),
     }));
   }
   return out;
 }
 
 function setupCrossTabSync(state: AppState): void {
-  const { bc, graph } = state;
-
+  const { bc, context } = state;
   bc.addEventListener('message', (ev: MessageEvent) => {
     const msg = ev.data;
-
-    if (msg.type === 'sync-request' && msg.graphUri === graph.uri && state.isOwner) {
+    if (msg.type === 'sync-request' && msg.groupDid === context.did && state.isOwner) {
       bc.postMessage({
         type: 'sync-response',
-        graphUri: graph.uri,
+        groupDid: context.did,
         ownerDid: state.did,
-        groupDid: state.groupDid,
         communityId: state.communityId,
         communityName: state.communityName,
         channels: state.channels,
@@ -318,44 +290,35 @@ function setupCrossTabSync(state: AppState): void {
         members: state.members,
         messages: serializeMessages(state.messages),
         slowModeChannels: Object.fromEntries(state.governance.slowModeChannels),
-        readOnlyChannels: Array.from(state.governance.readOnlyChannels),
-        bannedDids: Array.from(state.governance.bannedDids),
+        readOnlyChannels: [...state.governance.readOnlyChannels],
+        bannedDids: [...state.governance.bannedDids],
       });
     }
-
-    if (msg.type === 'new-message' && msg.graphUri === graph.uri && msg.message.authorDid !== state.did) {
+    if (msg.type === 'new-message' && msg.groupDid === context.did && msg.message.authorDid !== state.did) {
       const chMsgs = state.messages.get(msg.message.channelId) ?? [];
       const m = msg.message;
       chMsgs.push({
         ...m,
-        reactions: new Map(Object.entries(m.reactions || {}).map(
-          ([emoji, dids]: [string, any]) => [emoji, new Set(dids as string[])]
-        )),
+        reactions: new Map(Object.entries(m.reactions || {}).map(([emoji, dids]) => [emoji, new Set(dids as string[])])),
       });
       state.messages.set(msg.message.channelId, chMsgs);
       document.dispatchEvent(new CustomEvent('chat-update', { detail: { type: 'message' } }));
     }
-
-    if (msg.type === 'new-member' && msg.graphUri === graph.uri) {
+    if (msg.type === 'new-member' && msg.groupDid === context.did) {
       if (!state.members.find(m => m.did === msg.member.did)) {
         state.members.push(msg.member);
-        // Issue ZCAP for new member if we're owner
-        if (state.isOwner) {
-          issueMemberZcap(state.governance, msg.member.did, graph.uri, state.did);
-        }
+        if (state.isOwner) issueMemberZcap(state.governance, msg.member.did, context.did, state.did);
         document.dispatchEvent(new CustomEvent('chat-update', { detail: { type: 'member' } }));
       }
     }
-
-    if (msg.type === 'new-channel' && msg.graphUri === graph.uri) {
+    if (msg.type === 'new-channel' && msg.groupDid === context.did) {
       if (!state.channels.find(c => c.id === msg.channel.id)) {
         state.channels.push(msg.channel);
         state.messages.set(msg.channel.id, []);
         document.dispatchEvent(new CustomEvent('chat-update', { detail: { type: 'channel' } }));
       }
     }
-
-    if (msg.type === 'governance-update' && msg.graphUri === graph.uri) {
+    if (msg.type === 'governance-update' && msg.groupDid === context.did) {
       if (msg.action === 'slow-mode') {
         if (msg.interval > 0) state.governance.slowModeChannels.set(msg.channelId, msg.interval);
         else state.governance.slowModeChannels.delete(msg.channelId);
@@ -369,8 +332,7 @@ function setupCrossTabSync(state: AppState): void {
       }
       document.dispatchEvent(new CustomEvent('chat-update', { detail: { type: 'governance' } }));
     }
-
-    if (msg.type === 'reaction' && msg.graphUri === graph.uri) {
+    if (msg.type === 'reaction' && msg.groupDid === context.did) {
       const chMsgs = state.messages.get(msg.channelId) ?? [];
       const chatMsg = chMsgs.find(m => m.id === msg.messageId);
       if (chatMsg) {
@@ -379,8 +341,7 @@ function setupCrossTabSync(state: AppState): void {
         document.dispatchEvent(new CustomEvent('chat-update', { detail: { type: 'reaction' } }));
       }
     }
-
-    if (msg.type === 'delete-message' && msg.graphUri === graph.uri) {
+    if (msg.type === 'delete-message' && msg.groupDid === context.did) {
       const chMsgs = state.messages.get(msg.channelId) ?? [];
       const idx = chMsgs.findIndex(m => m.id === msg.messageId);
       if (idx !== -1) {

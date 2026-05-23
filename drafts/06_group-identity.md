@@ -3,18 +3,19 @@
 **W3C Draft Community Group Report**
 
 **Latest published version:** This document
+**Editor:** [TBD]
 
-**Editors:**
+---
 
-- [Editor Name], [Affiliation]
+## Abstract
 
-**Abstract:**
+This specification defines a pattern for decentralised group identity on the web, built on the primitives defined in [[PERSONAL-LINKED-DATA-GRAPHS]] (contexts), [[DECENTRALISED-IDENTITY]] (`did:graph`), and [[GRAPH-GOVERNANCE]] (ZCAP-based authorisation). A **group** is a context with a `did:graph:...` DID. Two distinct concerns are kept structurally separate: **participation** (who is *part of* the group, declared from below via `context://participates_in`) and **signing authority** (who can currently *sign as* the group, declared in the group's DID document as `capabilityInvocation` delegates). This separation also rules out multisig and threshold signatures as a substrate concern: shared signing authority is achieved via DID-document delegates. Groups remain isomorphic to individuals (a group of one is structurally identical to a group of many) and remain nestable to arbitrary depth (groups may participate in other groups), with the participation-from-below semantics ensuring that no parent can reach into a child's internal governance.
 
-This specification defines a data model and API for decentralised group identity on the web. A group is a persistent, DID-identified entity whose identity is independent of its membership. Groups are isomorphic — a group of one is structurally identical to a group of many. Groups may be members of other groups, enabling fractal holonic composition. This specification builds on Personal Linked Data Graphs [[SPEC-01]], Decentralised Identity [[SPEC-02]], P2P Graph Synchronisation [[SPEC-03]], and Graph Governance [[SPEC-05]].
+---
 
-**Status of This Document:**
+## Status of This Document
 
-This is a draft community group report. It has no official standing.
+This document is a draft Community Group Report. It has no official W3C standing.
 
 ---
 
@@ -24,15 +25,17 @@ This is a draft community group report. It has no official standing.
 2. [Conformance](#2-conformance)
 3. [Terminology](#3-terminology)
 4. [Data Model](#4-data-model)
-5. [API](#5-api)
-6. [Group Lifecycle](#6-group-lifecycle)
-7. [Governance Integration](#7-governance-integration)
-8. [Isomorphism: Individual = Group of One](#8-isomorphism-individual--group-of-one)
-9. [Security Considerations](#9-security-considerations)
-10. [Privacy Considerations](#10-privacy-considerations)
-11. [Examples](#11-examples)
-12. [Predicate Reference Table](#12-predicate-reference-table)
-13. [References](#13-references)
+5. [Two Distinct Concerns: Participation vs Signing Authority](#5-two-distinct-concerns-participation-vs-signing-authority)
+6. [API](#6-api)
+7. [Group Lifecycle](#7-group-lifecycle)
+8. [Governance Integration](#8-governance-integration)
+9. [Isomorphism: Individual = Group of One](#9-isomorphism-individual--group-of-one)
+10. [Delegated Voting Use Case](#10-delegated-voting-use-case)
+11. [Security Considerations](#11-security-considerations)
+12. [Privacy Considerations](#12-privacy-considerations)
+13. [Examples](#13-examples)
+14. [Predicate Reference Table](#14-predicate-reference-table)
+15. [References](#15-references)
 
 ---
 
@@ -40,66 +43,57 @@ This is a draft community group report. It has no official standing.
 
 ### 1.1 Motivation
 
-The web has identity for individuals. The Decentralised Identifiers (DID) specification [[DID-CORE]] provides a mechanism by which any autonomous agent — human or software — can create, control, and present a globally unique identifier without reliance on a centralised registry. Combined with personal linked data graphs [[SPEC-01]] and peer-to-peer sync [[SPEC-03]], individual agents can own their data and share it on their own terms.
+The web has identity for individuals via DIDs ([[DID-CORE]]). It also needs identity for collectives — teams, communities, organisations, families, coalitions. This specification defines how to build collective identity on top of the existing primitives — without introducing a separate group-specific data type.
 
-But people do not act only as individuals. They act as teams, organisations, families, communities, consortia, coalitions, and ad-hoc collaborations. Every meaningful human endeavour involves collective action, and collective action requires collective identity.
+A group is a context (a named graph with a `did:graph:...` DID; see [[PERSONAL-LINKED-DATA-GRAPHS]] §3.3). Both individuals and collectives hold DIDs. Both can sign. Both can hold capabilities. Both can participate in larger contexts.
 
-The web has no native primitive for this.
+This specification is therefore a *pattern document*: it describes how to use the other Living Web specifications together to express collective identity, with particular attention to **two concerns that must be kept distinct**:
 
-Every existing system forces groups into platform-specific constructs. A Discord server is not addressable from Slack. A GitHub organisation cannot be referenced from a project management tool. A family group chat on one messaging platform has no identity that carries to another. These constructs do not compose, do not interoperate, and cannot be referenced across systems. They are not identities — they are platform features.
+- **Participation** — who is *part of* this collective? Declared from below via `context://participates_in`. ([[GRAPH-GOVERNANCE]] §6 defines the scope-resolution mechanics.)
+- **Signing authority** — who currently can *sign as* this collective? Declared in the group's DID document via `verificationMethod` + `capabilityInvocation` ([[DECENTRALISED-IDENTITY]] §5).
 
-This specification defines a **group**: a DID-identified entity with mutable membership, composable via recursive nesting, and governed by its own shared graph. A group is the missing collective primitive for the decentralised web.
+In conventional systems these are conflated (a "member" is implicitly a "signer"). This specification separates them, with the result that the same model scales from a personal identity to a multinational federation using one set of primitives.
 
 ### 1.2 Design Principles
 
-Three principles govern the design of this specification:
+**Principle 1: A group of one is structurally identical to a group of many.** A personal `did:key` and a collective `did:graph` are both DIDs. A `did:graph` whose DID document has exactly one `capabilityInvocation` delegate is structurally identical to one with one hundred delegates, except for the size of the delegate set. The transition is membership growth, not a mode switch. See [§9](#9-isomorphism-individual--group-of-one).
 
-**Principle 1: A group of one is no different from a group of many.** An individual is a degenerate case of a group with a single member. There is no special "individual mode" — every agent operates through the group primitive. A personal identity IS a group with membership: \[self\]. This is not a convenience abstraction; it is the literal data model. Section 8 elaborates this principle in detail.
+**Principle 2: Identity persists independent of participation and delegate set.** A `did:graph` persists across changes in both who participates and who signs. A team that replaces every member over a decade is still the same team — its `did:graph:...` is unchanged.
 
-**Principle 2: Group identity and group membership are distinct.** A group has a DID that persists across membership changes. Members join and leave; the group remains the same group. Identity is not the set of members — it is the entity itself. A football team that replaces every player over a decade is still the same team. A company that turns over its entire workforce is still the same company. The group DID captures this.
-
-**Principle 3: Groups can be members of groups.** A team (group) can join an organisation (group). An organisation can join a consortium (group). The membership relation is recursive. This enables fractal holonic composition — individuals within teams within organisations within networks — all using the same primitive at every level.
+**Principle 3: Groups can participate in groups, to arbitrary depth.** A group's `did:graph` MAY declare `context://participates_in <larger-graph>` in its own context. The substrate provides participation-from-below for the entire nesting structure. See [§4.3](#43-context-nesting).
 
 ### 1.3 Use Cases
 
-The group primitive is intentionally general. The following use cases illustrate its range:
+- **Teams.** A team creates a `did:graph` for itself. Initial delegates are the founding members.
+- **Organisations.** A company creates a `did:graph` and accepts participation from department `did:graph`s. The company's delegate set is its executive officers; departments have their own delegates.
+- **Communities.** An open community creates a `did:graph` with governance rules ([[GRAPH-GOVERNANCE]]) defining participation criteria, delegate addition processes, and decision-making structure.
+- **Families.** A family creates a `did:graph` for shared photos, calendars, documents.
+- **DAOs.** A decentralised autonomous organisation uses a `did:graph` with on-chain-style governance encoded as flow definitions ([[GRAPH-FLOWS]]).
+- **Ad-hoc collaborations.** Three people create a temporary `did:graph` for a weekend project.
+- **Federations.** Multiple organisations form a federation by each declaring `context://participates_in <federation-did>`; the federation's delegates are designated representatives.
+- **Delegated voting.** A voter delegates their vote to a `did:graph` (a working group of experts) rather than to a single person. The group's internal governance produces the vote; one of its `capabilityInvocation` delegates signs the resulting ballot. See [§10](#10-delegated-voting-use-case).
 
-- **Teams.** A software development team creates a group, invites members, and uses the group's shared graph to coordinate work. The team's DID is referenced in commit metadata, CI configurations, and access control lists.
-
-- **Organisations.** A company creates a group and nests department groups within it. The company group's DID appears in contracts, credentials, and inter-organisational agreements. Department membership changes do not affect the company's identity.
-
-- **Communities.** An open-source community creates a group with governance rules defining how members join, what roles exist, and how decisions are made. The community's DID is its persistent identity across platforms.
-
-- **Families.** A family creates a group for shared photos, calendars, and documents. The group persists as children grow up and new members join through marriage or birth.
-
-- **DAOs and cooperatives.** Decentralised autonomous organisations use group identity with governance rules that encode their decision-making processes. Membership is managed through the group's governance, not through a platform's admin panel.
-
-- **Ad-hoc collaborations.** Three people working on a weekend project create a group. It exists for a month and then goes dormant. The group's DID and shared graph persist as a record of the collaboration.
-
-- **Federations and consortia.** Multiple organisations (each a group) form a consortium (another group). The consortium's governance defines how member organisations interact, what capabilities they share, and how decisions are made at the federation level.
-
-- **Nation-states and jurisdictions.** At the largest scale, the same primitive can represent political entities — groups of groups of groups, with governance at every level.
-
-All of these are the same data model. The same API. The same governance framework. The only differences are scale, membership count, and governance configuration.
+All of these use the same data model and the same API. The differences are scale and governance configuration.
 
 ---
 
 ## 2. Conformance
 
-The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in BCP 14 [[RFC2119]] [[RFC8174]] when, and only when, they appear in ALL CAPITALS, as shown here.
+The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "NOT RECOMMENDED", "MAY", and "OPTIONAL" are to be interpreted as described in BCP 14 [[RFC2119]] [[RFC8174]].
 
-A conforming implementation MUST support:
+A conforming implementation MUST:
 
-1. The data model defined in Section 4, including all REQUIRED predicates.
-2. The API defined in Section 5, including all methods marked as REQUIRED.
-3. The group lifecycle defined in Section 6, including creation, joining, leaving, and nesting.
-4. The isomorphism property defined in Section 8: a group of one MUST be structurally and behaviourally identical to a group of many.
+1. Treat a "group" as a Context with a `did:graph:...` DID, per [[PERSONAL-LINKED-DATA-GRAPHS]] and [[DECENTRALISED-IDENTITY]].
+2. Use `context://participates_in` (declared from below) and the corresponding `context://accepts_participation` (declared from above) as the canonical participation relation ([§4.2](#42-participation)).
+3. Use DID-document delegates ([[DECENTRALISED-IDENTITY]] §5) as the canonical mechanism for shared signing authority ([§5.2](#52-signing-authority-did-document-delegates)).
+4. NOT define separate code paths or data stores for "individual" and "group" identity. The isomorphism property ([§9](#9-isomorphism-individual--group-of-one)) MUST hold.
 
-A conforming implementation MAY support:
+A conforming implementation MUST NOT:
 
-1. Additional predicates beyond those defined in this specification, provided they do not conflict with predicates in the `group://` namespace.
-2. Extended governance rules beyond those described in Section 7.
-3. Optimised transitive membership resolution algorithms, provided they produce results equivalent to the naive recursive algorithm described in Section 5.
+- Define multisig, threshold signing, or aggregate-key schemes for the group DID itself.
+- Conflate participation with signing authority.
+
+A conforming implementation MAY provide convenience APIs that look like a `Group` interface, provided they map to the underlying Context + DID + governance correctly.
 
 ---
 
@@ -108,31 +102,25 @@ A conforming implementation MAY support:
 <dl>
 
 <dt>Group</dt>
-<dd>A persistent entity identified by a DID, with a membership set and an associated shared graph. A group's identity is independent of its members. Groups are the fundamental collective primitive defined by this specification.</dd>
+<dd>A context with a <code>did:graph:...</code> DID, treated as a collective identity. "Group" is a usage term, not a separate data type. A group is just a context whose application semantics emphasise collective identity. See [[PERSONAL-LINKED-DATA-GRAPHS]] §3.3 for the underlying data structure.</dd>
 
 <dt>Group DID</dt>
-<dd>A decentralised identifier [[DID-CORE]] that uniquely identifies a group. The group DID is generated at group creation time and persists for the lifetime of the group, independent of membership changes. The DID document associated with a group DID contains the group's public key material and service endpoints.</dd>
+<dd>A <code>did:graph:...</code> DID identifying a group. The DID persists across changes in participation and delegate set. The DID document lists current delegates per [[DECENTRALISED-IDENTITY]] §5.</dd>
 
-<dt>Member</dt>
-<dd>An entity that belongs to a group. A member is identified by a DID, which MAY be either an individual DID or a group DID. The membership predicate makes no structural distinction between individual and group members.</dd>
+<dt>Participant</dt>
+<dd>An agent (or another group) that has declared <code>context://participates_in &lt;group-did&gt;</code> in its own context, where the group has mutually declared <code>context://accepts_participation</code>. Participation is about <em>being part of</em>, not about authority.</dd>
 
-<dt>Membership</dt>
-<dd>The current set of members of a group at a given point in time. Membership is mutable — members may be added or removed according to the group's governance rules. Membership is represented as a set of triples in the group's shared graph.</dd>
+<dt>Delegate</dt>
+<dd>An entry in the group's DID document's capability sections (<code>verificationMethod</code> + <code>capabilityInvocation</code> / <code>capabilityDelegation</code> / <code>assertionMethod</code>). A delegate's key can produce signatures that count as <em>the group's</em> signatures for the granted section. Delegates are about <em>signing as</em>, not about being a participant. The two roles overlap by convention but are not identical.</dd>
 
-<dt>Root Member</dt>
-<dd>The member or members with root authority over a group's governance. Initially, the root member is the group's creator. Root authority MAY be transferred or shared according to governance rules defined in [[SPEC-05]].</dd>
+<dt>Context Nesting</dt>
+<dd>The recursive composition where a group's <code>did:graph</code> participates in a larger group's context. Sovereignty flows from below: the child declares participation; the parent confirms acceptance.</dd>
 
-<dt>Holonic Nesting</dt>
-<dd>The recursive composition of groups within groups. When group G is a member of group H, G is said to be <em>nested</em> within H. The term "holonic" refers to the property that each group is simultaneously a whole (with its own members and governance) and a part (a member of a larger group). This nesting can recurse to arbitrary depth.</dd>
+<dt>Transitive Participation</dt>
+<dd>The set of all individual (non-group) agents reachable by recursively resolving group participations. Implementations MUST detect cycles.</dd>
 
-<dt>Transitive Membership</dt>
-<dd>The set of all individual (non-group) members reachable by recursively resolving group memberships. If group H contains group G, and G contains individuals Alice and Bob, then Alice and Bob are transitive members of H.</dd>
-
-<dt>Shared Graph</dt>
-<dd>A linked data graph synchronised across multiple peers via a peer-to-peer sync protocol [[SPEC-03]]. Every group has an associated shared graph that stores the group's identity triples, membership triples, and any additional data the group produces.</dd>
-
-<dt>Capability (ZCAP)</dt>
-<dd>An authorisation token, as defined in [[ZCAP-LD]], that grants a specific ability to a specific DID. In the context of group identity, capabilities may be delegated to individual member DIDs or to group DIDs. When delegated to a group DID, any member of that group may invoke the capability.</dd>
+<dt>Group-Specific Identity</dt>
+<dd>A privacy pattern where an agent uses a different <code>did:key</code> when participating in each group. The substrate makes this cheap; the recommended privacy posture per [[PERSONAL-LINKED-DATA-GRAPHS]] §10.2.</dd>
 
 </dl>
 
@@ -140,902 +128,738 @@ A conforming implementation MAY support:
 
 ## 4. Data Model
 
-### 4.1 Group Identity Triples
+### 4.1 Group Identity
 
-A group is represented as a set of triples in its shared graph. The following predicates are REQUIRED for every group:
+A group is a context. Its `did:graph:...` is its canonical identity. The DID document — itself triples inside the context, per [[DECENTRALISED-IDENTITY]] §4.2.2 — declares the group's current delegates.
 
-```
-<group-did>
-  -[rdf://type]→         "group://Group"
-  -[group://created]→     <dateTime>
-  -[group://creator]→     <creator-did>
-```
+Beyond the standard `did:graph` data model, a group MAY carry:
 
-The following predicates are OPTIONAL:
-
-```
-<group-did>
-  -[rdf://name]→          <literal>
-  -[rdf://description]→   <literal>
-  -[group://avatar]→      <uri>
-  -[group://metadata]→    <uri>
+```turtle
+<group-did>  group://name         "Engineering Team" ;
+             group://description  "The folks shipping the substrate" ;
+             group://avatar       <https://example.com/avatar.png> ;
+             group://created      "2026-05-23T00:00:00Z"^^xsd:dateTime ;
+             group://creator      <did:key:z6MkCreator...> .
 ```
 
-The `rdf://type` triple with value `"group://Group"` is the canonical marker that identifies an entity as a group. Implementations MUST recognise this type when resolving group identity.
+These predicates are stored as triples inside the group's own context.
 
-The `group://created` triple MUST contain an ISO 8601 dateTime value representing the moment of group creation.
+### 4.2 Participation
 
-The `group://creator` triple MUST contain the DID of the agent that created the group. This DID becomes the initial root member.
+Participation is declared **from below**: a participant context (which MAY be an individual's personal context or another group's context) authors a triple in *its own* graph:
 
-### 4.2 Membership Triples
-
-Membership is expressed as triples linking the group DID to member DIDs:
-
-```
-<group-did> -[group://has_member]→ <member-did>
+```turtle
+# Inside the participant's context (e.g., did:graph:alice-personal):
+<did:graph:alice-personal>  context://participates_in  <did:graph:engineering-team> .
 ```
 
-Where `<member-did>` is a DID identifying the member. This DID MAY be:
+The group context confirms acceptance from above:
 
-- An individual DID (e.g., `did:key:z6MkhaXgBZD...`) — representing a person or software agent.
-- A group DID (e.g., `did:key:z6MknGc7Yuw...`) — representing another group (holonic nesting).
-
-There is **no structural difference** between individual and group members at the triple level. The membership predicate is identical. Implementations that need to distinguish between individual and group members MUST resolve the member DID and check for the presence of a `rdf://type` → `"group://Group"` triple in the member's graph.
-
-Each membership triple MAY be accompanied by metadata:
-
-```
-<membership-uri>
-  -[rdf://type]→              "group://Membership"
-  -[group://member]→          <member-did>
-  -[group://group]→           <group-did>
-  -[group://joined_at]→       <dateTime>
-  -[group://invited_by]→      <inviter-did>
-  -[group://role]→            <literal>
+```turtle
+# Inside the group's context (did:graph:engineering-team):
+<did:graph:engineering-team>  context://accepts_participation  <did:graph:alice-personal> .
 ```
 
-The `group://joined_at` triple SHOULD be present and MUST contain an ISO 8601 dateTime value. The `group://invited_by` and `group://role` triples are OPTIONAL.
+Both directions are REQUIRED. Unilateral participation claims (where the child declares but the parent does not accept, or vice versa) are ignored for scope inheritance ([[GRAPH-GOVERNANCE]] §6.1).
 
-### 4.3 Group as Shared Graph
+The acceptance MUST be authored by a delegate in the group's `capabilityDelegation` section AND requires an `acceptParticipation` ZCAP on the group's context.
 
-Every group MUST have an associated shared graph, as defined in [[SPEC-03]]. The relationship between a group and its shared graph is fundamental:
+The participation triple lives in the participant's graph. The acceptance triple lives in the group's graph. The participant always controls whether they participate (they can remove their own triple). The group controls whether to accept (it can withdraw its acceptance).
 
-1. The group's shared graph is the authoritative store for the group's identity triples, membership triples, and governance rules.
-2. Members of the group are peers in the shared graph's sync protocol.
-3. The group's DID is the root authority for the shared graph's governance, as defined in [[SPEC-05]].
+### 4.3 Context Nesting
 
-When a group is created, the following sequence MUST occur:
+A group is itself a context, so it can participate in other groups. A team participates in a project; the project participates in a department; the department participates in a company:
 
-1. A new keypair is generated.
-2. A DID is derived from the public key.
-3. A shared graph is created using the sync protocol [[SPEC-03]].
-4. The group identity triples (Section 4.1) are added to the shared graph.
-5. The creator's DID is added as the first member (Section 4.2).
-6. The creator is granted root authority for the shared graph's governance [[SPEC-05]].
+```turtle
+# In did:graph:engineering-team:
+<did:graph:engineering-team>  context://participates_in  <did:graph:project-alpha> .
 
-The shared graph MUST be accessible to all current members. When a member is removed, their access to the shared graph SHOULD be revoked according to the sync protocol's access control mechanisms.
+# In did:graph:project-alpha:
+<did:graph:project-alpha>     context://participates_in  <did:graph:r-and-d> .
+
+# In did:graph:r-and-d:
+<did:graph:r-and-d>           context://participates_in  <did:graph:acme-corp> .
+```
+
+Each layer is its own context with its own delegates and its own governance. Nesting is detected by walking `context://participates_in` links upward; the runtime MUST enforce a maximum nesting depth (RECOMMENDED: 16) and MUST detect cycles.
+
+An individual who participates in `engineering-team` is NOT automatically a participant of `acme-corp`. Membership is not transitive by default. Capability delegation flows differently (see [§8](#8-governance-integration)).
 
 ### 4.4 Group of One
 
-An individual's personal identity is a group with exactly one member — themselves. This is not a special case; it is the default case.
+An individual's identity IS a group with exactly one delegate (themselves). When `navigator.credentials.create({ did: { method: "key", ... } })` runs, the resulting `did:key` is structurally a group of one — a DID with a verification method, and the single agent who controls the key is the sole signer.
 
-When a user agent creates a decentralised identity via `navigator.credentials.create({did})` [[SPEC-02]], the following MUST occur:
+If the user wants their personal identity to support adding delegates (e.g., they want to designate a software agent to sign on their behalf), they MAY create their identity as a `did:graph` instead of a `did:key`. The application API is the same.
 
-1. A keypair and DID are generated for the individual.
-2. A personal linked data graph is created [[SPEC-01]].
-3. A group is implicitly created with the individual as the sole member.
-4. The personal graph IS the group's shared graph.
-5. The individual is the root authority for the group's governance.
-
-Conforming implementations MUST NOT provide separate code paths for "individual" and "group" operations. The API defined in Section 5 MUST behave identically whether the group contains one member or one million members.
-
-This means:
-
-- An individual's personal graph is accessible via the `Group` interface.
-- Adding a collaborator to a personal graph is equivalent to adding a member to a group.
-- The transition from individual to collective is not a mode switch — it is a membership count change.
-
-### 4.5 Holonic Nesting
-
-A group MAY be a member of another group. This enables recursive composition of collective identity.
-
-When a group G becomes a member of group H:
-
-1. G's DID is added to H's membership set: `<H-did> -[group://has_member]→ <G-did>`.
-2. G's members do NOT automatically become members of H. Membership is not transitive by default.
-3. G retains its own identity, its own shared graph, and its own governance. Nesting does not merge groups.
-4. H's governance MAY grant capabilities to G's DID via ZCAP delegation [[ZCAP-LD]]. When a capability is delegated to a group DID, any current member of that group MAY invoke the capability (see Section 7).
-
-Implementations MUST support nesting to at least 8 levels of depth. Implementations SHOULD support arbitrary nesting depth but MAY impose a configurable maximum to prevent resource exhaustion during transitive membership resolution.
-
-The nesting relation is directed. If G is a member of H, H is NOT automatically a member of G. Bidirectional nesting (G is a member of H, and H is a member of G) is permitted but implementations MUST detect cycles during transitive membership resolution and terminate traversal when a cycle is encountered.
+This means there is no separate "create a group" flow that conjures something new. Inviting a collaborator is delegate addition (and optionally participation acceptance) on an existing context.
 
 ---
 
-## 5. API
+## 5. Two Distinct Concerns: Participation vs Signing Authority
 
-### 5.1 Group Interface
+This section is normative.
 
-The `Group` interface is the primary API for interacting with group identity.
+"Member" can mean both "is part of this group" and "can sign as this group." This specification separates these two concerns, because they answer different questions, follow different lifecycles, and warrant different governance.
+
+### 5.1 Participation
+
+**Question answered:** "Who is part of this group?"
+
+**Recorded in:** Triples in participant contexts (`context://participates_in`) plus reciprocal acceptance in the group context (`context://accepts_participation`).
+
+**Authority required:** The participant declares; the group accepts via an `acceptParticipation` ZCAP held by a `capabilityDelegation` delegate.
+
+**Consequences:** Inheritance of governance constraints ([[GRAPH-GOVERNANCE]] §6), visibility in `transitiveParticipants()`, eligibility for capabilities delegated to the group with `context://capability_transitive: true`.
+
+**Lifecycle:** Either side can revoke. Participants can simply remove their `participates_in` triple. Groups can remove their `accepts_participation` triple.
+
+### 5.2 Signing Authority (DID-Document Delegates)
+
+**Question answered:** "Who can currently sign as this group?"
+
+**Recorded in:** Triples in the group's own DID document, in the `verificationMethod` and capability sections (`capabilityInvocation`, `capabilityDelegation`, `assertionMethod`, `authentication`). See [[DECENTRALISED-IDENTITY]] §5.
+
+**Authority required:** An `updateDIDDocument` ZCAP held by the agent making the change.
+
+**Consequences:** A signature by any current delegate's method counts as a signature *by the group* for the granted capability section. Used to invoke ZCAPs, sign expressions, and sign snapshots on the group's behalf.
+
+**Lifecycle:** Add, remove, promote, demote, rotate per [[DECENTRALISED-IDENTITY]] §5.3.
+
+### 5.3 Why They Are Separate
+
+Consider a company. The CEO can sign contracts on the company's behalf — they are a `capabilityInvocation` delegate. Every employee is a participant in the company — but most employees cannot sign contracts. Conflating the two would make every employee able to bind the company (chaos) or require every contract to involve every employee (impossible).
+
+Concretely:
+
+- **Participation answers governance scope.** What rules apply to your writes? You inherit them from the contexts you participate in.
+- **Signing authority answers attribution.** When a signature is presented, who counts as the signer? Any current delegate.
+
+The two overlap by convention (a participant who is also a `capabilityInvocation` delegate is common). But the substrate keeps them in different sections of the data model so they can be managed independently.
+
+### 5.4 Common Patterns
+
+| Pattern | Participants | Delegates |
+|---|---|---|
+| Personal identity (`did:key`) | One (self) | One (self) |
+| Tight team | Everyone is a participant | Everyone is a `capabilityInvocation` delegate |
+| Org with execs | Everyone is a participant | Only execs are `capabilityInvocation` delegates |
+| Council-led community | Everyone is a participant | Only council members are delegates |
+| Federation | Member orgs are participants | Only nominated representatives are delegates |
+| Bot-augmented team | Humans are participants | Humans + an AI agent are `capabilityInvocation` delegates |
+
+### 5.5 Non-Goal: Multisig
+
+This specification explicitly does NOT define multisig, threshold signatures, or aggregate-key schemes for the group DID itself. Shared signing authority is achieved via DID-document delegates — any current delegate produces a signature that counts as the group's signature.
+
+Joint *operational* approval (e.g., two delegates must each sign a particular ZCAP) MAY be expressed as a Content caveat on a ZCAP ([[GRAPH-GOVERNANCE]] §9.2):
+
+```json
+{
+  "type": "content",
+  "sparql": "ASK { ... two distinct delegate signatures present ... }"
+}
+```
+
+But this is governance-layer composition, not a built-in cryptographic feature of the DID.
+
+---
+
+## 6. API
+
+### 6.1 The Group Convenience Interface
+
+The `Group` interface is a thin convenience wrapper over `Context` + `DIDCredential`. It exists for ergonomics; everything it does can be done directly via the underlying APIs.
 
 ```webidl
 [Exposed=Window, SecureContext]
 interface Group {
-  readonly attribute USVString did;
-  readonly attribute USVString name;
-  readonly attribute USVString description;
+  readonly attribute USVString did;          // did:graph:...
+  readonly attribute Context context;
+  readonly attribute USVString? name;
+  readonly attribute USVString? description;
   readonly attribute DOMTimeStamp created;
-  readonly attribute SharedGraph graph;
+  readonly attribute USVString creator;
 
-  // Membership
-  [NewObject] Promise<sequence<Member>> members();
-  [NewObject] Promise<undefined> addMember(USVString memberDid);
-  [NewObject] Promise<undefined> removeMember(USVString memberDid);
-  [NewObject] Promise<boolean> isMember(USVString did);
-
-  // Holonic queries
+  // Participation
+  [NewObject] Promise<sequence<Participant>> participants();
+  [NewObject] Promise<sequence<Participant>> transitiveParticipants();
   [NewObject] Promise<sequence<Group>> parentGroups();
   [NewObject] Promise<sequence<Group>> childGroups();
-  [NewObject] Promise<sequence<Member>> transitiveMembers();
+  [NewObject] Promise<undefined> invite(USVString participantDid);
+  [NewObject] Promise<undefined> revokeParticipation(USVString participantDid);
+  [NewObject] Promise<boolean> hasParticipant(USVString did);
 
-  // Governance delegation
-  [NewObject] Promise<undefined> delegateCapability(
-    USVString memberDid,
-    USVString predicate,
-    USVString scope
-  );
+  // Signing authority (delegate management)
+  [NewObject] Promise<sequence<DIDDocumentMethod>> signers(optional DIDCapabilitySection section);
+  [NewObject] Promise<undefined> addSigner(DIDDocumentMethod method, sequence<DIDCapabilitySection> sections);
+  [NewObject] Promise<undefined> removeSigner(USVString methodId);
+  [NewObject] Promise<boolean> isSigner(USVString did, optional DIDCapabilitySection section);
 
-  // Identity
-  [NewObject] Promise<any> resolve();
+  // Capability delegation
+  [NewObject] Promise<SignedContent> delegateCapability(DelegateOptions options);
+
+  // Identity resolution
+  [NewObject] Promise<DIDDocument> resolve();
 };
-```
 
-#### 5.1.1 Attributes
-
-The `did` attribute MUST return the group's DID as a USVString.
-
-The `name` attribute MUST return the value of the `rdf://name` triple for this group, or the empty string if no name is set.
-
-The `description` attribute MUST return the value of the `rdf://description` triple for this group, or the empty string if no description is set.
-
-The `created` attribute MUST return the value of the `group://created` triple as a DOMTimeStamp.
-
-The `graph` attribute MUST return the `SharedGraph` object [[SPEC-03]] associated with this group.
-
-#### 5.1.2 members()
-
-The `members()` method MUST return a Promise that resolves to a sequence of `Member` dictionaries representing the current direct members of the group.
-
-This method MUST return only direct members — DIDs that appear in `group://has_member` triples for this group. It MUST NOT recursively resolve group members. For recursive resolution, use `transitiveMembers()`.
-
-#### 5.1.3 addMember(memberDid)
-
-The `addMember()` method MUST:
-
-1. Verify that the caller has the `manage_members` governance capability for this group.
-2. Verify that `memberDid` is a valid DID.
-3. Add a `<group-did> -[group://has_member]→ <memberDid>` triple to the group's shared graph.
-4. Add a corresponding membership metadata triple with the current timestamp as `group://joined_at`.
-5. Return a Promise that resolves to `undefined` on success.
-
-If the caller lacks the `manage_members` capability, the Promise MUST reject with a `"NotAllowedError"` DOMException.
-
-If `memberDid` is already a member, the method SHOULD resolve successfully without adding a duplicate triple.
-
-#### 5.1.4 removeMember(memberDid)
-
-The `removeMember()` method MUST:
-
-1. Verify that the caller has the `manage_members` governance capability for this group, OR that `memberDid` is the caller's own DID (a member MAY always remove themselves).
-2. Remove the `<group-did> -[group://has_member]→ <memberDid>` triple from the group's shared graph.
-3. Remove any associated membership metadata triples.
-4. Return a Promise that resolves to `undefined` on success.
-
-If the caller lacks authority and is not removing themselves, the Promise MUST reject with a `"NotAllowedError"` DOMException.
-
-Removing the last member of a group does not destroy the group. The group's DID, shared graph, and identity triples persist. A group with zero members is a valid state.
-
-#### 5.1.5 isMember(did)
-
-The `isMember()` method MUST return a Promise that resolves to `true` if the given DID is a direct member of this group, and `false` otherwise. This method checks direct membership only — it does not perform transitive resolution.
-
-#### 5.1.6 parentGroups()
-
-The `parentGroups()` method MUST return a Promise that resolves to a sequence of `Group` objects representing groups that contain this group as a member. Discovery of parent groups requires querying known shared graphs for `group://has_member` triples pointing to this group's DID.
-
-Implementations MAY cache parent group relationships. Implementations SHOULD provide a mechanism for discovering parent groups via relay services or DID document service endpoints.
-
-#### 5.1.7 childGroups()
-
-The `childGroups()` method MUST return a Promise that resolves to a sequence of `Group` objects representing members of this group that are themselves groups. This is determined by checking each member DID for the `rdf://type` → `"group://Group"` triple.
-
-#### 5.1.8 transitiveMembers()
-
-The `transitiveMembers()` method MUST return a Promise that resolves to a sequence of `Member` dictionaries representing all individual (non-group) members reachable by recursively resolving group memberships.
-
-The algorithm is:
-
-1. Let *result* be an empty set.
-2. Let *visited* be an empty set (to detect cycles).
-3. For each direct member M of this group:
-   a. If M's DID is in *visited*, skip M (cycle detected).
-   b. Add M's DID to *visited*.
-   c. If M is not a group (no `rdf://type` → `"group://Group"` triple), add M to *result*.
-   d. If M is a group, recursively resolve M's transitive members and add them to *result*.
-4. Return *result*.
-
-Implementations MUST detect cycles and terminate traversal. Implementations MAY impose a maximum recursion depth and SHOULD return a partial result if the depth limit is reached, accompanied by a warning.
-
-#### 5.1.9 delegateCapability(memberDid, predicate, scope)
-
-The `delegateCapability()` method MUST:
-
-1. Verify that the caller has root authority or a delegatable capability for the specified predicate and scope.
-2. Create a ZCAP [[ZCAP-LD]] delegating the specified capability to `memberDid`.
-3. Add the ZCAP to the group's shared graph.
-4. Return a Promise that resolves to `undefined` on success.
-
-When `memberDid` is a group DID, the capability applies to all current members of that group. The governance engine MUST resolve group membership when verifying ZCAP invocations (see Section 7).
-
-#### 5.1.10 resolve()
-
-The `resolve()` method MUST return a Promise that resolves to the DID document associated with this group's DID, as defined in [[DID-CORE]]. The DID document includes the group's public key material, verification methods, and service endpoints.
-
-### 5.2 Member Dictionary
-
-```webidl
-dictionary Member {
+dictionary Participant {
   required USVString did;
-  required boolean isGroup;
+  required boolean isGroup;     // true if the participant is itself a did:graph
   USVString name;
   DOMTimeStamp joinedAt;
 };
+
+dictionary DelegateOptions {
+  required USVString invoker;       // DID receiving the capability
+  required sequence<USVString> actions;
+  required USVString resource;       // did:graph:... (typically this group's)
+  sequence<object> caveats;
+  USVString expiresAt;
+  boolean transitiveToParticipants;  // for invoker being a group DID
+};
 ```
 
-The `did` field MUST contain the member's DID.
+#### 6.1.1 invite(participantDid)
 
-The `isGroup` field MUST be `true` if the member is itself a group (has a `rdf://type` → `"group://Group"` triple), and `false` otherwise.
+Adds an `accepts_participation` triple in the group's context. Requires the caller to hold an `acceptParticipation` ZCAP. The named participant must then add its own `participates_in` triple in its own context to complete participation.
 
-The `name` field SHOULD contain the member's display name if available, or `null` if not.
+#### 6.1.2 revokeParticipation(participantDid)
 
-The `joinedAt` field SHOULD contain the timestamp at which the member joined the group, derived from the `group://joined_at` membership metadata triple.
+Removes the group's acceptance triple. Requires an `acceptParticipation` ZCAP.
 
-### 5.3 PersonalGraphManager Extension
+#### 6.1.3 participants() / transitiveParticipants()
 
-The `PersonalGraphManager` interface [[SPEC-01]] is extended with group management methods:
+`participants()` returns the direct participant set. `transitiveParticipants()` recursively resolves all individual participants of nested participating groups, with cycle detection per [§4.3](#43-context-nesting).
+
+#### 6.1.4 addSigner / removeSigner
+
+Wraps [[DECENTRALISED-IDENTITY]] §5.4's delegate management. Modifies the group's DID document. Requires `updateDIDDocument` ZCAP.
+
+#### 6.1.5 delegateCapability
+
+Issues a ZCAP whose `resource` is this group's `did:graph:...` (or another resource the group has authority over). Signed by a current `capabilityDelegation` delegate. Optionally `transitiveToParticipants` carries the `context://capability_transitive: true` predicate so the capability MAY be invoked by participants of the named invoker group.
+
+### 6.2 GraphStoreManager Extension
 
 ```webidl
-partial interface PersonalGraphManager {
-  [NewObject] Promise<Group> createGroup(optional GroupOptions options = {});
-  [NewObject] Promise<Group> joinGroup(USVString groupDid);
+partial interface GraphStoreManager {
+  [NewObject] Promise<Group> createGroup(optional GroupCreationOptions options);
+  [NewObject] Promise<Group> openGroup(USVString groupDid);
   [NewObject] Promise<sequence<Group>> listGroups();
 };
-```
 
-#### 5.3.1 createGroup(options)
-
-The `createGroup()` method MUST:
-
-1. Generate a new keypair and derive a DID for the group.
-2. Create a shared graph using the specified sync module (or a default if none is specified).
-3. Add the group identity triples to the shared graph (Section 4.1).
-4. Add the caller as the first member (Section 4.2).
-5. Grant the caller root authority for the group's governance [[SPEC-05]].
-6. Return a Promise that resolves to a `Group` object representing the new group.
-
-#### 5.3.2 joinGroup(groupDid)
-
-The `joinGroup()` method MUST:
-
-1. Resolve the group DID to discover the group's shared graph and relay endpoints.
-2. Join the shared graph's sync network [[SPEC-03]].
-3. Submit a membership request by adding a `<caller-did> -[group://membership_request]→ <group-did>` triple.
-4. Return a Promise that resolves to a `Group` object. The caller is not yet a member — membership is pending approval by an existing member with `manage_members` authority.
-
-Implementations MAY support auto-approval if the group's governance rules permit open membership.
-
-#### 5.3.3 listGroups()
-
-The `listGroups()` method MUST return a Promise that resolves to a sequence of `Group` objects representing all groups the caller is a member of (including the caller's implicit group of one).
-
-### 5.4 GroupOptions Dictionary
-
-```webidl
-dictionary GroupOptions {
-  USVString name;
-  USVString description;
-  USVString syncModule;
+dictionary GroupCreationOptions {
+  DOMString displayName;
+  DOMString description;
+  sequence<USVString> initialDelegates;   // additional DIDs to add as capabilityInvocation delegates
+  USVString participatesIn;                // did:graph of parent (if creating a sub-group)
+  USVString syncModule;                    // module hash for the group's sync
   sequence<USVString> relays;
+  EnforcementMode enforcementMode;         // initial governance mode
 };
+
+enum EnforcementMode { "open", "announced", "enforced" };
 ```
 
-The `name` field is an OPTIONAL human-readable name for the group.
+#### 6.2.1 createGroup
 
-The `description` field is an OPTIONAL human-readable description.
+Creates a new `did:graph` context, mounts it into the current GraphStore in `"governance"` mode, populates the standard `group://` metadata, and optionally configures sync ([[P2P-GRAPH-SYNC]]) and governance ([[GRAPH-GOVERNANCE]]). Returns a `Group` convenience handle.
 
-The `syncModule` field is an OPTIONAL identifier (e.g., content hash) for the sync module to use for the group's shared graph. If omitted, the implementation MUST use a default sync module.
+#### 6.2.2 openGroup
 
-The `relays` field is an OPTIONAL list of relay URIs for peer discovery in the group's shared graph.
-
----
-
-## 6. Group Lifecycle
-
-### 6.1 Creation
-
-Group creation follows the sequence defined in Section 5.3.1. The complete lifecycle is:
-
-1. **Key generation.** A new keypair is generated using a method compatible with the DID method in use. The private key MUST be stored securely by the creating agent.
-
-2. **DID derivation.** A DID is derived from the public key. The DID method SHOULD support key rotation to allow future changes to the group's key material.
-
-3. **Shared graph creation.** A new shared graph is created using the sync protocol [[SPEC-03]]. The sync module specified in `GroupOptions.syncModule` determines the sync behaviour. Relay URIs from `GroupOptions.relays` are used for peer discovery.
-
-4. **Identity triple insertion.** The group identity triples (Section 4.1) are added to the shared graph. The `group://creator` triple records the creating agent's DID.
-
-5. **Initial membership.** The creator's DID is added as the first member via a `group://has_member` triple.
-
-6. **Governance initialisation.** The creator is granted root authority over the shared graph's governance [[SPEC-05]]. This includes the `manage_members` capability by default.
-
-### 6.2 Joining
-
-An agent joins an existing group through the following process:
-
-1. **Discovery.** The agent receives the group's DID through an out-of-band mechanism (link, QR code, referral, etc.).
-
-2. **Graph sync.** The agent joins the group's shared graph by connecting to the sync network. Peer discovery uses the relay URIs in the group's DID document service endpoints.
-
-3. **Membership request.** The agent adds a membership request triple to the shared graph:
-   ```
-   <requester-did> -[group://membership_request]→ <group-did>
-   ```
-   This triple is propagated to all peers via the sync protocol.
-
-4. **Approval.** An existing member with the `manage_members` governance capability reviews the request and, if approved, adds the membership triple:
-   ```
-   <group-did> -[group://has_member]→ <requester-did>
-   ```
-   The request triple SHOULD be removed after approval or rejection.
-
-5. **Capability delegation.** The approving member MAY delegate governance capabilities to the new member via ZCAP [[ZCAP-LD]], according to the group's governance rules.
-
-6. **Sync participation.** Once added as a member, the new agent participates fully in the shared graph's sync protocol.
-
-### 6.3 Leaving
-
-A member leaves a group through one of two mechanisms:
-
-**Self-removal.** A member MAY remove their own membership triple at any time:
-```
-REMOVE: <group-did> -[group://has_member]→ <member-did>
-```
-
-This does not require any governance capability. A member always has the right to leave.
-
-**Removal by authority.** A member with the `manage_members` capability MAY remove another member's membership triple. This is the mechanism for ejecting members.
-
-In both cases:
-
-1. The `group://has_member` triple is removed from the shared graph.
-2. Associated membership metadata triples SHOULD be removed.
-3. Any ZCAPs delegated to the removed member for this group SHOULD be revoked.
-4. The group persists. Its DID, shared graph, and identity triples are unchanged.
-5. The group's governance rules continue to apply to remaining members.
-
-A group with zero members is a valid state. The group is not destroyed — it is dormant. If the group's governance rules permit it, new members MAY still join.
-
-### 6.4 Nesting
-
-A group joins another group through the standard membership mechanism, with the group's DID as the member identifier.
-
-1. **Initiation.** A member of group G with appropriate authority decides that G should join group H. The authority required is implementation-defined but SHOULD be the root authority or a specific `manage_group_membership` capability.
-
-2. **Request.** The authorised member of G calls `H.addMember(G.did)`, where `G.did` is the DID of group G.
-
-3. **Validation.** H's governance engine validates the request:
-   - Does the invoker have `manage_members` capability on H?
-   - Does H's governance permit group members (some groups MAY restrict membership to individuals only)?
-   - Would adding G create a cycle? (If H is already a transitive member of G, adding G to H creates a cycle. Implementations MUST detect and reject this if cycle prevention is enabled.)
-
-4. **Acceptance.** If approved, the membership triple is added:
-   ```
-   <H-did> -[group://has_member]→ <G-did>
-   ```
-
-5. **Capability propagation.** H's governance MAY delegate capabilities to G's DID. Any member of G can then invoke those capabilities when interacting with H's shared graph (see Section 7).
+Mounts an existing group's context (per [[PERSONAL-LINKED-DATA-GRAPHS]] §4.2) and returns the convenience handle.
 
 ---
 
-## 7. Governance Integration
+## 7. Group Lifecycle
 
-Groups integrate with the graph governance framework [[SPEC-05]] at multiple levels.
-
-### 7.1 Group as Governance Root
-
-The group's DID is the root authority for its shared graph's governance. This means:
-
-- The group's creator initially holds root authority, as the creator of the governance root.
-- All governance rules for the group's shared graph are anchored to the group's DID.
-- Capability chains for the group's shared graph MUST trace back to the group's DID as the root.
-
-### 7.2 Capability Delegation to Groups
-
-A critical feature of group identity is the ability to delegate capabilities to group DIDs, not just individual DIDs.
-
-When a ZCAP is delegated to a group DID:
-
-1. The ZCAP's `delegatee` field contains the group DID.
-2. Any current member of the delegatee group MAY invoke the capability.
-3. The governance engine, when verifying a ZCAP invocation, MUST:
-   a. Identify the invoker's DID.
-   b. Check if the ZCAP's delegatee is a group DID (has `rdf://type` → `"group://Group"`).
-   c. If yes, verify that the invoker is a current member of the delegatee group.
-   d. If the invoker is a member, treat the invocation as valid.
-
-This enables **role-based access control** through group composition:
-
-- Create a "moderators" sub-group within a community group.
-- Delegate moderation capabilities (e.g., `manage_members`, content removal) to the moderators group's DID.
-- Any member of the moderators group automatically receives those capabilities.
-- Adding or removing a moderator is simply adding or removing a member of the moderators group — no capability re-delegation is required.
-
-### 7.3 Transitive Capability Resolution
-
-When capabilities are delegated to a group DID, and that group contains nested groups, the governance engine MUST resolve capabilities transitively:
-
-1. If a capability is delegated to group H, and group G is a member of H, then members of G can invoke the capability — but **only if** the capability's scope permits transitive resolution.
-2. The `group://capability_transitive` predicate on a ZCAP controls whether transitive resolution is permitted. If absent, the default is `false` (non-transitive).
-3. When transitive resolution is enabled, the governance engine applies the same cycle-detection algorithm described in Section 5.1.8 to prevent infinite loops.
-
-### 7.4 Membership Governance
-
-The act of adding or removing members is itself governed:
-
-- The `manage_members` capability controls who can add or remove members.
-- Groups MAY define additional membership governance rules:
-  - `group://membership_open`: if `true`, any agent may join without approval.
-  - `group://membership_requires_credential`: specifies a credential type required for membership.
-  - `group://membership_max_count`: specifies a maximum membership count.
-  - `group://membership_vote_threshold`: specifies a vote threshold for approving new members.
-
-These governance predicates are stored as triples in the group's shared graph and enforced by the governance engine at the sync protocol layer.
-
----
-
-## 8. Isomorphism: Individual = Group of One
-
-This section defines the most important property of this specification: **an individual identity and a group identity are the same thing.**
-
-### 8.1 The Claim
-
-An individual agent's identity IS a group with membership \[self\]. This is not a metaphor, not a convenience layer, not an abstraction. It is the literal data model.
-
-When a user agent executes `navigator.credentials.create({did})`, the following occurs:
-
-1. A keypair is generated and a DID is derived.
-2. A personal linked data graph is created [[SPEC-01]].
-3. A group is created with the individual as the sole member.
-4. The personal graph IS the group's shared graph (currently with one peer: the individual).
-5. Governance is initialised: the individual is the root authority.
-
-The user now has a group. It happens to have one member. There is nothing special about this — it is the same data structure, the same API, and the same governance framework as a group of one thousand.
-
-### 8.2 The Consequence
-
-This isomorphism has profound consequences for the architecture of the web:
-
-**There is no "personal vs shared" distinction at the data model level.** A personal graph and a group graph are the same type. They use the same predicates, the same sync protocol, the same governance framework. The only difference is the membership count.
-
-**There is no "upgrade to group" flow.** Traditional systems require a user to "create a group" or "start a team" — a distinct action that creates a new entity. In this model, you were always a group. Inviting a collaborator is not creating something new; it is adding a member to something that already exists.
-
-**The transition from individual to collective is seamless.** When Alice adds Bob to her personal graph, she is not switching modes. She is not migrating data. She is adding a member to her group. The graph, the governance, the DID — everything continues. The group that was \[Alice\] is now \[Alice, Bob\]. The data model did not change. The API did not change. The identity did not change (the DID persists).
-
-**Scale is not a type distinction.** An individual, a pair, a team, a department, an organisation, a nation — these are not different kinds of entities. They are the same kind of entity at different membership counts. The software that manages a personal graph is the same software that manages a multinational organisation's graph. The governance that controls a solo project is the same governance that controls a community of millions.
-
-### 8.3 Why This Matters
-
-Every collaboration platform in existence has a seam between "personal" and "shared." You create a document; then you "share" it, which copies it or moves it or links it into a different system with different rules. You have a personal account; then you "create an organisation," which is a different kind of entity with different APIs, different permissions models, and different data stores.
-
-These seams are not accidental. They reflect an architectural assumption: that individuals and collectives are fundamentally different. This specification rejects that assumption.
-
-By making individual and collective identity isomorphic, this specification eliminates an entire class of complexity:
-
-- No migration path from personal to shared (there is nothing to migrate).
-- No permission model differences between personal and shared (same governance).
-- No data model incompatibilities between personal and shared (same graph, same predicates).
-- No "sharing" action that copies or moves data (you add a member; they sync).
-
-The group primitive is the universal identity primitive. It works for one. It works for billions. The data model is the same.
-
-### 8.4 Formal Statement
-
-Let I be an individual identity and G be a group identity as defined by this specification. The following MUST hold:
-
-1. I is representable as a `Group` with exactly one member (the individual).
-2. All operations defined in Section 5 that are valid on G are also valid on I.
-3. The return types and semantics of all operations are identical for I and G.
-4. No API method, predicate, or governance rule distinguishes between I and G based on membership count.
-
-Conforming implementations MUST NOT provide separate interfaces, code paths, or data stores for individual identities and group identities. A single implementation of the `Group` interface MUST serve both.
-
----
-
-## 9. Security Considerations
-
-### 9.1 Group DID Key Management
-
-A group's DID is backed by a keypair. The security of the group depends on the security of the private key. Several strategies exist:
-
-- **Designated key holder.** A single member holds the group's private key. This is simple but creates a single point of failure and a trust dependency. Suitable for small, high-trust groups.
-
-- **Threshold signatures.** The group's private key is split among members using a threshold signature scheme (e.g., Shamir's Secret Sharing or a multi-party computation protocol). A quorum of members is required to produce a valid signature. This distributes trust but adds complexity.
-
-- **Key rotation.** The group's DID method SHOULD support key rotation, allowing the group to replace its keypair without changing its DID. This mitigates the impact of key compromise.
-
-Implementations MUST document their key management strategy. Implementations SHOULD support key rotation. Implementations MAY support threshold signatures.
-
-Group DID key management MUST use one of the following strategies, declared in the group's metadata:
-
-1. **Designated holder:** One member holds the private key and signs on behalf of the group. If the holder leaves, they MUST transfer the key to another member before departure.
-2. **Threshold signatures:** The group's private key is split among N members using Shamir's Secret Sharing or a threshold signature scheme. K-of-N members must cooperate to sign.
-3. **Rotatable keys:** The group DID supports key rotation via DID Document updates. Any member with `manage_group` capability can trigger rotation.
-
-### 9.1.1 Abandoned Groups
-
-A group with zero members is considered abandoned. Abandoned groups MUST retain their DID and graph data on any peer that still holds a copy. Any agent MAY re-claim an abandoned group by joining its shared graph and adding themselves as a member, provided the sync module accepts the join. The re-claiming agent becomes the new root authority.
-
-### 9.2 Membership Spoofing
-
-Only members with the `manage_members` governance capability can add members. The sync protocol enforces this at the consensus layer — a `group://has_member` triple submitted by an unauthorised agent is rejected by all peers.
-
-However, an attacker who compromises a member with `manage_members` capability can add arbitrary members. Mitigations include:
-
-- Requiring multi-party approval for membership changes (via `group://membership_vote_threshold`).
-- Requiring credential attestation for new members (via `group://membership_requires_credential`).
-- Auditing membership changes via the shared graph's history.
-
-### 9.3 Nesting Depth Attacks
-
-Deeply nested groups can cause resource exhaustion during transitive membership resolution. An attacker could create a chain of groups nested to extreme depth, then trigger a `transitiveMembers()` call on the outermost group.
-
-Implementations MUST detect cycles during transitive resolution and terminate traversal. Implementations SHOULD impose a configurable maximum nesting depth (the default SHOULD be 16 levels). Implementations SHOULD return partial results when the depth limit is reached.
-
-### 9.4 Group Impersonation
-
-Group DIDs are cryptographically unique — two groups cannot have the same DID. However, group metadata (name, description, avatar) can be freely chosen and MAY duplicate existing groups.
-
-Implementations SHOULD provide mechanisms for verifying group authenticity:
-
-- Out-of-band verification of the group DID (e.g., published on a trusted website).
-- Verifiable credentials attesting to the group's identity (e.g., a domain linkage credential).
-- Web-of-trust endorsements from known groups or individuals.
-
-### 9.5 Capability Escalation via Nesting
-
-When capabilities are delegated to a group DID and transitive resolution is enabled, adding a group as a member effectively grants that group's members the delegated capabilities. An attacker who controls a group could add many members to that group, all of whom would inherit the capabilities.
-
-Mitigations include:
-
-- Disabling transitive capability resolution by default (`group://capability_transitive` defaults to `false`).
-- Monitoring group membership changes for delegatee groups.
-- Revoking capabilities when the delegatee group's membership changes unexpectedly.
-
----
-
-## 10. Privacy Considerations
-
-### 10.1 Membership Visibility
-
-Membership triples are stored in the group's shared graph and are visible to all peers in the sync network. This means:
-
-- All members can see all other members.
-- Any agent with access to the shared graph can enumerate the group's membership.
-
-For groups where membership is sensitive (e.g., support groups, political organisations, whistleblower networks), this is a significant privacy concern.
-
-Mitigations:
-
-- Groups MAY encrypt membership triples using the group's shared key, making them readable only to current members.
-- Implementations MAY support zero-knowledge membership proofs, allowing a member to prove membership without revealing the full membership list.
-- Implementations MAY support pseudonymous membership, where members use group-specific DIDs that are not linked to their primary identity.
-
-### 10.2 Organisational Structure Leakage
-
-Holonic nesting reveals organisational structure. If group A is a member of group B, which is a member of group C, the nesting reveals a hierarchy. An observer with access to any of these groups' shared graphs can infer relationships between groups.
-
-Mitigations:
-
-- Groups MAY omit `rdf://type` → `"group://Group"` triples for member groups, making it non-obvious that a member is itself a group. This prevents casual enumeration but does not prevent determined analysis.
-- Nesting relationships MAY be encrypted or stored in a separate, access-controlled graph.
-
-### 10.3 Correlation Attacks
-
-If an individual is a member of multiple groups, and those groups' membership lists are visible, an observer can correlate the individual across groups. This is equivalent to the correlation problem in decentralised identity generally.
-
-Mitigations:
-
-- Using group-specific DIDs (pairwise DIDs) for each group membership.
-- Using zero-knowledge proofs for cross-group interactions.
-
----
-
-## 11. Examples
-
-### 11.1 Create a Personal Identity (Group of One)
-
-A user creates their decentralised identity. This implicitly creates a group with one member.
+### 7.1 Creation
 
 ```javascript
-// Create a decentralised identity
-const identity = await navigator.credentials.create({ did: true });
-
-// The identity IS a group of one
-const myGroups = await navigator.graph.listGroups();
-console.log(myGroups.length); // 1
-
-const selfGroup = myGroups[0];
-console.log(selfGroup.did); // "did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2..."
-console.log(await selfGroup.members());
-// [{ did: "did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2...", isGroup: false, name: "Alice" }]
-
-// The personal graph IS the group's shared graph
-console.log(selfGroup.graph === navigator.graph.personal); // true
-```
-
-The user now has a group. It has one member. There is nothing special about it — it is the same data structure that will later represent a team of fifty or an organisation of thousands.
-
-### 11.2 Create a Team and Invite Members
-
-Alice creates a team and invites Bob and Carol.
-
-```javascript
-// Alice creates a team
 const team = await navigator.graph.createGroup({
-  name: "Project Alpha",
-  description: "Core development team for Project Alpha",
-  relays: ["wss://relay.example.com"]
+  displayName: "Engineering",
+  initialDelegates: ["did:key:z6MkAlice...", "did:key:z6MkBob..."],
+  enforcementMode: "open"
 });
-
-console.log(team.did); // "did:key:z6MknGc7YuwHbf..."
-
-// Alice invites Bob
-await team.addMember("did:key:z6MkpTHR8VNs5xYA...");
-
-// Alice invites Carol
-await team.addMember("did:key:z6MkrHKzgsahxBTS...");
-
-// Check membership
-const members = await team.members();
-console.log(members.length); // 3 (Alice + Bob + Carol)
-console.log(members.map(m => m.name)); // ["Alice", "Bob", "Carol"]
-
-// All members are peers in the team's shared graph
-// Bob and Carol can now add triples to the team's graph
 ```
 
-### 11.3 Nest a Team in an Organisation
+Behind the scenes:
 
-An organisation creates sub-teams and nests them.
+1. A new `did:graph` keypair is generated. The creator becomes the first delegate.
+2. The new context is created with a fresh per-context store.
+3. `initialDelegates` are added via `did-document://add-method` and `did-document://grant-section` writes (subject to `updateDIDDocument` ZCAP, which the creator holds via the root capability).
+4. The group's metadata is written.
+5. The context is mounted in `"governance"` mode.
+6. The `Group` convenience handle is returned.
+
+### 7.2 Inviting a Participant
+
+The group's acceptance triple is written first; the participant then completes participation in their own context.
 
 ```javascript
-// Create the organisation
-const org = await navigator.graph.createGroup({
-  name: "Acme Corp",
-  description: "Acme Corporation"
+// In the group's GraphStore (with acceptParticipation capability):
+await team.invite("did:graph:alice-personal");
+
+// Out of band, Alice receives the invitation.
+// In Alice's GraphStore:
+const alicePersonal = await me.getContext(me.privateGraphDid);
+await alicePersonal.addTriple({
+  source: alicePersonal.did,
+  predicate: "context://participates_in",
+  target: team.did
 });
-
-// Create department groups
-const engineering = await navigator.graph.createGroup({
-  name: "Engineering"
-});
-const marketing = await navigator.graph.createGroup({
-  name: "Marketing"
-});
-
-// Nest departments in the organisation
-await org.addMember(engineering.did);
-await org.addMember(marketing.did);
-
-// Check the org's direct members
-const orgMembers = await org.members();
-console.log(orgMembers.length); // 3 (creator + engineering group + marketing group)
-
-// Check child groups
-const departments = await org.childGroups();
-console.log(departments.map(d => d.name)); // ["Engineering", "Marketing"]
-
-// Check transitive members (all individuals across all departments)
-const allPeople = await org.transitiveMembers();
-console.log(allPeople.length); // all individual members across all nested groups
-
-// The engineering group knows it belongs to the org
-const parents = await engineering.parentGroups();
-console.log(parents[0].name); // "Acme Corp"
 ```
 
-### 11.4 Delegate Moderation to a Sub-group
+### 7.3 Adding a Signer
 
-A community creates a moderators group and delegates moderation capabilities to it.
+A signer is added by modifying the group's DID document. The new signer's DID need not be a current participant.
 
 ```javascript
-// Create the community
-const community = await navigator.graph.createGroup({
-  name: "Web Standards Community",
-  description: "Open community for web standards discussion"
+await team.addSigner(
+  {
+    id: `${team.did}#key-charlie`,
+    type: "Ed25519VerificationKey2020",
+    controller: team.did,
+    publicKeyMultibase: "z6MkCharlie..."
+  },
+  ["capabilityInvocation", "assertionMethod"]
+);
+```
+
+### 7.4 Withdrawal
+
+Either side can withdraw participation:
+
+- The participant removes their `participates_in` triple.
+- The group removes its `accepts_participation` triple (via `revokeParticipation()`).
+
+A signer is removed via `removeSigner()`. Past signatures by the removed signer remain verifiable against historical DID-document state.
+
+### 7.5 Empty Groups
+
+A group with zero participants is valid. A group with zero `capabilityInvocation` delegates can still exist (the group cannot sign anything new, but its prior signed expressions remain verifiable). This is the dormant state.
+
+---
+
+## 8. Governance Integration
+
+### 8.1 Group as Governance Context
+
+A group's context is governed like any other context: its root capability is minted at creation, ZCAPs target the group's `did:graph:...` as resource, scope inheritance follows participation links.
+
+The creator holds the root capability initially. Delegating it (e.g., to a separate "Governance Council" group's DID) shifts the locus of authority — and once delegated, the creator has no special standing.
+
+### 8.2 Capability Delegation to a Group DID
+
+A capability MAY be delegated with a group DID as `invoker`:
+
+```json
+{
+  "invoker": "did:graph:moderators...",
+  "actions": ["removeLink"],
+  "resource": "did:graph:community-general...",
+  "caveats": []
+}
+```
+
+When the governance engine verifies an invocation:
+
+1. Identify the agent who actually signed the operation.
+2. Check whether the agent's signing key is currently listed in `capabilityInvocation` of the `did:graph:moderators...` DID document.
+3. If yes, the invocation is valid.
+
+This enables **role-based access control** through delegate sets:
+
+- The capability is delegated to a `did:graph` representing the role.
+- Adding or removing a "moderator" is adding or removing a delegate in the moderators' DID document.
+- The capability itself is unchanged.
+
+### 8.3 Transitive Capability Through Participation
+
+A capability MAY carry `context://capability_transitive: true`. When set, the capability is also valid if invoked by an agent whose signature can be traced through the participation graph:
+
+- Capability delegated to group H, with `transitive = true`.
+- Group G participates in H (mutually).
+- Agent A participates in G (mutually).
+- A's signature counts as a valid invocation.
+
+This is OFF by default. Most capabilities should be delegate-bound rather than participant-bound, because participation is broader than signing authority. Transitive resolution requires explicit opt-in to prevent accidental escalation.
+
+### 8.4 Membership Governance
+
+The rules governing who can be invited and how participation is accepted live as governance triples in the group's context:
+
+```turtle
+<group-did>
+  group://participation_open    "false" ;
+  group://participation_requires_credential
+                                <did:vc:type:CommunityMember> ;
+  group://participation_max_count "500" .
+```
+
+The `accepts_participation` operation is gated by an `acceptParticipation` ZCAP whose caveats MAY encode these rules.
+
+---
+
+## 9. Isomorphism: Individual = Group of One
+
+This section is normative.
+
+### 9.1 The Claim
+
+An individual's identity and a group's identity are the same kind of thing at the data-model level. They differ only in the size of their delegate set and (typically) participant set.
+
+When a user creates a `did:key` ([[DECENTRALISED-IDENTITY]] §4.1), they have an identity with exactly one verification method.
+
+When a user creates a `did:graph` with `initialDelegates: []` ([§7.1](#71-creation)), they have a context with exactly one delegate (themselves) and no participants.
+
+The two are structurally identical for the purposes of "an entity that can sign and hold capabilities." The difference is that `did:graph` supports adding more delegates later via DID-document updates; `did:key` is locked to its single derived method.
+
+### 9.2 No "Upgrade to Group" Flow
+
+Inviting a collaborator is not creating something new. It is two operations on existing structures:
+
+- Adding a delegate to the existing `did:graph`'s DID document (so the collaborator can sign as the group).
+- Issuing an invitation (writing `accepts_participation`) so the collaborator can declare participation.
+
+Neither operation creates a new identity or moves data. The DID is unchanged. The context is unchanged. Only the membership counts change.
+
+### 9.3 Why This Matters
+
+Many collaboration systems have a seam between "personal" and "shared." You have a personal account; you "create an organisation" which is a different kind of entity. These seams cause accidental complexity — migration paths, permission-model mismatches, two sets of APIs.
+
+This specification eliminates the seam. The substrate has one identity primitive (the DID, via [[DECENTRALISED-IDENTITY]]) and one data primitive (the Context, via [[PERSONAL-LINKED-DATA-GRAPHS]]). Both work for one and for billions.
+
+### 9.4 Formal Statement
+
+Let I be an individual's identity (a `did:key` or a `did:graph` with a single delegate). Let G be a collective's identity (a `did:graph` with multiple delegates). The following MUST hold:
+
+1. I and G are both represented as DIDs with DID documents and (for `did:graph`) backing contexts.
+2. All operations defined in this specification's API ([§6](#6-api)) that are valid on G are also valid on I (subject to capability checks).
+3. The return types and semantics of operations are identical.
+4. No API method, predicate, or governance rule distinguishes I from G based on participant count or delegate count.
+
+Conforming implementations MUST NOT provide separate interfaces, code paths, or data stores for individual and collective identities.
+
+---
+
+## 10. Delegated Voting Use Case
+
+This section is informative.
+
+### 10.1 The Pattern
+
+Delegated voting combines direct voting (every voter holds a vote on every issue) with representative voting (you delegate your vote to someone you trust). Critical properties:
+
+- **Granular** — you can delegate differently on different topics.
+- **Revocable** — you can pull your delegation back at any moment.
+- **Transitive** — your delegate can delegate further (with limits).
+- **Transparent** — you can see how your delegated vote was cast.
+
+The substrate makes this a natural consequence of composition: identity ([[DECENTRALISED-IDENTITY]]), governance ([[GRAPH-GOVERNANCE]]), and groups (this specification) compose to give delegated voting "for free."
+
+### 10.2 Delegation as a Signed Triple
+
+A delegation is a triple in the delegator's context:
+
+```turtle
+# In Alice's personal context (did:graph:alice-personal):
+<did:graph:alice-personal>
+  vote://delegates_to    <did:graph:energy-experts> ;
+  vote://delegates_topic <topic://climate-energy> ;
+  vote://valid_until     "2027-01-01T00:00:00Z"^^xsd:dateTime ;
+  vote://revocable       "true" .
+```
+
+The delegate may be any DID — an individual (`did:key`) OR a group (`did:graph`). When the delegate is a group, the group's internal governance produces the cast vote.
+
+### 10.3 Casting the Vote
+
+When the delegate is an individual, they sign the vote with their `did:key`. Standard.
+
+When the delegate is a group, one of the group's `capabilityInvocation` delegates produces a vote according to the group's internal governance:
+
+- The group might use a flow ([[GRAPH-FLOWS]]) to deliberate.
+- The group might require quorum (a guard on the "submit-vote" transition).
+- The group might require multiple internal delegates to sign (a content caveat on the submit-vote ZCAP).
+- The group might delegate further to a sub-group of domain experts.
+
+The resulting ballot is signed by a current `capabilityInvocation` delegate of the group's DID. The ballot's author is the group's `did:graph:...`. Verification follows standard DID-document-delegate semantics ([[DECENTRALISED-IDENTITY]] §5.1).
+
+### 10.4 Composing the Pieces
+
+Delegated voting is not a feature added to this substrate. It is the result of:
+
+- Holonic identity at every scale (DIDs).
+- Per-context governance (ZCAPs, immanent rules).
+- Structured reasoning as data (triples — delegate reasoning is queryable).
+- Nesting (parts forming wholes forming parts).
+
+Delegating a vote to a *group* — not just to an individual expert — is what previous systems could not do without bespoke infrastructure. Here, it is the obvious case.
+
+---
+
+## 11. Security Considerations
+
+### 11.1 Group DID Key Custody
+
+A group's DID document lists multiple verification methods, each backed by a separate keypair held by its corresponding delegate. There is no single "group key" to lose — losing a delegate's key only removes that one delegate's ability to sign.
+
+For redundancy, groups SHOULD have multiple `capabilityDelegation` delegates so that any one becoming unavailable does not leave the group unable to update its DID document.
+
+### 11.2 Compromised Delegate
+
+A compromised `capabilityInvocation` delegate can sign on the group's behalf until removed. Mitigations:
+
+- Regular review of the delegate set by holders of `capabilityDelegation`.
+- Prompt removal of suspected-compromised delegates via `removeSigner()`.
+- For high-value capabilities, use content caveats on ZCAPs to require multiple independent signatures ([[GRAPH-GOVERNANCE]] §9.2).
+
+Historical signatures by removed delegates remain verifiable; this is intentional.
+
+### 11.3 Participation Spoofing
+
+Unilateral participation claims are ignored. Both sides must declare. The parent's acceptance MUST be signed by a current `capabilityDelegation` delegate of the parent.
+
+### 11.4 Capability Escalation via Nesting
+
+Capabilities delegated to a group DID with `context://capability_transitive: true` flow through participation. An adversarial group adding many participants would effectively grant them the capability. Mitigations:
+
+- `context://capability_transitive` is OFF by default.
+- When transitive resolution is enabled, the capability SHOULD carry caveats that constrain its scope (e.g., per-participant rate limits).
+- The runtime MUST detect cycles in participation graphs.
+
+### 11.5 DID-Document Tampering
+
+DID-document writes are governance-controlled via `did-document://*` predicates ([[GRAPH-GOVERNANCE]] §10). An agent without `updateDIDDocument` capability cannot modify the document.
+
+### 11.6 Group Impersonation
+
+Group DIDs are cryptographically unique. However, group metadata (name, description) is freely chosen and could mimic existing groups. Implementations SHOULD provide mechanisms for verifying group authenticity (out-of-band DID publication, verifiable credentials, web-of-trust endorsements).
+
+### 11.7 Nesting Depth Attacks
+
+Deep nesting can cause resource exhaustion. Implementations MUST enforce a maximum nesting depth (RECOMMENDED: 16).
+
+---
+
+## 12. Privacy Considerations
+
+### 12.1 Participation Visibility
+
+`accepts_participation` triples are in the group's context; `participates_in` triples are in the participant's context. Both are visible to anyone with read access to the respective contexts.
+
+### 12.2 Delegate-Set Disclosure
+
+The group's DID document is part of its context. Anyone with read access to the context sees the current delegates. For communities where delegate-set privacy is important, use rotated single-use delegate keys not tied to long-term individual DIDs.
+
+### 12.3 Per-Context Identity
+
+An agent SHOULD use different `did:key`s when participating in different groups, to prevent cross-context correlation. The substrate makes this cheap.
+
+### 12.4 Nesting Structure Leakage
+
+Context nesting reveals organisational structure. If A participates in B which participates in C, the chain reveals a hierarchy to anyone reading these contexts. For high-privacy needs, nesting MAY be implemented via a separate (sync-isolated) context.
+
+### 12.5 Delegated Vote Deliberation
+
+When a delegate is a group, that group's internal deliberation may include sensitive opinions of participants. Communities that need internal-deliberation privacy SHOULD use a Privacy-Tiered or Fully Partitioned sync topology ([[P2P-GRAPH-SYNC]] §7.2) for the deliberation context.
+
+---
+
+## 13. Examples
+
+### 13.1 Create a Personal Identity (Effective Group of One)
+
+```javascript
+const me = await navigator.credentials.create({
+  did: { method: "key", displayName: "Alice" }
+});
+console.log(me.did);      // "did:key:z6Mk..."
+
+// Or use did:graph if you anticipate adding signing delegates later
+const personalGroup = await navigator.graph.create("Alice")
+  .then(store => store.createContext({ displayName: "Alice (personal)" }));
+console.log(personalGroup.did); // "did:graph:z6Mk..."
+```
+
+### 13.2 Create a Team and Add Members
+
+```javascript
+const me = await navigator.graph.create("Workspace");
+
+const team = await navigator.graph.createGroup({
+  displayName: "Project Alpha",
+  description: "Core development team",
+  initialDelegates: [
+    "did:key:z6MkAlice...",
+    "did:key:z6MkBob...",
+    "did:key:z6MkCarol..."
+  ],
+  enforcementMode: "announced"
 });
 
-// Create a moderators sub-group
+// Invite each member's personal context to participate.
+await team.invite("did:graph:alice-personal");
+await team.invite("did:graph:bob-personal");
+await team.invite("did:graph:carol-personal");
+
+// Each member, in their own GraphStore, completes participation by adding
+// the context://participates_in triple in their own context.
+
+const ps = await team.participants();
+console.log(ps.map(p => p.did));
+
+const signers = await team.signers("capabilityInvocation");
+console.log(signers.map(s => s.id));
+```
+
+### 13.3 Nest a Team in an Organisation
+
+```javascript
+const org = await navigator.graph.createGroup({ displayName: "Acme Corp" });
+const eng = await navigator.graph.createGroup({ displayName: "Engineering" });
+const marketing = await navigator.graph.createGroup({ displayName: "Marketing" });
+
+await org.invite(eng.did);
+await org.invite(marketing.did);
+
+// Each department's GraphStore completes participation by writing
+// context://participates_in in their own contexts.
+
+const children = await org.childGroups();
+console.log(children.map(c => c.name));
+
+const everyone = await org.transitiveParticipants();
+console.log(everyone.length);
+```
+
+### 13.4 Role-Based Access via Delegate Set
+
+```javascript
+const community = await navigator.graph.createGroup({ displayName: "Web Standards Community" });
+
+// Create a "moderators" group — its DID document's delegates ARE the moderators.
 const moderators = await navigator.graph.createGroup({
-  name: "Moderators"
+  displayName: "Moderators",
+  initialDelegates: ["did:key:z6MkMod1...", "did:key:z6MkMod2..."]
 });
 
-// Add the moderators group as a member of the community
-await community.addMember(moderators.did);
-
-// Delegate moderation capabilities to the moderators group
-await community.delegateCapability(
-  moderators.did,
-  "manage_members",    // capability: can add/remove members
-  "community"          // scope: the community's graph
-);
-
-await community.delegateCapability(
-  moderators.did,
-  "remove_content",    // capability: can remove triples
-  "community"          // scope: the community's graph
-);
-
-// Now, anyone added to the moderators group automatically gets
-// moderation capabilities — no per-person delegation needed
-
-// Add Alice as a moderator
-await moderators.addMember("did:key:z6MkhaXgBZDvotDkL...");
-
-// Alice can now moderate the community — she inherits the capabilities
-// delegated to the moderators group. If Alice is later removed from
-// the moderators group, she loses those capabilities immediately.
-```
-
-### 11.5 Transitive Membership Query
-
-Query all individuals in a deeply nested organisational structure.
-
-```javascript
-// Assume the following structure:
-// Consortium
-//   ├── Org A
-//   │   ├── Team A1 (Alice, Bob)
-//   │   └── Team A2 (Carol)
-//   └── Org B
-//       └── Team B1 (Dave, Eve)
-
-const consortium = await navigator.graph.joinGroup("did:key:z6Mkp...");
-
-// Direct members: Org A, Org B
-const directMembers = await consortium.members();
-console.log(directMembers.length); // 2 (plus consortium creator)
-console.log(directMembers.filter(m => m.isGroup).length); // 2
-
-// Transitive members: all individuals, recursively
-const allPeople = await consortium.transitiveMembers();
-console.log(allPeople.length); // 5 (Alice, Bob, Carol, Dave, Eve)
-console.log(allPeople.every(m => !m.isGroup)); // true — only individuals
-
-// This works regardless of nesting depth
-// The same query on Org A would return: Alice, Bob, Carol
-// The same query on Team A1 would return: Alice, Bob
-```
-
-### 11.6 Seamless Individual-to-Collective Transition
-
-Demonstrating the isomorphism property: transitioning from individual to collective without any mode switch.
-
-```javascript
-// Alice starts with her personal identity — a group of one
-const alice = (await navigator.graph.listGroups())[0];
-console.log((await alice.members()).length); // 1 — just Alice
-
-// Alice adds data to her personal graph (which IS the group's graph)
-await alice.graph.add({
-  subject: "project://alpha",
-  predicate: "rdf://type",
-  object: "project://Project"
+// Delegate moderation capability to the moderators group (NOT transitive —
+// only signed by a current delegate of moderators counts).
+await community.delegateCapability({
+  invoker: moderators.did,
+  actions: ["removeLink"],
+  resource: community.did,
+  caveats: [
+    { type: "predicate", value: { allowed: ["msg://body", "msg://reaction"] }}
+  ]
 });
 
-// Alice invites Bob — this is just addMember(), not "create a shared space"
-await alice.addMember("did:key:z6MkpTHR8VNs5xYA...");
-
-// Now the group has two members
-console.log((await alice.members()).length); // 2 — Alice and Bob
-
-// The data Alice added is still there — no migration, no copy
-// Bob can now see and contribute to the same graph
-// The DID hasn't changed. The graph hasn't changed. The governance hasn't changed.
-// The only thing that changed is the membership count: 1 → 2
-
-// Later, a whole team joins
-const designTeam = await navigator.graph.createGroup({ name: "Design" });
-await alice.addMember(designTeam.did);
-
-// Now Alice's group contains an individual (Bob) and a group (Design)
-// Still the same group. Still the same DID. Still the same graph.
+// Now any moderator (any current delegate of moderators.did) can produce a
+// signed removeLink op against community's context. Adding a new moderator
+// is addSigner() on moderators — no per-person re-delegation needed.
+await moderators.addSigner(
+  { id: `${moderators.did}#key-mod3`, type: "Ed25519VerificationKey2020",
+    controller: moderators.did, publicKeyMultibase: "z6MkMod3..." },
+  ["capabilityInvocation"]
+);
 ```
 
-### 11.7 Group-Specific DID for Privacy
-
-A member uses a pairwise DID to prevent cross-group correlation.
+### 13.5 Sign as the Group
 
 ```javascript
-// Alice generates a group-specific DID for a sensitive group
-const pairwiseDid = await navigator.credentials.create({
-  did: true,
-  purpose: "group-membership",
-  linkable: false  // prevent correlation with other DIDs
+const teamCred = await navigator.credentials.get({
+  did: { kind: "graph", filter: { did: team.did } }
 });
 
-// Alice joins the group using the pairwise DID
-const sensitiveGroup = await navigator.graph.joinGroup(
-  "did:key:z6MkrHKzgs...",
-  { memberDid: pairwiseDid.id }
-);
+const announcement = await teamCred.sign({
+  type: "Announcement",
+  body: "v1.0 shipped",
+  timestamp: new Date().toISOString()
+});
 
-// Alice is a member, but her membership cannot be correlated
-// with her membership in other groups (different DID)
+console.log(announcement.author);            // team.did (did:graph:...)
+console.log(announcement.proof.method);      // the specific delegate's verification method
+```
+
+### 13.6 Delegate a Vote to a Group
+
+```javascript
+// In Alice's personal context: delegate her energy-policy vote to a working group.
+const alicePersonal = await me.getContext(me.privateGraphDid);
+
+await alicePersonal.addTriple({
+  source: alicePersonal.did,
+  predicate: "vote://delegates_to",
+  target: "did:graph:energy-experts"
+});
+await alicePersonal.addTriple({
+  source: alicePersonal.did,
+  predicate: "vote://delegates_topic",
+  target: "topic://climate-energy"
+});
+```
+
+### 13.7 Resolving a Group DID Document
+
+```javascript
+const doc = await navigator.credentials.resolve(team.did);
+console.log(doc.verificationMethod);
+console.log(doc.capabilityInvocation);
+console.log(doc.trustLevel);
 ```
 
 ---
 
-## 12. Predicate Reference Table
+## 14. Predicate Reference Table
 
-The following table lists all predicates defined in this specification within the `group://` namespace.
-
-| Predicate | Domain | Range | Required | Description |
-|---|---|---|---|---|
-| `group://Group` | — | — | — | Type identifier for group entities. Used as the object of `rdf://type` triples. |
-| `group://created` | Group DID | ISO 8601 dateTime | REQUIRED | The timestamp at which the group was created. |
-| `group://creator` | Group DID | DID (USVString) | REQUIRED | The DID of the agent that created the group. |
-| `group://has_member` | Group DID | DID (USVString) | — | Asserts that the object DID is a member of the subject group. |
-| `group://membership_request` | DID (requester) | Group DID | — | A request by the subject DID to join the object group. |
-| `group://Membership` | — | — | — | Type identifier for membership metadata entities. |
-| `group://member` | Membership URI | DID (USVString) | — | The member DID associated with a membership metadata entity. |
-| `group://group` | Membership URI | Group DID | — | The group DID associated with a membership metadata entity. |
-| `group://joined_at` | Membership URI | ISO 8601 dateTime | RECOMMENDED | The timestamp at which the member joined the group. |
-| `group://invited_by` | Membership URI | DID (USVString) | OPTIONAL | The DID of the member who invited/approved this member. |
-| `group://role` | Membership URI | Literal (USVString) | OPTIONAL | A role label for the member within the group. |
-| `group://avatar` | Group DID | URI | OPTIONAL | A URI pointing to the group's avatar image. |
-| `group://metadata` | Group DID | URI | OPTIONAL | A URI pointing to additional group metadata. |
-| `group://membership_open` | Group DID | Boolean | OPTIONAL | If `true`, any agent may join without approval. Default: `false`. |
-| `group://membership_requires_credential` | Group DID | Credential Type URI | OPTIONAL | Specifies a credential type required for membership. |
-| `group://membership_max_count` | Group DID | Integer | OPTIONAL | Maximum number of members permitted. |
-| `group://membership_vote_threshold` | Group DID | Integer | OPTIONAL | Number of existing member approvals required for a new member. |
-| `group://capability_transitive` | ZCAP URI | Boolean | OPTIONAL | If `true`, the capability may be invoked by members of nested groups. Default: `false`. |
+| Predicate | Domain | Range | Description |
+|---|---|---|---|
+| `group://name` | Group DID | Literal string | Human-readable group name |
+| `group://description` | Group DID | Literal string | Group description |
+| `group://avatar` | Group DID | URI | URI of the group's avatar |
+| `group://created` | Group DID | xsd:dateTime | Creation timestamp |
+| `group://creator` | Group DID | DID | DID of the agent that created the group |
+| `group://participation_open` | Group DID | xsd:boolean | If true, agents may self-add participation. Default false. |
+| `group://participation_requires_credential` | Group DID | VC type URI | Credential required for participation acceptance |
+| `group://participation_max_count` | Group DID | xsd:integer | Maximum number of accepted participants |
+| `group://participation_vote_threshold` | Group DID | xsd:integer | Number of delegate approvals required for new participants |
+| `context://participates_in` | Participant DID (any context) | Group DID | Asserted in the participant's context; declares participation. Mutually required. |
+| `context://accepts_participation` | Group DID | Participant DID | Asserted in the group's context; confirms participation. Mutually required; MUST be signed by a `capabilityDelegation` delegate of the group. |
+| `context://capability_transitive` | ZCAP URI | xsd:boolean | If true, the capability may be invoked by participants of the named invoker group. Default: false. |
+| `vote://delegates_to` | Participant DID | DID (individual or group) | Asserts a vote delegation. |
+| `vote://delegates_topic` | Participant DID | Topic URI | Scopes the delegation to a topic. |
+| `vote://valid_until` | Participant DID | xsd:dateTime | Delegation expiry. |
+| `vote://revocable` | Participant DID | xsd:boolean | Whether the delegation can be revoked unilaterally. |
+| `did-document://add-method` etc. | Group DID | (see [[DECENTRALISED-IDENTITY]] §5) | DID-document delegate management. Governed via [[GRAPH-GOVERNANCE]] §10. |
 
 ---
 
-## 13. References
+## 15. References
 
-### 13.1 Normative References
+### 15.1 Normative References
 
-**[SPEC-01]** Personal Linked Data Graphs. W3C Draft Community Group Report. URL: [01_personal-linked-data-graphs.md](01_personal-linked-data-graphs.md)
+**[PERSONAL-LINKED-DATA-GRAPHS]** [Personal Linked Data Graphs](./01_personal-linked-data-graphs.md).
 
-**[SPEC-02]** Decentralised Identity for the Web Platform. W3C Draft Community Group Report. URL: [02_decentralised-identity-web-platform.md](02_decentralised-identity-web-platform.md)
+**[DECENTRALISED-IDENTITY]** [Decentralised Identity Integration for the Web Platform](./02_decentralised-identity-web-platform.md).
 
-**[SPEC-03]** P2P Graph Synchronisation. W3C Draft Community Group Report. URL: [03_p2p-graph-sync.md](03_p2p-graph-sync.md)
+**[GRAPH-GOVERNANCE]** [Graph Governance](./05_graph-governance.md).
 
-**[SPEC-05]** Graph Governance: Constraint Enforcement for Shared Linked Data Graphs. W3C Draft Community Group Report. URL: [05_graph-governance.md](05_graph-governance.md)
+**[DID-CORE]** Decentralized Identifiers (DIDs) v1.0. W3C Recommendation, 19 July 2022. https://www.w3.org/TR/did-core/
 
-**[DID-CORE]** Decentralized Identifiers (DIDs) v1.0. W3C Recommendation, 19 July 2022. URL: https://www.w3.org/TR/did-core/
+**[RFC2119]** Key words for use in RFCs to Indicate Requirement Levels. BCP 14, RFC 2119, March 1997.
 
-**[RFC2119]** S. Bradner. Key words for use in RFCs to Indicate Requirement Levels. BCP 14, RFC 2119, March 1997. URL: https://www.rfc-editor.org/rfc/rfc2119
+**[RFC8174]** Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words. BCP 14, RFC 8174, May 2017.
 
-**[RFC8174]** B. Leiba. Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words. BCP 14, RFC 8174, May 2017. URL: https://www.rfc-editor.org/rfc/rfc8174
+**[ZCAP-LD]** Authorization Capabilities for Linked Data. W3C Community Group Report. https://w3c-ccg.github.io/zcap-spec/
 
-**[ZCAP-LD]** Authorization Capabilities for Linked Data. W3C Community Group Report. URL: https://w3c-ccg.github.io/zcap-spec/
+### 15.2 Informative References
 
-### 13.2 Informative References
+**[P2P-GRAPH-SYNC]** [Peer-to-Peer Context Synchronisation Protocol](./03_p2p-graph-sync.md).
 
-**[SPEC-04]** Dynamic Graph Shape Validation. W3C Draft Community Group Report. URL: [04_dynamic-graph-shape-validation.md](04_dynamic-graph-shape-validation.md)
+**[SHAPE-VALIDATION]** [Dynamic Graph Shape Validation](./04_dynamic-graph-shape-validation.md).
 
-**[VC-DATA-MODEL-2.0]** Verifiable Credentials Data Model v2.0. W3C Recommendation. URL: https://www.w3.org/TR/vc-data-model-2.0/
+**[GRAPH-FLOWS]** [Graph Flows](./07_graph-flows.md).
 
-**[SHACL]** Shapes Constraint Language (SHACL). W3C Recommendation, 20 July 2017. URL: https://www.w3.org/TR/shacl/
+**[VC-DATA-MODEL-2.0]** Verifiable Credentials Data Model v2.0. W3C Recommendation. https://www.w3.org/TR/vc-data-model-2.0/

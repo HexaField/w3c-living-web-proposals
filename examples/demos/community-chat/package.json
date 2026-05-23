@@ -14,7 +14,8 @@
     "@living-web/identity": "workspace:*",
     "@living-web/personal-graph": "workspace:*",
     "@living-web/shape-validation": "workspace:*",
-    "@living-web/group-identity": "workspace:*"
+    "@living-web/group-identity": "workspace:*",
+    "@living-web/flows": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^6.0.2",

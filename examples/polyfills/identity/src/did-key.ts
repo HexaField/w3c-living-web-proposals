@@ -1,17 +1,15 @@
 /**
- * did:key method implementation — Ed25519
- * Encoding: multicodec 0xed01 + 32-byte pubkey → base58btc → "did:key:z" + encoded
+ * did:key method implementation — Ed25519.
+ * Encoding: multicodec 0xed01 + 32-byte pubkey → base58btc → "did:key:z" + encoded.
  */
 
 const BASE58_ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
 
 export function base58btcEncode(bytes: Uint8Array): string {
-  // Count leading zeros
   let zeroes = 0;
   for (let i = 0; i < bytes.length && bytes[i] === 0; i++) zeroes++;
 
-  // Convert to big integer
-  const size = Math.ceil(bytes.length * 138 / 100) + 1;
+  const size = Math.ceil((bytes.length * 138) / 100) + 1;
   const b58 = new Uint8Array(size);
   let length = 0;
 
@@ -37,11 +35,10 @@ export function base58btcEncode(bytes: Uint8Array): string {
 }
 
 export function base58btcDecode(str: string): Uint8Array {
-  // Count leading '1's
   let zeroes = 0;
   for (let i = 0; i < str.length && str[i] === '1'; i++) zeroes++;
 
-  const size = Math.ceil(str.length * 733 / 1000) + 1;
+  const size = Math.ceil((str.length * 733) / 1000) + 1;
   const b256 = new Uint8Array(size);
   let length = 0;
 
@@ -58,7 +55,6 @@ export function base58btcDecode(str: string): Uint8Array {
     length = j;
   }
 
-  // Skip leading zeros in b256
   let start = 0;
   while (start < size && b256[start] === 0) start++;
 
@@ -68,48 +64,62 @@ export function base58btcDecode(str: string): Uint8Array {
   return result;
 }
 
-// Ed25519 multicodec prefix: varint(0xed01) = [0xed, 0x01]
 const ED25519_MULTICODEC = new Uint8Array([0xed, 0x01]);
 
-export function publicKeyToDID(publicKey: Uint8Array): string {
+export function encodeEd25519Multibase(publicKey: Uint8Array): string {
   if (publicKey.length !== 32) throw new Error('Ed25519 public key must be 32 bytes');
   const multicodecKey = new Uint8Array(2 + 32);
   multicodecKey.set(ED25519_MULTICODEC, 0);
   multicodecKey.set(publicKey, 2);
-  return `did:key:z${base58btcEncode(multicodecKey)}`;
+  return `z${base58btcEncode(multicodecKey)}`;
 }
 
-export function didToPublicKey(did: string): Uint8Array {
-  if (!did.startsWith('did:key:z')) throw new Error('Invalid did:key URI');
-  const encoded = did.slice('did:key:z'.length);
-  const decoded = base58btcDecode(encoded);
+export function decodeEd25519Multibase(multibase: string): Uint8Array {
+  if (!multibase.startsWith('z')) throw new Error('Expected multibase z-prefix');
+  const decoded = base58btcDecode(multibase.slice(1));
   if (decoded[0] !== 0xed || decoded[1] !== 0x01) {
     throw new Error('Unsupported multicodec prefix (expected Ed25519 0xed01)');
   }
   return decoded.slice(2);
 }
 
+export function publicKeyToDID(publicKey: Uint8Array): string {
+  return `did:key:${encodeEd25519Multibase(publicKey)}`;
+}
+
+export function didToPublicKey(did: string): Uint8Array {
+  if (!did.startsWith('did:key:')) throw new Error('Invalid did:key URI');
+  return decodeEd25519Multibase(did.slice('did:key:'.length));
+}
+
+export interface DIDDocumentMethod {
+  id: string;
+  type: string;
+  controller: string;
+  publicKeyMultibase: string;
+}
+
+export type DIDDocumentTrustLevel = 'local' | 'mounted-read' | 'external' | 'cached';
+
 export interface DIDDocument {
   '@context': string[];
   id: string;
-  verificationMethod: Array<{
-    id: string;
-    type: string;
-    controller: string;
-    publicKeyMultibase: string;
-  }>;
-  authentication: string[];
-  assertionMethod: string[];
+  verificationMethod: DIDDocumentMethod[];
+  authentication?: string[];
+  assertionMethod?: string[];
+  capabilityInvocation?: string[];
+  capabilityDelegation?: string[];
+  /** Set by the resolver to indicate provenance. */
+  trustLevel?: DIDDocumentTrustLevel;
 }
 
 export function resolveDIDKey(did: string): DIDDocument {
-  if (!did.startsWith('did:key:z')) throw new Error('Invalid did:key URI');
-  // Extract the multibase-encoded part (the "z..." after "did:key:")
-  const multibaseKey = did.slice('did:key:'.length);
-  // Verify it's a valid Ed25519 key by decoding
+  if (!did.startsWith('did:key:')) throw new Error('Invalid did:key URI');
+  const multibase = did.slice('did:key:'.length);
+  // Verify it decodes to a valid Ed25519 key (throws on invalid)
   didToPublicKey(did);
 
-  const keyId = `${did}#${multibaseKey}`;
+  const keyId = `${did}#${multibase}`;
 
   return {
     '@context': [
@@ -121,9 +131,12 @@ export function resolveDIDKey(did: string): DIDDocument {
       id: keyId,
       type: 'Ed25519VerificationKey2020',
       controller: did,
-      publicKeyMultibase: multibaseKey,
+      publicKeyMultibase: multibase,
     }],
     authentication: [keyId],
     assertionMethod: [keyId],
+    capabilityInvocation: [keyId],
+    capabilityDelegation: [keyId],
+    trustLevel: 'local',
   };
 }

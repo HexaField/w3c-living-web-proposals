@@ -24,8 +24,9 @@ export interface GraphInfo {
   tripleCount: number;
 }
 
-export interface SharedGraphInfo {
-  name: string;
+export interface MountedContextInfo {
+  graphDid: string;
+  displayName?: string;
   peerCount: number;
   syncState: string;
 }
@@ -34,7 +35,7 @@ export interface StatusResponse {
   type: 'STATUS';
   identity: { did: string; displayName: string } | null;
   graphs: GraphInfo[];
-  sharedGraphs: SharedGraphInfo[];
+  mountedContexts: MountedContextInfo[];
   active: boolean;
 }
 

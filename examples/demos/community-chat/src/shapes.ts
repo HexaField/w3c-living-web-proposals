@@ -1,12 +1,18 @@
 /**
- * Shape definitions for community chat
+ * Shape definitions for community chat.
+ *
+ * Action types use the `shape://actions/` namespace.
+ * `context://participates_in` is used for cross-context nesting (e.g., a
+ * channel context that participates in the community). In-graph parent/child
+ * relations within the community context use the topical `chat://has_child`
+ * predicate.
  */
 
 import type { ShapeDefinition } from '@living-web/shape-validation';
 
 const CHAT = 'chat://';
 const RDF = 'rdf://';
-const GRAPH = 'graph://';
+const CTX = 'context://';
 
 export const PREDICATES = {
   ENTRY_TYPE: `${CHAT}entry_type`,
@@ -28,8 +34,13 @@ export const PREDICATES = {
   REACTION_EMOJI: `${CHAT}reaction_emoji`,
   REACTION_AUTHOR: `${CHAT}reaction_author`,
 
-  HAS_CHILD: `${GRAPH}has_child`,
+  /** Topical parent/child for in-context entities (e.g., channel → message). */
+  HAS_CHILD: `${CHAT}has_child`,
+  /** Cross-context nesting (e.g., a channel context participates in the community). */
+  PARTICIPATES_IN: `${CTX}participates_in`,
 } as const;
+
+const ACT = 'shape://actions/';
 
 export const CommunityShape: ShapeDefinition = {
   targetClass: PREDICATES.COMMUNITY,
@@ -38,8 +49,8 @@ export const CommunityShape: ShapeDefinition = {
     { path: PREDICATES.NAME, name: 'name', datatype: 'xsd:string', minCount: 1, maxCount: 1 },
   ],
   constructor: [
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.ENTRY_TYPE, target: PREDICATES.COMMUNITY },
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.NAME, target: 'name' },
+    { action: `${ACT}setSingleTarget`, source: 'this', predicate: PREDICATES.ENTRY_TYPE, target: PREDICATES.COMMUNITY },
+    { action: `${ACT}setSingleTarget`, source: 'this', predicate: PREDICATES.NAME, target: 'name' },
   ],
 };
 
@@ -51,8 +62,8 @@ export const ChannelShape: ShapeDefinition = {
     { path: PREDICATES.TOPIC, name: 'topic', datatype: 'xsd:string' },
   ],
   constructor: [
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.ENTRY_TYPE, target: PREDICATES.CHANNEL },
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.NAME, target: 'name' },
+    { action: `${ACT}setSingleTarget`, source: 'this', predicate: PREDICATES.ENTRY_TYPE, target: PREDICATES.CHANNEL },
+    { action: `${ACT}setSingleTarget`, source: 'this', predicate: PREDICATES.NAME, target: 'name' },
   ],
 };
 
@@ -63,8 +74,8 @@ export const MessageShape: ShapeDefinition = {
     { path: PREDICATES.BODY, name: 'body', datatype: 'xsd:string', minCount: 1, maxCount: 1 },
   ],
   constructor: [
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.ENTRY_TYPE, target: PREDICATES.MESSAGE },
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.BODY, target: 'body' },
+    { action: `${ACT}setSingleTarget`, source: 'this', predicate: PREDICATES.ENTRY_TYPE, target: PREDICATES.MESSAGE },
+    { action: `${ACT}setSingleTarget`, source: 'this', predicate: PREDICATES.BODY, target: 'body' },
   ],
 };
 
@@ -77,10 +88,10 @@ export const RoleShape: ShapeDefinition = {
     { path: PREDICATES.ROLE_POSITION, name: 'position', datatype: 'xsd:string', minCount: 1, maxCount: 1 },
   ],
   constructor: [
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.ENTRY_TYPE, target: PREDICATES.ROLE },
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.NAME, target: 'name' },
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.ROLE_COLOR, target: 'color' },
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.ROLE_POSITION, target: 'position' },
+    { action: `${ACT}setSingleTarget`, source: 'this', predicate: PREDICATES.ENTRY_TYPE, target: PREDICATES.ROLE },
+    { action: `${ACT}setSingleTarget`, source: 'this', predicate: PREDICATES.NAME, target: 'name' },
+    { action: `${ACT}setSingleTarget`, source: 'this', predicate: PREDICATES.ROLE_COLOR, target: 'color' },
+    { action: `${ACT}setSingleTarget`, source: 'this', predicate: PREDICATES.ROLE_POSITION, target: 'position' },
   ],
 };
 
@@ -92,8 +103,8 @@ export const MemberShape: ShapeDefinition = {
     { path: PREDICATES.MEMBER_NAME, name: 'displayName', datatype: 'xsd:string', minCount: 1, maxCount: 1 },
   ],
   constructor: [
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.ENTRY_TYPE, target: PREDICATES.MEMBER },
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.MEMBER_DID, target: 'did' },
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.MEMBER_NAME, target: 'displayName' },
+    { action: `${ACT}setSingleTarget`, source: 'this', predicate: PREDICATES.ENTRY_TYPE, target: PREDICATES.MEMBER },
+    { action: `${ACT}setSingleTarget`, source: 'this', predicate: PREDICATES.MEMBER_DID, target: 'did' },
+    { action: `${ACT}setSingleTarget`, source: 'this', predicate: PREDICATES.MEMBER_NAME, target: 'displayName' },
   ],
 };

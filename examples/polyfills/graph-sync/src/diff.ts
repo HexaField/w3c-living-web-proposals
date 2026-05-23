@@ -1,53 +1,58 @@
+/**
+ * ContextDiff construction + revision hashing.
+ *
+ * Revision = hex(SHA-256(graphDid || canonicalise(additions) || canonicalise(removals) || sort(deps))).
+ * The canonicalisation here is a deterministic textual form sufficient for the
+ * polyfill — a conforming implementation would use RDF Dataset Canonicalisation
+ * over reifier-bearing quads.
+ */
+
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
-import canonicalize from 'canonicalize';
 import type { SignedTriple } from '@living-web/personal-graph';
-import { GraphDiff } from './types.js';
+import { ContextDiff, type CapabilityProof } from './types.js';
 
-/**
- * Compute a revision hash for a GraphDiff per §4.3:
- * revision = SHA-256(canonicalize(additions) || canonicalize(removals) || sort(dependencies))
- */
+function canonicalise(triples: readonly SignedTriple[]): string {
+  return triples.map(t => {
+    const target = /^[a-zA-Z][\w+\-.]*:.+/.test(t.data.target)
+      ? `<${t.data.target}>`
+      : `"${t.data.target.replace(/"/g, '\\"')}"`;
+    return `<${t.data.source}> <${t.data.predicate}> ${target} . ${t.author} ${t.timestamp} ${t.proof.signature}`;
+  }).sort().join('\n');
+}
+
 export function computeRevision(
-  additions: SignedTriple[],
-  removals: SignedTriple[],
-  dependencies: string[]
+  graphDid: string,
+  additions: readonly SignedTriple[],
+  removals: readonly SignedTriple[],
+  dependencies: readonly string[],
 ): string {
-  const addCanon = canonicalize(additions.map(t => canonicalize(tripleToCanonical(t))!).sort()) ?? '';
-  const remCanon = canonicalize(removals.map(t => canonicalize(tripleToCanonical(t))!).sort()) ?? '';
-  const depsSorted = [...dependencies].sort().join(',');
-  const input = addCanon + remCanon + depsSorted;
-  const hash = sha256(new TextEncoder().encode(input));
-  return bytesToHex(hash);
+  const input =
+    `graph:${graphDid}\n+\n${canonicalise(additions)}\n-\n${canonicalise(removals)}\ndeps:${[...dependencies].sort().join(',')}`;
+  return bytesToHex(sha256(new TextEncoder().encode(input)));
 }
 
-function tripleToCanonical(t: SignedTriple): any {
-  return {
-    s: t.data.source,
-    p: t.data.predicate,
-    t: t.data.target,
-    a: t.author,
-    ts: t.timestamp,
-    sig: t.proof.signature,
-  };
-}
-
-/**
- * Create a GraphDiff from additions and removals.
- */
-export function createGraphDiff(
-  additions: SignedTriple[],
-  removals: SignedTriple[],
-  dependencies: string[],
-  author: string
-): GraphDiff {
-  const revision = computeRevision(additions, removals, dependencies);
-  return new GraphDiff({
+export function createContextDiff(opts: {
+  graphDid: string;
+  additions: SignedTriple[];
+  removals: SignedTriple[];
+  dependencies?: string[];
+  capabilityProof?: CapabilityProof | null;
+  author: string;
+  timestamp?: number;
+  diffsSinceSnapshot?: number;
+}): ContextDiff {
+  const dependencies = opts.dependencies ?? [];
+  const revision = computeRevision(opts.graphDid, opts.additions, opts.removals, dependencies);
+  return new ContextDiff({
+    graphDid: opts.graphDid,
     revision,
-    additions,
-    removals,
+    additions: opts.additions,
+    removals: opts.removals,
     dependencies,
-    author,
-    timestamp: Date.now(),
+    capabilityProof: opts.capabilityProof ?? null,
+    author: opts.author,
+    timestamp: opts.timestamp ?? Date.now(),
+    diffsSinceSnapshot: opts.diffsSinceSnapshot ?? 0,
   });
 }

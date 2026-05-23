@@ -2,23 +2,20 @@
 
 **W3C Draft Community Group Report**
 
-**Latest published version:** This document  
-**Editor:** [Editor Name]  
-**This version:** Draft, 4 April 2026
+**Latest published version:** This document
+**Editor:** [TBD]
 
 ---
 
 ## Abstract
 
-This specification defines an extension to SHACL (Shapes Constraint Language) [[SHACL]] that adds action semantics — constructors, property setters, and collection operations — enabling declarative CRUD over RDF graphs. Shapes can be dynamically registered, queried, and used to create structured data instances within personal or shared linked data graphs. This allows applications to define portable, self-describing data models that drive both validation and data manipulation.
+This specification defines an extension to SHACL (Shapes Constraint Language) [[SHACL]] that adds **action semantics** — constructors, property setters, and collection operations — enabling declarative CRUD over RDF graphs. Shapes register into a **context** (a named graph identified by a `did:graph:...` DID — see [[PERSONAL-LINKED-DATA-GRAPHS]]) and define both the validation constraints and the CRUD operations for a class of graph entities. Shapes are stored as triples inside the context they describe, so contexts are self-describing and shapes travel with their data through snapshot transfer (see [[PERSONAL-LINKED-DATA-GRAPHS]] §5). Shapes registered on a parent context are visible to child contexts that participate in it via [[GROUP-IDENTITY]] participation links.
 
 ---
 
 ## Status of This Document
 
-This document is a draft Community Group Report produced by the [Personal Linked Data Community Group](). It has not been reviewed or endorsed by the W3C Membership and is not a W3C Standard. This document is subject to change.
-
-Comments on this specification are welcome. Please file issues on the [GitHub repository]().
+This document is a draft Community Group Report. It has no official W3C standing and is subject to change.
 
 ---
 
@@ -30,11 +27,13 @@ Comments on this specification are welcome. Please file issues on the [GitHub re
 4. [Shape Definition Format](#4-shape-definition-format)
 5. [API](#5-api)
 6. [Shape Storage Convention](#6-shape-storage-convention)
-7. [Relationship to SHACL](#7-relationship-to-shacl)
-8. [Security Considerations](#8-security-considerations)
-9. [Privacy Considerations](#9-privacy-considerations)
-10. [Examples](#10-examples)
-11. [References](#11-references)
+7. [Shape Inheritance Across Contexts](#7-shape-inheritance-across-contexts)
+8. [Relationship to SHACL](#8-relationship-to-shacl)
+9. [Relationship to Flows](#9-relationship-to-flows)
+10. [Security Considerations](#10-security-considerations)
+11. [Privacy Considerations](#11-privacy-considerations)
+12. [Examples](#12-examples)
+13. [References](#13-references)
 
 ---
 
@@ -42,48 +41,44 @@ Comments on this specification are welcome. Please file issues on the [GitHub re
 
 ### 1.1 Motivation
 
-The Shapes Constraint Language (SHACL) [[SHACL]] is a W3C Recommendation for validating RDF graphs against a set of conditions (shapes). SHACL excels at answering the question "does this data conform to this shape?" — but it does not address the question "how do I create data that conforms to this shape?"
+SHACL [[SHACL]] excels at validation — "does this data conform to this shape?" — but does not address the complement: "how do I create data that conforms to this shape?" Applications need to **create** instances with correct structure, **read** properties in a type-safe manner, **update** scalar and collection properties, and **delete** values.
 
-Applications working with RDF graphs need more than validation. They need to:
+Today each application implements its own CRUD logic over RDF triples, duplicating effort and producing incompatible data access patterns. This specification defines **action semantics** for SHACL shapes: constructors that create well-formed instances, property setters that maintain shape constraints, and collection operations that manage multi-valued properties.
 
-- **Create** new instances of a shape with correct structure
-- **Read** property values from instances in a type-safe manner
-- **Update** scalar properties and collection properties
-- **Delete** or remove values from collections
+### 1.2 Shapes Are Context-Local Self-Description
 
-Today, each application implements its own CRUD logic over RDF triples, duplicating effort and producing incompatible data access patterns. This specification addresses this gap by defining **action semantics** for SHACL shapes: constructors that create well-formed instances, property setters that maintain shape constraints, and collection operations that manage multi-valued properties.
+Shapes register *into a specific context* and are stored as triples inside that context. This gives two important properties:
 
-### 1.2 Use Cases
+- **Self-describing contexts.** Mounting a context (via `mountSnapshot()`) brings its shapes along. A new agent encountering a context can inspect its shapes, understand its constraints, and participate meaningfully — the description of what the context *is* travels with it.
+- **Cross-context inheritance.** A child context that declares `context://participates_in <parent>` inherits the parent's shapes. Child contexts MAY add new shapes or extend existing ones, but MUST NOT relax constraints below what the parent declares. See [§7](#7-shape-inheritance-across-contexts).
 
-- **Auto-generated forms:** Given a shape definition, a user agent or application can automatically generate a creation form with the correct fields, types, and cardinality constraints.
-- **Agent tools from schemas:** Autonomous agents can discover available shapes in a graph and use them as typed tools — creating instances, querying data, and updating properties without hardcoded knowledge of the data model.
-- **Portable data models:** Shape definitions travel with the graph. Any application that understands this specification can interact with the data, regardless of which application created it.
-- **No-code application definitions:** Shapes define the data model; applications define the views. New data types can be introduced by adding shapes — no code deployment required.
+### 1.3 Use Cases
 
-### 1.3 Scope
+- **Auto-generated forms.** Given a shape definition, an application can automatically generate a creation form with the correct fields, types, and cardinality.
+- **Agent tools from schemas.** Autonomous agents can discover available shapes in a context and use them as typed tools — creating instances, querying data, and updating properties without hardcoded knowledge of the data model.
+- **Portable data models.** Shape definitions travel with the context. Any application that understands this specification can interact with the data, regardless of which application created it.
+- **No-code application definitions.** Shapes define the data model; applications define the views. New data types can be introduced by adding shapes — no code deployment required.
+
+### 1.4 Scope
 
 This specification defines:
 
-- A JSON format for shape definitions with action semantics
-- A Web API for registering, querying, and executing shapes within graphs
-- Conventions for storing shapes as graph data
-- The relationship between this specification and standard SHACL validation
+- A JSON format for shape definitions with action semantics.
+- A web API for registering, querying, and executing shapes within a context.
+- Conventions for storing shapes as triples in the context they describe.
+- Shape inheritance across nested contexts via `context://participates_in`.
+- The relationship between this specification and standard SHACL validation.
+- The relationship between this specification and [[GRAPH-FLOWS]].
 
-This specification does NOT define:
-
-- A replacement for SHACL — standard SHACL validation remains applicable
-- A query language — SPARQL [[SPARQL]] or other query mechanisms are used for data retrieval
-- A user interface rendering model — how shapes are presented to users is application-defined
+This specification does NOT define a replacement for SHACL — standard SHACL validation remains applicable.
 
 ---
 
 ## 2. Conformance
 
-As well as sections marked as non-normative, all authoring guidelines, diagrams, examples, and notes in this specification are non-normative. Everything else in this specification is normative.
+The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" are to be interpreted as described in [[RFC2119]] and [[RFC8174]].
 
-The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in [[RFC2119]].
-
-A **conforming implementation** MUST support all normative requirements of this specification when processing shape definitions and executing shape actions.
+A **conforming implementation** MUST support all normative requirements when processing shape definitions and executing shape actions.
 
 ---
 
@@ -91,22 +86,31 @@ A **conforming implementation** MUST support all normative requirements of this 
 
 <dl>
 <dt><dfn>Shape</dfn></dt>
-<dd>A named definition comprising a target class, property definitions, and constructor actions. A shape defines both the validation constraints and the CRUD operations for a class of graph entities.</dd>
+<dd>A named definition comprising a target class, property definitions, and constructor actions. Defines both validation constraints and CRUD operations for a class of entities.</dd>
+
+<dt><dfn>Context</dfn></dt>
+<dd>A named graph identified by a <code>did:graph:...</code> DID in which shapes are registered. See [[PERSONAL-LINKED-DATA-GRAPHS]] §3.3.</dd>
 
 <dt><dfn>ShapeInstance</dfn></dt>
-<dd>A graph entity (identified by an address/URI) that conforms to a shape. Created by executing a shape's constructor.</dd>
+<dd>A graph entity (identified by a URI) that conforms to a shape. Created by executing a shape's constructor.</dd>
 
 <dt><dfn>Constructor</dfn></dt>
-<dd>An ordered list of triple operations (actions) that, when executed, create a well-formed ShapeInstance in the graph.</dd>
+<dd>An ordered list of triple operations (actions) that create a well-formed ShapeInstance.</dd>
 
 <dt><dfn>PropertySetter</dfn></dt>
 <dd>A generated operation that modifies a single property of a ShapeInstance while maintaining shape constraints.</dd>
 
 <dt><dfn>Collection</dfn></dt>
-<dd>A multi-valued property (maxCount > 1 or unbounded) that supports add and remove operations.</dd>
+<dd>A multi-valued property (<code>maxCount &gt; 1</code> or unbounded) that supports add and remove operations.</dd>
 
 <dt><dfn>TargetClass</dfn></dt>
 <dd>A URI identifying the class of entities that a shape describes. Analogous to <code>sh:targetClass</code> in SHACL.</dd>
+
+<dt><dfn>Action Namespace</dfn></dt>
+<dd>The URI namespace <code>shape://actions/</code> under which constructor action types are defined.</dd>
+
+<dt><dfn>Inherited Shape</dfn></dt>
+<dd>A shape defined in a parent context (a context that the current context declares <code>context://participates_in</code> against) which is visible inside the child context.</dd>
 </dl>
 
 ---
@@ -115,23 +119,21 @@ A **conforming implementation** MUST support all normative requirements of this 
 
 ### 4.1 Base Shape Structure
 
-A shape definition is a JSON object with the following structure:
-
 ```json
 {
   "targetClass": "<URI>",
   "properties": [ ... ],
-  "constructor": [ ... ]
+  "constructor": [ ... ],
+  "extends": "<parent shape URI>"
 }
 ```
 
 - **targetClass** (REQUIRED): A URI identifying the RDF class this shape describes.
-- **properties** (REQUIRED): An array of property definitions (see [4.2](#42-property-definitions)).
-- **constructor** (REQUIRED): An ordered array of constructor actions (see [4.3](#43-constructor-actions)).
+- **properties** (REQUIRED): An array of property definitions ([§4.2](#42-property-definitions)).
+- **constructor** (REQUIRED): An ordered array of constructor actions ([§4.3](#43-constructor-actions)).
+- **extends** (OPTIONAL): A URI of a parent shape this shape extends. The child inherits the parent's properties and constructor; the child's properties and constructor are appended/overlaid per [§4.6](#46-shape-extension).
 
 ### 4.2 Property Definitions
-
-Each property definition is a JSON object describing a property of the shape:
 
 ```json
 {
@@ -152,109 +154,108 @@ Each property definition is a JSON object describing a property of the shape:
 <dd>The predicate URI used in triples for this property.</dd>
 
 <dt><code>name</code> (REQUIRED)</dt>
-<dd>A short, human-readable identifier for the property. MUST be unique within the shape. MUST match the pattern <code>[a-zA-Z_][a-zA-Z0-9_]*</code>.</dd>
+<dd>Short human-readable identifier. MUST be unique within the shape. MUST match <code>[a-zA-Z_][a-zA-Z0-9_]*</code>.</dd>
 
 <dt><code>datatype</code> (OPTIONAL)</dt>
-<dd>The expected datatype of the property value. MUST be an XSD datatype URI (e.g., <code>xsd:string</code>, <code>xsd:dateTime</code>, <code>xsd:integer</code>) or the string <code>"URI"</code> for object properties. If omitted, no type checking is performed.</dd>
+<dd>Expected datatype. MUST be an XSD URI or <code>"URI"</code>. If omitted, no type checking is performed.</dd>
 
 <dt><code>minCount</code> (OPTIONAL, default: 0)</dt>
 <dd>Minimum number of values. Corresponds to <code>sh:minCount</code> in SHACL.</dd>
 
 <dt><code>maxCount</code> (OPTIONAL)</dt>
-<dd>Maximum number of values. If omitted, the property is unbounded. If set to 1, the property is scalar. Corresponds to <code>sh:maxCount</code> in SHACL.</dd>
+<dd>Maximum number of values. If omitted, unbounded. <code>maxCount = 1</code> means scalar.</dd>
 
 <dt><code>writable</code> (OPTIONAL, default: true)</dt>
-<dd>Whether the property can be modified after construction. If <code>false</code>, no setter is generated.</dd>
+<dd>Whether the property can be modified after construction.</dd>
 
 <dt><code>readOnly</code> (OPTIONAL, default: false)</dt>
-<dd>If <code>true</code>, the property value is computed (via <code>getter</code>) and cannot be set. Implies <code>writable: false</code>.</dd>
+<dd>If <code>true</code>, value is computed via <code>getter</code> and cannot be set. Implies <code>writable: false</code>.</dd>
 
 <dt><code>resolveProtocol</code> (OPTIONAL)</dt>
-<dd>A content protocol URI used to resolve the property value from a content-addressed store. When present, the getter resolves the address to the content before returning the value.</dd>
+<dd>A content protocol URI used to resolve the property value from a content-addressed store.</dd>
 
 <dt><code>getter</code> (OPTIONAL)</dt>
-<dd>A SPARQL expression or query fragment that computes the property value from the graph. Used for derived or computed properties.</dd>
+<dd>A SPARQL expression that computes the property value from the context.</dd>
 </dl>
 
 Property setter generation rules:
 
-- If `maxCount` is 1 and `writable` is `true`: a `set_{name}` setter is generated.
-- If `maxCount` is absent or > 1 and `writable` is `true`: `add_{name}` and `remove_{name}` operations are generated.
-- If `writable` is `false` or `readOnly` is `true`: no setter is generated.
+- `maxCount = 1` AND `writable: true` → `set_{name}` setter is generated.
+- `maxCount` absent or > 1 AND `writable: true` → `add_{name}` and `remove_{name}` are generated.
+- `writable: false` OR `readOnly: true` → no setter generated.
 
 ### 4.3 Constructor Actions
 
-A constructor is an ordered array of action objects. When a ShapeInstance is created, these actions are executed in order to insert the necessary triples into the graph.
+A constructor is an ordered array of action objects. Each action is one of three forms (all under the `shape://actions/` namespace):
 
-Each action is one of:
-
-#### addLink
+#### 4.3.1 addLink
 
 ```json
 {
-  "action": "addLink",
+  "action": "shape://actions/addLink",
   "source": "this",
   "predicate": "<predicate URI>",
   "target": "<property name or literal>"
 }
 ```
 
-Adds a triple `(source, predicate, target)` to the graph. This action is used when a property may have multiple values (collection semantics).
+Adds a triple `(source, predicate, target)`. Used for collection-like properties.
 
-#### setSingleTarget
+#### 4.3.2 setSingleTarget
 
 ```json
 {
-  "action": "setSingleTarget",
+  "action": "shape://actions/setSingleTarget",
   "source": "this",
   "predicate": "<predicate URI>",
   "target": "<property name or literal>"
 }
 ```
 
-Sets exactly one triple `(source, predicate, target)`, removing any existing triple with the same source and predicate first. Used for scalar properties.
+Sets exactly one triple, removing any existing triple with the same source and predicate. Used for scalar properties.
 
-#### addCollectionTarget
+#### 4.3.3 addCollectionTarget
 
 ```json
 {
-  "action": "addCollectionTarget",
+  "action": "shape://actions/addCollectionTarget",
   "source": "this",
   "predicate": "<predicate URI>",
   "target": "<property name or literal>"
 }
 ```
 
-Adds a value to a collection property. Similar to `addLink` but with explicit collection semantics — the implementation MAY use an intermediate collection node.
+Adds a value to a collection. Similar to `addLink` but with explicit collection semantics — implementations MAY use an intermediate collection node.
 
 For all actions:
 
-- **source**: MUST be `"this"`, referring to the address of the new ShapeInstance being created.
+- **action**: MUST be a URI under `shape://actions/`.
+- **source**: MUST be `"this"` — the new ShapeInstance's URI.
 - **predicate**: MUST be a valid predicate URI.
-- **target**: If the value matches a property `name`, it is resolved from the initial values provided at creation time. Otherwise, it is treated as a literal value.
+- **target**: If the value matches a property `name`, it is resolved from initial values supplied at creation. Otherwise it is treated as a literal.
 
 ### 4.4 Property Setters
 
-Property setters are automatically generated from property definitions. They are not explicitly defined in the shape JSON — the implementation derives them.
+Setters are automatically generated from property definitions; not explicitly listed in shape JSON.
 
-For a scalar property (maxCount = 1) named `title`:
+For a scalar property `title`:
 
-- `set_title(value)` → removes any existing triple `(instance, path, *)` and adds `(instance, path, value)`
+- `set_title(value)` → removes any existing `(instance, path, *)` and adds `(instance, path, value)`.
 
-For a collection property named `tags`:
+For a collection property `tags`:
 
-- `add_tags(value)` → adds `(instance, path, value)`
-- `remove_tags(value)` → removes `(instance, path, value)`
+- `add_tags(value)` → adds `(instance, path, value)`.
+- `remove_tags(value)` → removes `(instance, path, value)`.
 
-Setters MUST validate the new value against the property's datatype constraint before modifying the graph. If validation fails, the setter MUST reject with a `TypeError`.
+Setters MUST validate values against the property's `datatype` before modifying the context. If validation fails, the setter MUST reject with `TypeError`.
 
 ### 4.5 Type Discriminator
 
-Each shape SHOULD include a **flag** property — a property with a fixed predicate and value that serves as a type discriminator for identifying instances of the shape.
+Each shape SHOULD include a **flag** property that serves as the type discriminator for instance discovery.
 
 ```json
 {
-  "path": "rdf:type",
+  "path": "rdf://type",
   "name": "type_flag",
   "datatype": "URI",
   "minCount": 1,
@@ -263,55 +264,88 @@ Each shape SHOULD include a **flag** property — a property with a fixed predic
 }
 ```
 
-The constructor MUST include an action that sets this flag:
+The constructor MUST set this flag:
 
 ```json
 {
-  "action": "setSingleTarget",
+  "action": "shape://actions/setSingleTarget",
   "source": "this",
-  "predicate": "rdf:type",
+  "predicate": "rdf://type",
   "target": "<targetClass URI>"
 }
 ```
 
-The `getShapeInstances` method (see [Section 5.4](#54-getshapeinstances)) uses this flag to discover all instances of a shape in the graph.
+`getShapeInstances` uses this flag to discover all instances of a shape.
 
-[NOTE: The use of `rdf:type` as the default discriminator is conventional but not mandatory. Implementations MAY use alternative predicates if the shape definition specifies one. Feedback on whether to mandate `rdf:type` is welcome.]
+### 4.6 Shape Extension
+
+When a shape defines `extends: "<parent>"`:
+
+- The child inherits all properties from the parent.
+- The child MAY add new properties.
+- The child MAY override a parent property *only* by narrowing it: increasing `minCount`, decreasing `maxCount`, narrowing `datatype`, or setting `writable: false`. Loosening any constraint MUST cause `addShape()` to reject with `"ConstraintError"`.
+- The child's constructor is executed *after* the parent's constructor.
+
+This is the in-shape extension mechanism. Cross-context inheritance via `context://participates_in` is described in [§7](#7-shape-inheritance-across-contexts).
 
 ---
 
 ## 5. API
 
-### 5.1 addShape
+### 5.1 Context Methods
+
+All shape operations live on the `Context` interface (defined in [[PERSONAL-LINKED-DATA-GRAPHS]] §3.3). Shape modification is governed: the caller MUST hold an `updateSHACL` capability for the target context ([[GRAPH-GOVERNANCE]]).
 
 ```webidl
-[Exposed=Window,Worker]
-partial interface PersonalGraph {
-  [NewObject] Promise<undefined> addShape(
-    DOMString name,
-    DOMString shapeJson
+partial interface Context {
+  // Registration
+  [NewObject] Promise<undefined> addShape(DOMString name, DOMString shapeJson);
+  [NewObject] Promise<undefined> removeShape(DOMString name);
+  [NewObject] Promise<sequence<ShapeInfo>> getShapes(optional GetShapesOptions options);
+
+  // Instance lifecycle
+  [NewObject] Promise<USVString> createShapeInstance(
+    DOMString shapeName,
+    USVString address,
+    optional record<DOMString, any> initialValues = {}
+  );
+  [NewObject] Promise<sequence<USVString>> getShapeInstances(DOMString shapeName);
+  [NewObject] Promise<record<DOMString, any>> getShapeInstanceData(
+    DOMString shapeName,
+    USVString address
+  );
+
+  // Property/collection operations
+  [NewObject] Promise<undefined> setShapeProperty(
+    DOMString shapeName,
+    USVString address,
+    DOMString property,
+    any value
+  );
+  [NewObject] Promise<undefined> addToShapeCollection(
+    DOMString shapeName,
+    USVString address,
+    DOMString collection,
+    any value
+  );
+  [NewObject] Promise<undefined> removeFromShapeCollection(
+    DOMString shapeName,
+    USVString address,
+    DOMString collection,
+    any value
   );
 };
-```
 
-Registers a shape definition in the graph. The `name` MUST be unique within the graph. The `shapeJson` MUST be a valid JSON string conforming to [Section 4](#4-shape-definition-format).
-
-If a shape with the same name already exists, the method MUST reject with a `ConstraintError` DOMException.
-
-The shape definition is stored as a content-addressed entity in the graph (see [Section 6](#6-shape-storage-convention)).
-
-### 5.2 getShapes
-
-```webidl
-[Exposed=Window,Worker]
-partial interface PersonalGraph {
-  [NewObject] Promise<sequence<ShapeInfo>> getShapes();
+dictionary GetShapesOptions {
+  boolean includeInherited = true;   // include shapes inherited from parent contexts
 };
 
 dictionary ShapeInfo {
   DOMString name;
   USVString targetClass;
   USVString definitionAddress;
+  USVString sourceContextDid;       // the context where this shape is registered
+                                     // (= this context for local shapes, parent for inherited)
   sequence<PropertyInfo> properties;
 };
 
@@ -326,408 +360,362 @@ dictionary PropertyInfo {
 };
 ```
 
-Returns all shapes registered in the graph.
+### 5.2 addShape
 
-### 5.3 createShapeInstance
+Registers a shape definition into this context.
 
-```webidl
-[Exposed=Window,Worker]
-partial interface PersonalGraph {
-  [NewObject] Promise<USVString> createShapeInstance(
-    DOMString shapeName,
-    USVString address,
-    optional record<DOMString, any> initialValues = {}
-  );
-};
-```
+1. MUST verify the caller holds an `updateSHACL` capability for this context. If not, reject with `"NotAllowedError"`.
+2. MUST validate the shape JSON conforms to [§4](#4-shape-definition-format). If malformed, reject with `"SyntaxError"`.
+3. If `extends` is present, MUST resolve the parent shape and apply the extension rules from [§4.6](#46-shape-extension). If extension is invalid, reject with `"ConstraintError"`.
+4. MUST store the shape as triples in this context (see [§6](#6-shape-storage-convention)).
 
-Creates a new ShapeInstance by executing the shape's constructor actions.
+If a shape with the same name already exists in this context, reject with `"ConstraintError"`.
 
-The `address` parameter specifies the URI/address of the new instance. Implementations MAY generate a content-addressed identifier if `address` is empty.
+### 5.3 removeShape
 
-The `initialValues` parameter provides values for properties referenced in constructor actions. If a required property (minCount ≥ 1) is missing from `initialValues` and has no default, the method MUST reject with a `TypeError`.
+Removes a shape registration. Requires `updateSHACL`. Existing instances are NOT deleted.
 
-The method MUST execute constructor actions in order, resolving property name references against `initialValues`. On success, it returns the address of the created instance.
+### 5.4 getShapes
 
-### 5.4 getShapeInstances
+Returns shapes registered in this context. When `includeInherited` is true (default), also returns shapes inherited from parent contexts via [§7](#7-shape-inheritance-across-contexts).
 
-```webidl
-[Exposed=Window,Worker]
-partial interface PersonalGraph {
-  [NewObject] Promise<sequence<USVString>> getShapeInstances(
-    DOMString shapeName
-  );
-};
-```
+### 5.5 createShapeInstance
 
-Returns the addresses of all instances in the graph that match the shape's type discriminator (flag property).
+Creates a new instance by executing the shape's constructor actions. May reference local or inherited shapes.
 
-### 5.5 getShapeInstanceData
+1. Resolve the shape (local or inherited).
+2. If `address` is empty, MAY generate a content-addressed identifier.
+3. Validate that all required properties (`minCount ≥ 1`) without defaults are present in `initialValues`. If not, reject with `TypeError`.
+4. Each constructor action becomes a triple write to *this* context (not the source context, if inherited). Writes are subject to this context's governance.
+5. Return the instance's address.
 
-```webidl
-[Exposed=Window,Worker]
-partial interface PersonalGraph {
-  [NewObject] Promise<record<DOMString, any>> getShapeInstanceData(
-    DOMString shapeName,
-    USVString address
-  );
-};
-```
+### 5.6 getShapeInstances / getShapeInstanceData
 
-Returns all property values for a ShapeInstance as a dictionary mapping property names to values. Scalar properties return a single value; collection properties return an array.
+`getShapeInstances` returns addresses of all entities in this context whose type discriminator matches the shape's `targetClass`. `getShapeInstanceData` returns the full property dictionary for an instance.
 
-Properties with a `resolveProtocol` SHOULD have their values resolved from the content-addressed store before returning.
+### 5.7 setShapeProperty / addToShapeCollection / removeFromShapeCollection
 
-Properties with a `getter` MUST have their values computed from the graph.
-
-### 5.6 setShapeProperty
-
-```webidl
-[Exposed=Window,Worker]
-partial interface PersonalGraph {
-  [NewObject] Promise<undefined> setShapeProperty(
-    DOMString shapeName,
-    USVString address,
-    DOMString property,
-    any value
-  );
-};
-```
-
-Sets a scalar property (maxCount = 1) on a ShapeInstance. Executes the generated `set_{property}` operation.
-
-MUST reject with a `TypeError` if the property is not writable, if the value fails datatype validation, or if the property is a collection (maxCount ≠ 1).
-
-### 5.7 addToShapeCollection
-
-```webidl
-[Exposed=Window,Worker]
-partial interface PersonalGraph {
-  [NewObject] Promise<undefined> addToShapeCollection(
-    DOMString shapeName,
-    USVString address,
-    DOMString collection,
-    any value
-  );
-};
-```
-
-Adds a value to a collection property. MUST reject with a `TypeError` if the property is scalar (maxCount = 1), not writable, or the value fails datatype validation. MUST reject with a `ConstraintError` if adding the value would exceed `maxCount`.
-
-### 5.8 removeFromShapeCollection
-
-```webidl
-[Exposed=Window,Worker]
-partial interface PersonalGraph {
-  [NewObject] Promise<undefined> removeFromShapeCollection(
-    DOMString shapeName,
-    USVString address,
-    DOMString collection,
-    any value
-  );
-};
-```
-
-Removes a value from a collection property. MUST reject with a `NotFoundError` if the value does not exist in the collection. MUST reject with a `ConstraintError` if removal would violate `minCount`.
+Standard CRUD operations. Each is a triple write to this context and is subject to governance.
 
 ---
 
 ## 6. Shape Storage Convention
 
-### 6.1 Self-Describing Shapes
+### 6.1 Self-Describing Contexts
 
-Shapes are stored as triples in the graph itself. This means the data model is self-describing — any application that can read the graph can discover the shapes that govern it.
+Shapes are stored as triples *inside the context they govern*. A context can be mounted, snapshotted, and transferred via [[PERSONAL-LINKED-DATA-GRAPHS]] §5; its shapes travel with it. No separate shape registry or schema service is required.
 
 ### 6.2 Well-Known Predicate
 
-Shapes are linked to the graph via a well-known predicate:
+Shapes are linked to the context via:
 
 ```
-<graph-root> -[shacl://has_shape]→ <shape-definition-address>
+<context-did> -[shape://has_shape]→ <shape-definition-address>
 ```
 
-The predicate `shacl://has_shape` is reserved for this purpose. Implementations MUST use this predicate when storing shape definitions.
+The predicate `shape://has_shape` is reserved for this purpose.
 
 ### 6.3 Content Addressing
 
-Shape definitions MUST be stored as content-addressed entities. The address of a shape definition is the cryptographic hash of its canonical JSON representation.
+Shape definitions MUST be stored as content-addressed entities. The address is the SHA-256 of the shape JSON's canonical form (JCS [[JCS]]).
 
-This ensures that shape definitions are **immutable** once stored. If a shape needs to be modified, a new version is created with a new address, and the `shacl://has_shape` link is updated.
+This makes shape definitions immutable. Modifying a shape produces a new content-address; the `shape://has_shape` link is updated to point at the new address.
 
-[NOTE: The canonicalisation algorithm for shape JSON (e.g., JCS [[JCS]] or a custom canonical form) needs to be specified. Feedback on the preferred approach is welcome.]
+### 6.4 Stored Triple Shape
 
-### 6.4 Composability
+```turtle
+# Inside the context's named graph:
+<did:graph:context>  shape://has_shape   <sha256:abc...> .
 
-Shapes MAY be imported from other graphs. To import a shape:
+<sha256:abc...>  rdf://type           shape://Shape ;
+                 shape://name          "Task" ;
+                 shape://targetClass   schema://Action ;
+                 shape://definition    "<JCS-canonicalised JSON>" .
+```
 
-1. Retrieve the shape definition from the source graph (by its content address).
-2. Store the shape definition in the target graph.
-3. Add a `shacl://has_shape` link in the target graph.
+### 6.5 Composability
 
-Because shape definitions are content-addressed and immutable, the same shape definition has the same address in any graph. This enables shape reuse across applications and communities.
+Shape definitions are content-addressed and immutable, so the same shape has the same address in any context. To import a shape:
+
+1. Add the shape definition's triples (with the existing content-address) to the target context.
+2. Add the `shape://has_shape` link from the target context's DID.
+
+Because the address is identical, an importer can detect that the same shape is already known.
 
 ---
 
-## 7. Relationship to SHACL
+## 7. Shape Inheritance Across Contexts
 
-### 7.1 Extension, Not Replacement
+This section is normative.
 
-This specification extends SHACL [[SHACL]] with action semantics. It does NOT replace standard SHACL validation.
+### 7.1 Inheritance via Context Participation
 
-A shape definition as defined in this specification can be mechanically translated to a SHACL NodeShape for validation purposes. The `targetClass`, property `path`, `datatype`, `minCount`, and `maxCount` fields map directly to their SHACL counterparts.
+Contexts can be nested via `context://participates_in` links declared from below (see [[GROUP-IDENTITY]]). A child context that participates in a parent inherits the parent's shapes, with the same extension constraints as in-shape `extends`:
 
-### 7.2 Validation Compatibility
+- The child MAY use the parent's shapes as if they were local.
+- The child MAY register a new shape with the same name *only if* it satisfies [§4.6](#46-shape-extension)'s narrowing rule — it must be a strict refinement of the parent's shape.
+- The child MAY register shapes the parent does not know about.
 
-Standard SHACL validation SHOULD still apply to graphs using this specification's shapes. An instance created via `createShapeInstance` SHOULD validate successfully against the equivalent SHACL NodeShape.
+### 7.2 Resolution
+
+When a method (such as `createShapeInstance` or `addShape`) references a shape by name, resolution proceeds:
+
+1. Look up the name in the current context's local shapes.
+2. If not found, walk `context://participates_in` links upward and look in each ancestor context, depth-first.
+3. The first match wins.
+4. If `extends` is declared on a child shape, the parent shape MUST resolve via the same mechanism (typically to an inherited shape).
+
+### 7.3 Shape Conflicts
+
+If the same shape name is registered locally in a child and also visible from a parent, the child's registration applies *within the child*. Local-overrides-inherited is consistent with the participates-from-below semantics.
+
+### 7.4 Cross-Context Instance Discovery
+
+`getShapeInstances` on a parent context returns instances in the parent's context. `getShapeInstances` on a child context returns instances in the child's context. To enumerate instances across nested contexts, the application MUST iterate explicitly:
+
+```javascript
+const everywhere = [];
+for (const ctx of [parent, ...childrenOfParent]) {
+  everywhere.push(...await ctx.getShapeInstances("Task"));
+}
+```
+
+This is intentional: each context is sovereign over its own data, and cross-context enumeration is an explicit operation, not an implicit one.
+
+---
+
+## 8. Relationship to SHACL
+
+### 8.1 Extension, Not Replacement
+
+This specification extends SHACL with action semantics. It does NOT replace standard SHACL validation.
+
+A shape definition can be mechanically translated to a SHACL NodeShape for validation purposes. `targetClass`, property `path`, `datatype`, `minCount`, `maxCount` map directly.
+
+### 8.2 Validation Compatibility
+
+Standard SHACL validation SHOULD still apply to graphs using this specification's shapes. An instance created via `createShapeInstance` SHOULD validate against the equivalent SHACL NodeShape.
 
 Implementations SHOULD provide a method to export shapes as SHACL NodeShapes for interoperability with standard SHACL tools.
 
-### 7.3 Additive Semantics
+### 8.3 Additive Semantics
 
-The action semantics defined in this specification (constructors, setters, collection operations) are **additive** to SHACL. A shape can be:
+The action semantics are additive to SHACL:
 
-- Validated by standard SHACL tools (which ignore the action semantics)
-- Executed by implementations of this specification (which use the action semantics for CRUD)
+- Standard SHACL tools (which ignore the action semantics) can validate.
+- Implementations of this specification use the action semantics for CRUD.
 
-This dual nature enables a migration path: existing SHACL-based systems can adopt action semantics incrementally.
+### 8.4 The SHACL/ZCAP Bridge
 
----
-
-## 8. Security Considerations
-
-### 8.1 Shapes Are Data, Not Code
-
-Shape definitions are declarative data structures, not executable code. Constructor actions are limited to triple operations:
-
-- `addLink` — adds a triple
-- `setSingleTarget` — sets a single triple (removing prior values)
-- `addCollectionTarget` — adds to a collection
-
-These operations MUST NOT trigger arbitrary code execution. Implementations MUST NOT interpret any part of a shape definition as executable code (e.g., JavaScript, WASM).
-
-### 8.2 Getter Expressions
-
-The `getter` field in property definitions accepts query expressions. Implementations MUST treat these as read-only queries against the graph. Getter expressions MUST NOT:
-
-- Modify the graph
-- Access resources outside the graph
-- Execute arbitrary code
-
-Implementations SHOULD use a restricted subset of SPARQL (e.g., SELECT queries only) for getter expressions.
-
-### 8.3 Input Validation
-
-All values provided to shape operations (constructors, setters, collection operations) MUST be validated against the property's declared datatype before being stored in the graph. This prevents injection of malformed data.
+[[GRAPH-GOVERNANCE]] defines a `ShapeCaveat` that constrains a ZCAP to writes conforming to a specific shape. The caveat references a shape by URI; shapes define structure; the runtime evaluates them at write time. The two specifications compose: ZCAP says "this agent can write Messages here", shape says "a Message has these fields."
 
 ---
 
-## 9. Privacy Considerations
+## 9. Relationship to Flows
 
-### 9.1 Shape Visibility
+Shapes describe **structure** — what data must look like. [[GRAPH-FLOWS]] describes **process** — how data must evolve over time. The two compose:
 
-Shapes stored in a graph are visible to anyone with read access to the graph. In shared graphs, this means all peers can see all shape definitions.
+- A shape says: "A Proposal has a body, an author, and a status."
+- A flow says: "A Proposal's status transitions through draft → comment → voting → ratified, with guards and temporal constraints at each step."
 
-Shape definitions may reveal the ontology and data model of the application. This constitutes **ontology disclosure** — an observer can infer what types of data are stored without seeing instance data.
-
-### 9.2 Shape Names
-
-Shape names (the `name` parameter in `addShape`) are human-readable strings that may convey semantic meaning (e.g., "MedicalRecord", "FinancialTransaction"). Applications SHOULD consider the privacy implications of shape names in shared contexts.
-
-### 9.3 Instance Enumeration
-
-The `getShapeInstances` method returns all instances of a shape. In shared graphs, any peer can enumerate all instances of any registered shape. Applications that require instance-level access control SHOULD implement it at the governance layer, not the shape layer.
+Flow definitions reference shapes by `targetClass`; shape constructors create instances that flows then govern. Both are stored as triples in the context, and both travel with the context through snapshot transfer.
 
 ---
 
-## 10. Examples
+## 10. Security Considerations
+
+### 10.1 Shapes Are Data, Not Code
+
+Shape definitions are declarative; constructor actions are limited to triple operations. Implementations MUST NOT interpret any part of a shape definition as executable code.
+
+### 10.2 Getter Expressions
+
+The `getter` field accepts SPARQL expressions. Implementations MUST treat them as read-only against the context. They MUST NOT modify the context, access resources outside the context, or execute arbitrary code. Implementations SHOULD use a restricted SPARQL subset (SELECT only) for getters.
+
+### 10.3 Input Validation
+
+All values provided to shape operations MUST be validated against the property's declared datatype before being stored.
+
+### 10.4 Authorisation
+
+Shape registration, modification, and removal are governance-controlled operations. The runtime MUST verify an `updateSHACL` capability for the target context before processing them ([[GRAPH-GOVERNANCE]]).
+
+### 10.5 Inheritance Tampering
+
+Because inheritance walks `context://participates_in` links, an adversarial child context could declare participation in any parent to gain access to inherited shapes. Implementations MUST verify the parent context's governance accepts the child's participation — typically by a corresponding `context://accepts_participation` link from the parent, signed by a `capabilityDelegation` delegate of the parent. Unaccepted participation links MUST be ignored for inheritance purposes.
+
+---
+
+## 11. Privacy Considerations
+
+### 11.1 Ontology Disclosure
+
+Shapes stored in a context are visible to anyone with read access to the context. They reveal the ontology of the application — an observer can infer the types of data stored without seeing instance data.
+
+### 11.2 Shape Names
+
+Shape names are human-readable strings that may convey semantic meaning (e.g., "MedicalRecord"). Applications SHOULD consider the privacy implications of shape names in shared contexts.
+
+### 11.3 Instance Enumeration
+
+`getShapeInstances` returns all instances in a context for a given shape. Applications that require instance-level access control SHOULD implement it at the governance layer.
+
+### 11.4 Inherited Shape Disclosure
+
+Inheriting a parent's shapes discloses that the child participates in the parent. Communities that need participation-set privacy SHOULD avoid using cross-context inheritance for sensitive shapes.
+
+---
+
+## 12. Examples
 
 *This section is non-normative.*
 
-### 10.1 Defining a Task Shape
+### 12.1 Defining a Task Shape in a Context
 
 ```javascript
-const taskShape = {
-  targetClass: "https://schema.org/Action",
+const me = await navigator.graph.create("My Workspace");
+const work = await me.createContext({ displayName: "Work Projects" });
+
+await work.addShape("Task", JSON.stringify({
+  targetClass: "schema://Action",
   properties: [
-    {
-      path: "rdf:type",
-      name: "type_flag",
-      datatype: "URI",
-      minCount: 1,
-      maxCount: 1,
-      writable: false
-    },
-    {
-      path: "schema:name",
-      name: "title",
-      datatype: "xsd:string",
-      minCount: 1,
-      maxCount: 1,
-      writable: true
-    },
-    {
-      path: "schema:description",
-      name: "description",
-      datatype: "xsd:string",
-      minCount: 0,
-      maxCount: 1,
-      writable: true
-    },
-    {
-      path: "schema:actionStatus",
-      name: "status",
-      datatype: "xsd:string",
-      minCount: 1,
-      maxCount: 1,
-      writable: true
-    },
-    {
-      path: "schema:agent",
-      name: "assignees",
-      datatype: "URI",
-      minCount: 0,
-      writable: true
-    }
+    { path: "rdf://type",            name: "type_flag",   datatype: "URI",         minCount: 1, maxCount: 1, writable: false },
+    { path: "schema://name",         name: "title",       datatype: "xsd:string",  minCount: 1, maxCount: 1 },
+    { path: "schema://description",  name: "description", datatype: "xsd:string",  minCount: 0, maxCount: 1 },
+    { path: "schema://actionStatus", name: "status",      datatype: "xsd:string",  minCount: 1, maxCount: 1 },
+    { path: "schema://agent",        name: "assignees",   datatype: "URI",         minCount: 0 }
   ],
   constructor: [
-    {
-      action: "setSingleTarget",
-      source: "this",
-      predicate: "rdf:type",
-      target: "https://schema.org/Action"
-    },
-    {
-      action: "setSingleTarget",
-      source: "this",
-      predicate: "schema:name",
-      target: "title"
-    },
-    {
-      action: "setSingleTarget",
-      source: "this",
-      predicate: "schema:description",
-      target: "description"
-    },
-    {
-      action: "setSingleTarget",
-      source: "this",
-      predicate: "schema:actionStatus",
-      target: "status"
-    }
+    { action: "shape://actions/setSingleTarget", source: "this", predicate: "rdf://type",            target: "schema://Action" },
+    { action: "shape://actions/setSingleTarget", source: "this", predicate: "schema://name",         target: "title" },
+    { action: "shape://actions/setSingleTarget", source: "this", predicate: "schema://description",  target: "description" },
+    { action: "shape://actions/setSingleTarget", source: "this", predicate: "schema://actionStatus", target: "status" }
   ]
-};
-
-// Register the shape
-await graph.addShape("Task", JSON.stringify(taskShape));
+}));
 ```
 
-### 10.2 Creating and Querying Task Instances
+### 12.2 Creating and Querying Task Instances
 
 ```javascript
-// Create a new Task
-const taskAddress = await graph.createShapeInstance("Task", "task:001", {
+const task1 = await work.createShapeInstance("Task", "task:001", {
   title: "Write specification",
   description: "Draft the Dynamic Graph Shape Validation spec",
   status: "InProgress"
 });
 
-// Create another Task
-await graph.createShapeInstance("Task", "task:002", {
+const task2 = await work.createShapeInstance("Task", "task:002", {
   title: "Review examples",
-  description: "Ensure all examples are correct",
   status: "Pending"
 });
 
-// List all Tasks
-const taskAddresses = await graph.getShapeInstances("Task");
-console.log("Tasks:", taskAddresses);
+const all = await work.getShapeInstances("Task");
 // → ["task:001", "task:002"]
 
-// Get data for a specific Task
-const taskData = await graph.getShapeInstanceData("Task", "task:001");
-console.log(taskData);
-// → {
-//     type_flag: "https://schema.org/Action",
-//     title: "Write specification",
-//     description: "Draft the Dynamic Graph Shape Validation spec",
-//     status: "InProgress",
-//     assignees: []
-//   }
+const t1 = await work.getShapeInstanceData("Task", "task:001");
+// → { type_flag: "schema://Action", title: "Write specification", ... }
 ```
 
-### 10.3 Updating Properties and Collections
+### 12.3 Updating Properties and Collections
 
 ```javascript
-// Update a scalar property
-await graph.setShapeProperty("Task", "task:001", "status", "Complete");
-
-// Add to a collection property
-await graph.addToShapeCollection("Task", "task:001", "assignees", "did:key:z6Mk...");
-await graph.addToShapeCollection("Task", "task:001", "assignees", "did:key:z6Mn...");
-
-// Verify the changes
-const updated = await graph.getShapeInstanceData("Task", "task:001");
-console.log(updated.status);
-// → "Complete"
-console.log(updated.assignees);
-// → ["did:key:z6Mk...", "did:key:z6Mn..."]
-
-// Remove from a collection
-await graph.removeFromShapeCollection("Task", "task:001", "assignees", "did:key:z6Mn...");
+await work.setShapeProperty("Task", "task:001", "status", "Complete");
+await work.addToShapeCollection("Task", "task:001", "assignees", "did:key:z6Mk...");
+await work.removeFromShapeCollection("Task", "task:001", "assignees", "did:key:z6Mn...");
 ```
 
-### 10.4 Discovering Shapes in a Graph
+### 12.4 Discovering Shapes (Local + Inherited)
 
 ```javascript
-// List all registered shapes
-const shapes = await graph.getShapes();
+const local = await work.getShapes({ includeInherited: false });
 
-for (const shape of shapes) {
-  console.log(`Shape: ${shape.name} (${shape.targetClass})`);
-  console.log(`  Properties:`);
-  for (const prop of shape.properties) {
-    const cardinality = prop.maxCount === 1 ? "scalar" : "collection";
-    console.log(`    ${prop.name}: ${prop.datatype || "any"} (${cardinality})`);
-  }
-
-  // Count instances
-  const instances = await graph.getShapeInstances(shape.name);
-  console.log(`  Instances: ${instances.length}`);
+const all = await work.getShapes();
+for (const s of all) {
+  console.log(`${s.name} (from ${s.sourceContextDid})`);
 }
+```
+
+### 12.5 Shape Inheritance Across Contexts
+
+```javascript
+// Parent context defines a base "Item" shape.
+const community = await me.getContext("did:graph:community-root");
+await community.addShape("Item", JSON.stringify({
+  targetClass: "schema://Thing",
+  properties: [
+    { path: "schema://name", name: "title", datatype: "xsd:string", minCount: 1, maxCount: 1 }
+  ],
+  constructor: [
+    { action: "shape://actions/setSingleTarget", source: "this", predicate: "rdf://type", target: "schema://Thing" },
+    { action: "shape://actions/setSingleTarget", source: "this", predicate: "schema://name", target: "title" }
+  ]
+}));
+
+// Child context participates in the community and inherits "Item".
+const channel = await me.createContext({
+  displayName: "#general",
+  participatesIn: community.did
+});
+
+const item = await channel.createShapeInstance("Item", "item:1", { title: "Welcome" });
+```
+
+### 12.6 Shape Extension by Narrowing
+
+```javascript
+await channel.addShape("FormalItem", JSON.stringify({
+  extends: "Item",                              // inherited from community
+  targetClass: "schema://Thing",
+  properties: [
+    // narrows the parent: title required and >= 5 chars (enforced via custom validator)
+    { path: "schema://name", name: "title", datatype: "xsd:string", minCount: 1, maxCount: 1 },
+    // adds a new property
+    { path: "schema://identifier", name: "id", datatype: "xsd:string", minCount: 1, maxCount: 1 }
+  ],
+  constructor: [
+    // parent constructor runs first; child constructor appends
+    { action: "shape://actions/setSingleTarget", source: "this", predicate: "schema://identifier", target: "id" }
+  ]
+}));
 ```
 
 ---
 
-## 11. References
+## 13. References
 
-### 11.1 Normative References
+### 13.1 Normative References
 
 <dl>
 <dt>[RFC2119]</dt>
 <dd><a href="https://www.rfc-editor.org/rfc/rfc2119">Key words for use in RFCs to Indicate Requirement Levels</a>. IETF RFC 2119.</dd>
 
+<dt>[RFC8174]</dt>
+<dd><a href="https://www.rfc-editor.org/rfc/rfc8174">Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words</a>. IETF RFC 8174.</dd>
+
 <dt>[SHACL]</dt>
 <dd><a href="https://www.w3.org/TR/shacl/">Shapes Constraint Language (SHACL)</a>. W3C Recommendation.</dd>
 
 <dt>[PERSONAL-LINKED-DATA-GRAPHS]</dt>
-<dd><a href="https://github.com/HexaField/w3c-living-web-proposals/blob/main/drafts/01_personal-linked-data-graphs.md">Personal Linked Data Graphs</a>. Draft. (Companion specification)</dd>
-
-<dt>[RDF12]</dt>
-<dd><a href="https://www.w3.org/TR/rdf12-concepts/">RDF 1.2 Concepts and Abstract Syntax</a>. W3C Working Draft.</dd>
+<dd><a href="./01_personal-linked-data-graphs.md">Personal Linked Data Graphs</a>.</dd>
 </dl>
 
-### 11.2 Informative References
+### 13.2 Informative References
 
 <dl>
-<dt>[SPARQL]</dt>
-<dd><a href="https://www.w3.org/TR/sparql11-query/">SPARQL 1.1 Query Language</a>. W3C Recommendation.</dd>
+<dt>[SPARQL12-QUERY]</dt>
+<dd><a href="https://www.w3.org/TR/sparql12-query/">SPARQL 1.2 Query Language</a>. W3C Working Draft.</dd>
 
 <dt>[JCS]</dt>
 <dd><a href="https://www.rfc-editor.org/rfc/rfc8785">JSON Canonicalization Scheme (JCS)</a>. IETF RFC 8785.</dd>
 
-<dt>[SHACL-AF]</dt>
-<dd><a href="https://www.w3.org/TR/shacl-af/">SHACL Advanced Features</a>. W3C Working Group Note.</dd>
-
 <dt>[JSON-LD]</dt>
 <dd><a href="https://www.w3.org/TR/json-ld11/">JSON-LD 1.1</a>. W3C Recommendation.</dd>
+
+<dt>[GRAPH-GOVERNANCE]</dt>
+<dd><a href="./05_graph-governance.md">Graph Governance</a>.</dd>
+
+<dt>[GRAPH-FLOWS]</dt>
+<dd><a href="./07_graph-flows.md">Graph Flows</a>.</dd>
+
+<dt>[GROUP-IDENTITY]</dt>
+<dd><a href="./06_group-identity.md">Decentralised Group Identity</a>.</dd>
 </dl>

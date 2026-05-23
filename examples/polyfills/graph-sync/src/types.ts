@@ -1,9 +1,11 @@
+/**
+ * Graph-sync types — ContextDiff + sync spaces + per-context subscription.
+ */
+
 import type { SignedTriple } from '@living-web/personal-graph';
 
-// --- SyncState enum (§5.4) ---
-export type SyncState = 'idle' | 'connecting' | 'syncing' | 'synced' | 'error';
+export type ContextSyncState = 'idle' | 'resolving' | 'connecting' | 'syncing' | 'synced' | 'error';
 
-// --- Peer (§5.2) ---
 export interface Peer {
   readonly did: string;
   readonly sessionId: string;
@@ -13,40 +15,54 @@ export interface Peer {
   readonly online: boolean;
 }
 
-// --- OnlinePeer (back-compat alias) ---
-export interface OnlinePeer {
-  readonly did: string;
-  readonly lastSeen: number;
+export interface CapabilityProof {
+  /** Ordered ZCAP chain (leaf → root) as content-addressed references. */
+  chain: string[];
+  /** Caveat ids the committing agent's executor evaluated. */
+  caveatsSatisfied?: string[];
+  /** Optimisation hint: true if any caveat depends on link content. */
+  hasContentCaveats?: boolean;
 }
 
-// --- GraphDiff (§5.3) ---
-export class GraphDiff {
+/**
+ * ContextDiff — the unit of gossip. Scoped to a specific did:graph context.
+ * Immutable once constructed.
+ */
+export class ContextDiff {
+  readonly graphDid: string;
   readonly revision: string;
   readonly additions: readonly SignedTriple[];
   readonly removals: readonly SignedTriple[];
   readonly dependencies: readonly string[];
+  readonly capabilityProof: CapabilityProof | null;
   readonly author: string;
   readonly timestamp: number;
+  readonly diffsSinceSnapshot: number;
 
   constructor(opts: {
+    graphDid: string;
     revision: string;
     additions: SignedTriple[];
     removals: SignedTriple[];
     dependencies: string[];
+    capabilityProof?: CapabilityProof | null;
     author: string;
     timestamp: number;
+    diffsSinceSnapshot?: number;
   }) {
+    this.graphDid = opts.graphDid;
     this.revision = opts.revision;
     this.additions = Object.freeze([...opts.additions]);
     this.removals = Object.freeze([...opts.removals]);
     this.dependencies = Object.freeze([...opts.dependencies]);
+    this.capabilityProof = opts.capabilityProof ?? null;
     this.author = opts.author;
     this.timestamp = opts.timestamp;
+    this.diffsSinceSnapshot = opts.diffsSinceSnapshot ?? 0;
     Object.freeze(this);
   }
 }
 
-// --- ValidationResult (§5.5) ---
 export interface ValidationResult {
   accepted: boolean;
   module?: string;
@@ -54,163 +70,69 @@ export interface ValidationResult {
   reason?: string;
 }
 
-// --- SignalEvent ---
-export class SignalEvent extends Event {
-  readonly senderDid: string;
-  readonly payload: any;
-  constructor(senderDid: string, payload: any) {
-    super('signal');
-    this.senderDid = senderDid;
-    this.payload = payload;
-  }
+export type SpaceTopology = 'unified' | 'privacy-tiered' | 'fully-partitioned' | 'custom';
+
+export interface PublishOptions {
+  moduleHash?: string;
+  relays?: string[];
+  spaceTopology?: SpaceTopology;
+  customSpace?: string;
 }
 
-// --- PeerEvent ---
-export class PeerEvent extends Event {
-  readonly did: string;
-  constructor(type: 'peerjoined' | 'peerleft', did: string) {
-    super(type);
-    this.did = did;
-  }
+export interface PublishedContext {
+  graphDid: string;
+  spaceUri: string;
+  moduleHash: string;
+  relays: readonly string[];
 }
 
-// --- SyncStateChangeEvent ---
-export class SyncStateChangeEvent extends Event {
-  readonly state: SyncState;
-  constructor(state: SyncState) {
-    super('syncstatechange');
-    this.state = state;
-  }
+export interface SyncSpaceInfo {
+  spaceUri: string;
+  moduleHash: string;
+  contextCount: number;
+  peerCount: number;
 }
 
-// --- DiffEvent ---
+export interface SyncModuleInfo {
+  contentHash: string;
+  name?: string;
+  spaceCount: number;
+  state: 'running' | 'suspended' | 'error';
+  storageBytes: number;
+}
+
+// Events ------------------------------------------------------------------
+
 export class DiffEvent extends Event {
-  readonly diff: GraphDiff;
-  constructor(diff: GraphDiff) {
+  readonly diff: ContextDiff;
+  constructor(diff: ContextDiff) {
     super('diff');
     this.diff = diff;
   }
 }
 
-// --- SharedGraphOptions (§5.1) ---
-export interface SharedGraphOptions {
-  module?: string;
-  relays?: string[];
-  meta?: { name?: string; description?: string };
+export class SignalEvent extends Event {
+  readonly from: { did: string; sessionId: string };
+  readonly payload: Uint8Array;
+  constructor(from: { did: string; sessionId: string }, payload: Uint8Array) {
+    super('signal');
+    this.from = from;
+    this.payload = payload;
+  }
 }
 
-// --- SharedGraphInfo (§5.1) ---
-export interface SharedGraphInfo {
-  uri: string;
-  name: string | undefined;
-  moduleHash: string;
-  syncState: SyncState;
-  peerCount: number;
+export class PeerEvent extends Event {
+  readonly peer: Peer;
+  constructor(type: 'peerjoined' | 'peerleft', peer: Peer) {
+    super(type);
+    this.peer = peer;
+  }
 }
 
-// --- SyncModuleInfo (§5.1) ---
-export type ModuleState = 'running' | 'suspended' | 'error';
-
-export interface SyncModuleInfo {
-  contentHash: string;
-  name?: string;
-  graphCount: number;
-  state: ModuleState;
-  storageBytes: number;
+export class SyncStateChangeEvent extends Event {
+  readonly state: ContextSyncState;
+  constructor(state: ContextSyncState) {
+    super('syncstatechange');
+    this.state = state;
+  }
 }
-
-// --- RevisionNode ---
-export interface RevisionNode {
-  revision: string;
-  parents: string[];
-  timestamp: number;
-}
-
-// --- Wire Protocol Message Types (§11.2) ---
-export const MSG_DIFF = 0x01;
-export const MSG_SYNC_REQ = 0x02;
-export const MSG_SYNC_RESP = 0x03;
-export const MSG_SIGNAL = 0x04;
-export const MSG_PEER_JOIN = 0x05;
-export const MSG_PEER_LEAVE = 0x06;
-export const MSG_GOVERNANCE = 0x07;
-
-export interface WireMessage {
-  type: number;
-  [key: string]: any;
-}
-
-export interface DiffMessage extends WireMessage {
-  type: typeof MSG_DIFF;
-  revision: string;
-  author: string;
-  timestamp: number;
-  additions: SignedTriple[];
-  removals: SignedTriple[];
-  dependencies: string[];
-}
-
-export interface SyncReqMessage extends WireMessage {
-  type: typeof MSG_SYNC_REQ;
-  fromRevision: string;
-  maxDiffs: number;
-}
-
-export interface SyncRespMessage extends WireMessage {
-  type: typeof MSG_SYNC_RESP;
-  diffs: DiffMessage[];
-  hasMore: boolean;
-}
-
-export interface SignalMessage extends WireMessage {
-  type: typeof MSG_SIGNAL;
-  senderDid: string;
-  recipientDid: string;
-  recipientSessionId?: string;
-  payload: any;
-}
-
-export interface PeerJoinMessage extends WireMessage {
-  type: typeof MSG_PEER_JOIN;
-  did: string;
-  sessionId: string;
-  deviceLabel?: string;
-  publicKey: string;
-  timestamp: number;
-}
-
-export interface PeerLeaveMessage extends WireMessage {
-  type: typeof MSG_PEER_LEAVE;
-  did: string;
-  timestamp: number;
-}
-
-export interface GovernanceMessage extends WireMessage {
-  type: typeof MSG_GOVERNANCE;
-  diff: DiffMessage;
-}
-
-// --- Message size limits (§11.4) ---
-export const MESSAGE_SIZE_LIMITS: Record<number, number> = {
-  [MSG_DIFF]: 1_000_000,
-  [MSG_SYNC_REQ]: 256,
-  [MSG_SYNC_RESP]: 16_000_000,
-  [MSG_SIGNAL]: 65_536,
-  [MSG_PEER_JOIN]: 1_024,
-  [MSG_PEER_LEAVE]: 256,
-  [MSG_GOVERNANCE]: 1_000_000,
-};
-
-// --- GraphSyncProtocol interface (legacy, retained for back-compat) ---
-export interface GraphSyncProtocol {
-  sync(): Promise<GraphDiff | null>;
-  commit(diff: GraphDiff): Promise<string>;
-  peers(): Promise<string[]>;
-  currentRevision(): Promise<string | null>;
-  ondiff: ((diff: GraphDiff) => void) | null;
-  onsyncstatechange: ((state: SyncState) => void) | null;
-  destroy(): void;
-}
-
-// --- SyncProtocolFactory (legacy) ---
-export type SyncProtocolFactory = (doc: any, roomName: string, opts?: any) => GraphSyncProtocol;

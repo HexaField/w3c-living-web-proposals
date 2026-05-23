@@ -1,7 +1,7 @@
 /**
  * Governance setup for collaborative document
  */
-import { SharedGraph } from '@living-web/graph-sync';
+import { Context } from '@living-web/personal-graph';
 import {
   createGovernanceLayer,
   createCapability,
@@ -9,6 +9,8 @@ import {
   type ZCAPDocument,
 } from '@living-web/governance';
 import { PREDICATES } from './shapes.js';
+
+type SharedGraph = Context;
 
 const EDITOR_PREDICATES = [
   PREDICATES.BLOCK_CONTENT, PREDICATES.BLOCK_TYPE, PREDICATES.BLOCK_AUTHOR,
@@ -45,8 +47,14 @@ export interface GovernanceState {
 }
 
 export function setupGovernance(graph: SharedGraph, ownerDid: string): GovernanceState {
-  const layer = createGovernanceLayer(graph, { rootAuthority: ownerDid });
-  const rootZcap = createCapability(ownerDid, OWNER_PREDICATES, { within: null, graph: graph.uri }, ownerDid);
+  const layer = createGovernanceLayer(graph, { enforcementMode: 'open' });
+  const rootZcap = createCapability(
+    ownerDid,
+    ['createLink', 'removeLink', 'updateProperty', 'updateSHACL', 'updateGovernance'],
+    graph.did,
+    ownerDid,
+    { caveats: [{ type: 'predicate', value: { allowed: OWNER_PREDICATES } }] },
+  );
   layer.storeExpression(rootZcap.id, rootZcap);
 
   return {
@@ -59,10 +67,12 @@ export function setupGovernance(graph: SharedGraph, ownerDid: string): Governanc
 }
 
 export function issueRoleZcap(state: GovernanceState, did: string, role: DocRole, ownerDid: string): ZCAPDocument | null {
-  if (role === 'viewer') return null; // no write zcap for viewers
-
+  if (role === 'viewer') return null;
   const predicates = role === 'editor' ? EDITOR_PREDICATES : COMMENTER_PREDICATES;
-  const zcap = delegateCapability(state.rootZcap, did, ownerDid, { subsetPredicates: predicates });
+  const zcap = delegateCapability(state.rootZcap, did, ownerDid, {
+    subsetActions: ['createLink', 'updateProperty'],
+    additionalCaveats: [{ type: 'predicate', value: { allowed: predicates } }],
+  });
   state.layer.storeExpression(zcap.id, zcap);
   state.zcaps.set(did, zcap);
   return zcap;
@@ -77,8 +87,10 @@ export function validateEdit(state: GovernanceState, did: string, isOwner: boole
   if (isOwner) return { allowed: true };
   const zcap = state.zcaps.get(did);
   if (!zcap) return { allowed: false, reason: 'View only: no edit capability' };
-  // Check if zcap has block_content predicate (editors have it, commenters don't)
-  if (!zcap.capability?.predicates?.includes(PREDICATES.BLOCK_CONTENT)) {
+  // Check if zcap's predicate caveat permits block_content (editors have it, commenters don't).
+  const predicateCaveat = (zcap.caveats ?? []).find((c: any) => c.type === 'predicate');
+  const allowed: string[] = (predicateCaveat?.value as any)?.allowed ?? [];
+  if (!allowed.includes(PREDICATES.BLOCK_CONTENT)) {
     return { allowed: false, reason: 'Commenter: cannot edit blocks' };
   }
   return { allowed: true };

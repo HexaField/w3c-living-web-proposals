@@ -62,9 +62,9 @@ export const CanvasShape: ShapeDefinition = {
     { path: PREDICATES.CANVAS_OWNER, name: 'owner', datatype: 'xsd:string', minCount: 1, maxCount: 1 },
   ],
   constructor: [
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.ENTRY_TYPE, target: PREDICATES.CANVAS },
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.CANVAS_NAME, target: 'name' },
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.CANVAS_OWNER, target: 'owner' },
+    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.ENTRY_TYPE, target: PREDICATES.CANVAS },
+    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.CANVAS_NAME, target: 'name' },
+    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.CANVAS_OWNER, target: 'owner' },
   ],
 };
 
@@ -78,10 +78,10 @@ export const LayerShape: ShapeDefinition = {
     { path: PREDICATES.LAYER_LOCKED, name: 'locked', datatype: 'xsd:string' },
   ],
   constructor: [
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.ENTRY_TYPE, target: PREDICATES.LAYER },
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.LAYER_NAME, target: 'name' },
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.LAYER_ORDER, target: 'order' },
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.LAYER_VISIBLE, target: 'visible' },
+    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.ENTRY_TYPE, target: PREDICATES.LAYER },
+    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.LAYER_NAME, target: 'name' },
+    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.LAYER_ORDER, target: 'order' },
+    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.LAYER_VISIBLE, target: 'visible' },
   ],
 };
 
@@ -105,13 +105,13 @@ export const CanvasShapeShape: ShapeDefinition = {
     { path: PREDICATES.SHAPE_AUTHOR, name: 'author', datatype: 'xsd:string', minCount: 1, maxCount: 1 },
   ],
   constructor: [
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.ENTRY_TYPE, target: PREDICATES.SHAPE },
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.SHAPE_TYPE, target: 'shapeType' },
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.SHAPE_X, target: 'x' },
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.SHAPE_Y, target: 'y' },
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.SHAPE_STROKE, target: 'stroke' },
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.SHAPE_STROKE_W, target: 'strokeWidth' },
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.SHAPE_AUTHOR, target: 'author' },
+    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.ENTRY_TYPE, target: PREDICATES.SHAPE },
+    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.SHAPE_TYPE, target: 'shapeType' },
+    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.SHAPE_X, target: 'x' },
+    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.SHAPE_Y, target: 'y' },
+    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.SHAPE_STROKE, target: 'stroke' },
+    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.SHAPE_STROKE_W, target: 'strokeWidth' },
+    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.SHAPE_AUTHOR, target: 'author' },
   ],
 };
 
@@ -126,11 +126,11 @@ export const PathShape: ShapeDefinition = {
     { path: PREDICATES.PATH_AUTHOR, name: 'author', datatype: 'xsd:string', minCount: 1, maxCount: 1 },
   ],
   constructor: [
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.ENTRY_TYPE, target: PREDICATES.PATH },
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.PATH_DATA, target: 'data' },
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.PATH_STROKE, target: 'stroke' },
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.PATH_STROKE_W, target: 'strokeWidth' },
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.PATH_AUTHOR, target: 'author' },
+    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.ENTRY_TYPE, target: PREDICATES.PATH },
+    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.PATH_DATA, target: 'data' },
+    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.PATH_STROKE, target: 'stroke' },
+    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.PATH_STROKE_W, target: 'strokeWidth' },
+    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.PATH_AUTHOR, target: 'author' },
   ],
 };
 
@@ -144,10 +144,10 @@ export const CollaboratorShape: ShapeDefinition = {
     { path: PREDICATES.COLLAB_COLOR, name: 'color', datatype: 'xsd:string', minCount: 1, maxCount: 1 },
   ],
   constructor: [
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.ENTRY_TYPE, target: PREDICATES.COLLABORATOR },
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.COLLAB_DID, target: 'did' },
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.COLLAB_NAME, target: 'name' },
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.COLLAB_ROLE, target: 'role' },
-    { action: 'setSingleTarget', source: 'this', predicate: PREDICATES.COLLAB_COLOR, target: 'color' },
+    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.ENTRY_TYPE, target: PREDICATES.COLLABORATOR },
+    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.COLLAB_DID, target: 'did' },
+    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.COLLAB_NAME, target: 'name' },
+    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.COLLAB_ROLE, target: 'role' },
+    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.COLLAB_COLOR, target: 'color' },
   ],
 };
