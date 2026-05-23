@@ -169,9 +169,9 @@ export class GraphStore extends EventTarget {
     // Participation link if requested.
     if (options.participatesIn) {
       await context.addTriple({
-        source: graphDid,
+        subject: graphDid,
         predicate: 'context://participates_in',
-        target: options.participatesIn,
+        object: options.participatesIn,
       });
     }
 

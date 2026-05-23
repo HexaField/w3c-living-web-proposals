@@ -14,10 +14,10 @@ import { ContextDiff, type CapabilityProof } from './types.js';
 
 function canonicalise(triples: readonly SignedTriple[]): string {
   return triples.map(t => {
-    const target = /^[a-zA-Z][\w+\-.]*:.+/.test(t.data.target)
-      ? `<${t.data.target}>`
-      : `"${t.data.target.replace(/"/g, '\\"')}"`;
-    return `<${t.data.source}> <${t.data.predicate}> ${target} . ${t.author} ${t.timestamp} ${t.proof.signature}`;
+    const object = /^[a-zA-Z][\w+\-.]*:.+/.test(t.data.object)
+      ? `<${t.data.object}>`
+      : `"${t.data.object.replace(/"/g, '\\"')}"`;
+    return `<${t.data.subject}> <${t.data.predicate}> ${object} . ${t.author} ${t.timestamp} ${t.proof.signature}`;
   }).sort().join('\n');
 }
 

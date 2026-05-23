@@ -9,7 +9,7 @@ Reference implementations (polyfills) and interactive demos for the [Living Web]
 | [`@living-web/identity`](./polyfills/identity/) | [02 — Decentralised Identity](../drafts/02_decentralised-identity-web-platform.md) | `did:key` + `did:graph`; DID-document delegate management; resolver router |
 | [`@living-web/personal-graph`](./polyfills/personal-graph/) | [01 — Personal Linked-Data Graphs](../drafts/01_personal-linked-data-graphs.md) | GraphStore + Context + mount table; RDF 1.2 reifiers; graph snapshots; cross-context queries |
 | [`@living-web/shape-validation`](./polyfills/shape-validation/) | [04 — Dynamic Graph Shape Validation](../drafts/04_dynamic-graph-shape-validation.md) | Context-registered shapes; `shape://actions/` namespace; cross-context inheritance via `context://participates_in` |
-| [`@living-web/governance`](./polyfills/governance/) | [05 — Graph Governance](../drafts/05_graph-governance.md) | Root Capability; ZCAPs target `did:graph`; Open/Announced/Enforced enforcement modes; full caveat vocabulary (Expiry, Predicate, Shape, Property, Content, RateLimit, Cardinality, Source, Target, AuthorOnly) |
+| [`@living-web/governance`](./polyfills/governance/) | [05 — Graph Governance](../drafts/05_graph-governance.md) | Root Capability; ZCAPs target `did:graph`; Open/Announced/Enforced enforcement modes; full caveat vocabulary (Expiry, Predicate, Shape, Property, Content, RateLimit, Cardinality, Subject, Object, AuthorOnly) |
 | [`@living-web/flows`](./polyfills/flows/) | [07 — Graph Flows](../drafts/07_graph-flows.md) | State machines, SPARQL ASK guards, temporal constraints, role requirements |
 | [`@living-web/graph-sync`](./polyfills/graph-sync/) | [03 — P2P Graph Sync](../drafts/03_p2p-graph-sync.md) | ContextDiff (graph-DID-keyed) + sync spaces + per-context subscription; default BroadcastChannel transport; topologies (Unified / Privacy-Tiered / Fully-Partitioned / Custom) |
 | [`@living-web/group-identity`](./polyfills/group-identity/) | [06 — Decentralised Group Identity](../drafts/06_group-identity.md) | Thin convenience layer over Context + did:graph; participation (`context://`) and signing (DID delegates) kept structurally distinct |
@@ -38,7 +38,7 @@ if ('graph' in navigator) {
   await calendar.addTriple(new Triple(
     'urn:event:1',
     'schema://name',
-    'Coffee with Nico',
+    'Coffee with Alice',
   ));
 
   // Identity — did:key (individual) and did:graph (graph)
@@ -56,7 +56,7 @@ if ('graph' in navigator) {
       { path: 'schema://name', name: 'name', datatype: 'xsd:string', minCount: 1, maxCount: 1 },
     ],
     constructor: [
-      { action: 'shape://actions/setSingleTarget', source: 'this', predicate: 'schema://name', target: 'name' },
+      { action: 'shape://actions/setSingleTarget', subject: 'this', predicate: 'schema://name', object: 'name' },
     ],
   }));
 

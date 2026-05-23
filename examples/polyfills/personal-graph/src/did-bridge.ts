@@ -22,7 +22,7 @@ import {
 import type { GraphStoreManager } from './manager.js';
 
 export function installDIDBridge(manager: GraphStoreManager): void {
-  const source: GraphTripleSource = {
+  const subject: GraphTripleSource = {
     *readGraph(graphDid: string): Iterable<GraphTriple> {
       // Synchronous read for the resolver: collect from the first GraphStore
       // that has the graph mounted.
@@ -30,7 +30,7 @@ export function installDIDBridge(manager: GraphStoreManager): void {
         const ctx = store.getContext(graphDid);
         if (!ctx) continue;
         for (const triple of ctx.readAllTriples()) {
-          yield { source: triple.source, predicate: triple.predicate, target: triple.target };
+          yield { subject: triple.subject, predicate: triple.predicate, object: triple.object };
         }
         return;
       }
@@ -49,9 +49,9 @@ export function installDIDBridge(manager: GraphStoreManager): void {
       if (!context) throw new Error(`Graph ${graphDid} not mounted`);
       for (const removal of removeMethodTriples(graphDid, methodId)) {
         const matching = await context.queryTriples({
-          source: removal.source,
+          subject: removal.subject,
           predicate: removal.predicate,
-          target: removal.target,
+          object: removal.object,
         });
         for (const m of matching) await context.removeTriple(m);
       }
@@ -60,23 +60,23 @@ export function installDIDBridge(manager: GraphStoreManager): void {
       const context = await manager.resolveContext(graphDid);
       if (!context) throw new Error(`Graph ${graphDid} not mounted`);
       await context.addTriple({
-        source: graphDid,
+        subject: graphDid,
         predicate: DID_DOC_PREDICATES[section],
-        target: methodId,
+        object: methodId,
       });
     },
     async revokeSectionInGraph(graphDid, methodId, section: DIDCapabilitySection) {
       const context = await manager.resolveContext(graphDid);
       if (!context) throw new Error(`Graph ${graphDid} not mounted`);
       const matching = await context.queryTriples({
-        source: graphDid,
+        subject: graphDid,
         predicate: DID_DOC_PREDICATES[section],
-        target: methodId,
+        object: methodId,
       });
       for (const m of matching) await context.removeTriple(m);
     },
   };
 
-  registerGraphSource(source);
+  registerGraphSource(subject);
   registerGraphDIDWriter(writer);
 }

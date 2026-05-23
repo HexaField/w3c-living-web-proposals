@@ -112,7 +112,7 @@ A conforming **application** MAY call the governance engine's query methods to d
 <dd>A named graph identified by a <code>did:graph:...</code> DID. The unit of governance. See [[PERSONAL-LINKED-DATA-GRAPHS]] §3.3.</dd>
 
 <dt>Triple</dt>
-<dd>A directed, labelled relationship (source, predicate, target). See [[PERSONAL-LINKED-DATA-GRAPHS]] §3.1.</dd>
+<dd>A directed, labelled relationship (subject, predicate, object). See [[PERSONAL-LINKED-DATA-GRAPHS]] §3.1.</dd>
 
 <dt>Constraint</dt>
 <dd>A set of triples with <code>governance://</code> predicates defining a governance rule. Classified by kind: capability, temporal, content, or credential.</dd>
@@ -145,7 +145,7 @@ A conforming **application** MAY call the governance engine's query methods to d
 <dd>A constraint that limits the rate at which an agent can create matching triples.</dd>
 
 <dt>Content Constraint</dt>
-<dd>A constraint that validates the content of a triple's target.</dd>
+<dd>A constraint that validates the content of a triple's object.</dd>
 
 <dt>Governance Engine</dt>
 <dd>A software component that evaluates incoming triples against all constraints in scope and returns a validation result.</dd>
@@ -573,8 +573,8 @@ Each caveat in a ZCAP's `caveats` array is:
 | `content` | SPARQL ASK on the link content | `{ "sparql": "ASK { ... }" }` |
 | `rateLimit` | Max operations per window | `{ "maxPerWindow": <int>, "windowSeconds": <int> }` |
 | `cardinality` | Max total uses of this delegation | `{ "max": <int> }` |
-| `source` | Restrict link source patterns (glob) | `{ "pattern": "<glob>" }` |
-| `target` | Restrict link target patterns (glob) | `{ "pattern": "<glob>" }` |
+| `subject` | Restrict triple subject patterns (glob) | `{ "pattern": "<glob>" }` |
+| `object` | Restrict triple object patterns (glob) | `{ "pattern": "<glob>" }` |
 | `authorOnly` | Operation must come from the original instance creator | `{}` |
 
 Applications MAY define additional caveat types; the engine MUST treat unknown caveat types conservatively (reject the operation).
@@ -672,7 +672,7 @@ This specification does NOT define multisig, threshold signing, or aggregate-key
 
 2. **For each constraint:**
    1. **Predicate match.**
-   2. **Resolve target** to text content (literal directly, or by resolving a content-addressed expression — fail-closed on resolution error).
+   2. **Resolve object** to text content (literal directly, or by resolving a content-addressed expression — fail-closed on resolution error).
    3. **Length check.** REJECT if exceeds `content_max_length`.
    4. **Blocked patterns.** REJECT if any regex matches.
    5. **URL policy.** REJECT if `content_allow_urls = "false"` and content contains URLs.
@@ -993,19 +993,19 @@ await teamCred.addDelegate(
 ```javascript
 const slowMode = `urn:constraint:slow-${crypto.randomUUID()}`;
 await general.addTriple({
-  source: slowMode, predicate: "governance://entry_type", target: "governance://constraint"
+  subject: slowMode, predicate: "governance://entry_type", object: "governance://constraint"
 });
 await general.addTriple({
-  source: slowMode, predicate: "governance://constraint_kind", target: "temporal"
+  subject: slowMode, predicate: "governance://constraint_kind", object: "temporal"
 });
 await general.addTriple({
-  source: slowMode, predicate: "governance://temporal_min_interval_seconds", target: "30"
+  subject: slowMode, predicate: "governance://temporal_min_interval_seconds", object: "30"
 });
 await general.addTriple({
-  source: slowMode, predicate: "governance://temporal_applies_to_predicates", target: "msg://body"
+  subject: slowMode, predicate: "governance://temporal_applies_to_predicates", object: "msg://body"
 });
 await general.addTriple({
-  source: general.did, predicate: "governance://has_constraint", target: slowMode
+  subject: general.did, predicate: "governance://has_constraint", object: slowMode
 });
 ```
 
@@ -1014,19 +1014,19 @@ await general.addTriple({
 ```javascript
 const humanity = `urn:constraint:hum-${crypto.randomUUID()}`;
 await community.addTriple({
-  source: humanity, predicate: "governance://entry_type", target: "governance://constraint"
+  subject: humanity, predicate: "governance://entry_type", object: "governance://constraint"
 });
 await community.addTriple({
-  source: humanity, predicate: "governance://constraint_kind", target: "credential"
+  subject: humanity, predicate: "governance://constraint_kind", object: "credential"
 });
 await community.addTriple({
-  source: humanity, predicate: "governance://requires_credential_type", target: "ProofOfHumanity"
+  subject: humanity, predicate: "governance://requires_credential_type", object: "ProofOfHumanity"
 });
 await community.addTriple({
-  source: humanity, predicate: "governance://credential_issuer_pattern", target: "did:web:humancheck.org"
+  subject: humanity, predicate: "governance://credential_issuer_pattern", object: "did:web:humancheck.org"
 });
 await community.addTriple({
-  source: community.did, predicate: "governance://has_constraint", target: humanity
+  subject: community.did, predicate: "governance://has_constraint", object: humanity
 });
 // Applies transitively: every child context inherits this requirement because
 // they participate_in community.
@@ -1036,9 +1036,9 @@ await community.addTriple({
 
 ```javascript
 await community.addTriple({
-  source: admin.did,
+  subject: admin.did,
   predicate: "governance://revokes_capability",
-  target: modCap.id
+  object: modCap.id
 });
 // Mod's chain is invalidated; sub-delegations from mod are also invalidated.
 ```

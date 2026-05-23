@@ -40,42 +40,42 @@ async function addFlow(this: Context, name: string, flowJson: string): Promise<v
   if (reg.has(name)) throw new DOMException(`Flow "${name}" already exists`, 'ConstraintError');
 
   const flowUri = def.namespace + def.name;
-  await this.addTriple({ source: this.did, predicate: FLOW.HAS_FLOW, target: flowUri });
-  await this.addTriple({ source: flowUri, predicate: 'rdf://type', target: FLOW.TYPE });
-  await this.addTriple({ source: flowUri, predicate: FLOW.NAME, target: `"${def.name}"` });
-  await this.addTriple({ source: flowUri, predicate: FLOW.APPLIES_TO, target: def.appliesTo });
-  await this.addTriple({ source: flowUri, predicate: FLOW.INITIAL_STATE, target: `"${def.initialState}"` });
+  await this.addTriple({ subject: this.did, predicate: FLOW.HAS_FLOW, object: flowUri });
+  await this.addTriple({ subject: flowUri, predicate: 'rdf://type', object: FLOW.TYPE });
+  await this.addTriple({ subject: flowUri, predicate: FLOW.NAME, object: `"${def.name}"` });
+  await this.addTriple({ subject: flowUri, predicate: FLOW.APPLIES_TO, object: def.appliesTo });
+  await this.addTriple({ subject: flowUri, predicate: FLOW.INITIAL_STATE, object: `"${def.initialState}"` });
   for (const s of def.states) {
     const stateUri = `${flowUri}/state/${s.name}`;
-    await this.addTriple({ source: flowUri, predicate: FLOW.HAS_STATE, target: stateUri });
-    await this.addTriple({ source: stateUri, predicate: FLOW.STATE_NAME, target: `"${s.name}"` });
+    await this.addTriple({ subject: flowUri, predicate: FLOW.HAS_STATE, object: stateUri });
+    await this.addTriple({ subject: stateUri, predicate: FLOW.STATE_NAME, object: `"${s.name}"` });
     if (s.isTerminal) {
-      await this.addTriple({ source: stateUri, predicate: FLOW.IS_TERMINAL, target: '"true"' });
+      await this.addTriple({ subject: stateUri, predicate: FLOW.IS_TERMINAL, object: '"true"' });
     }
   }
   for (const t of def.transitions) {
     const tUri = `${flowUri}/transition/${t.name}`;
-    await this.addTriple({ source: flowUri, predicate: FLOW.HAS_TRANSITION, target: tUri });
-    await this.addTriple({ source: tUri, predicate: FLOW.TRANSITION_NAME, target: `"${t.name}"` });
-    await this.addTriple({ source: tUri, predicate: FLOW.TRANSITION_FROM, target: `"${t.fromState}"` });
-    await this.addTriple({ source: tUri, predicate: FLOW.TRANSITION_TO, target: `"${t.toState}"` });
+    await this.addTriple({ subject: flowUri, predicate: FLOW.HAS_TRANSITION, object: tUri });
+    await this.addTriple({ subject: tUri, predicate: FLOW.TRANSITION_NAME, object: `"${t.name}"` });
+    await this.addTriple({ subject: tUri, predicate: FLOW.TRANSITION_FROM, object: `"${t.fromState}"` });
+    await this.addTriple({ subject: tUri, predicate: FLOW.TRANSITION_TO, object: `"${t.toState}"` });
     if (t.guard) {
-      await this.addTriple({ source: tUri, predicate: FLOW.TRANSITION_GUARD, target: `"${t.guard.replace(/"/g, '\\"')}"` });
+      await this.addTriple({ subject: tUri, predicate: FLOW.TRANSITION_GUARD, object: `"${t.guard.replace(/"/g, '\\"')}"` });
     }
     if (t.guardDescription) {
-      await this.addTriple({ source: tUri, predicate: FLOW.TRANSITION_GUARD_DESC, target: `"${t.guardDescription}"` });
+      await this.addTriple({ subject: tUri, predicate: FLOW.TRANSITION_GUARD_DESC, object: `"${t.guardDescription}"` });
     }
     if (t.temporal?.minDelay) {
-      await this.addTriple({ source: tUri, predicate: FLOW.TRANSITION_MIN_DELAY, target: `"${t.temporal.minDelay}"` });
+      await this.addTriple({ subject: tUri, predicate: FLOW.TRANSITION_MIN_DELAY, object: `"${t.temporal.minDelay}"` });
     }
     if (t.temporal?.maxDelay) {
-      await this.addTriple({ source: tUri, predicate: FLOW.TRANSITION_MAX_DELAY, target: `"${t.temporal.maxDelay}"` });
+      await this.addTriple({ subject: tUri, predicate: FLOW.TRANSITION_MAX_DELAY, object: `"${t.temporal.maxDelay}"` });
     }
     if (t.temporal?.onDeadline) {
-      await this.addTriple({ source: tUri, predicate: FLOW.TRANSITION_ON_DEADLINE, target: `"${t.temporal.onDeadline}"` });
+      await this.addTriple({ subject: tUri, predicate: FLOW.TRANSITION_ON_DEADLINE, object: `"${t.temporal.onDeadline}"` });
     }
     if (t.role) {
-      await this.addTriple({ source: tUri, predicate: FLOW.TRANSITION_ROLE, target: `"${t.role}"` });
+      await this.addTriple({ subject: tUri, predicate: FLOW.TRANSITION_ROLE, object: `"${t.role}"` });
     }
   }
 
@@ -87,7 +87,7 @@ async function removeFlow(this: Context, name: string): Promise<void> {
   const def = reg.get(name);
   if (!def) return;
   const flowUri = def.namespace + def.name;
-  const link = await this.queryTriples({ source: this.did, predicate: FLOW.HAS_FLOW, target: flowUri });
+  const link = await this.queryTriples({ subject: this.did, predicate: FLOW.HAS_FLOW, object: flowUri });
   for (const t of link) await this.removeTriple(t);
   reg.delete(name);
 }
@@ -107,9 +107,9 @@ async function getFlowState(this: Context, flowName: string, instanceUri: string
   const reg = getRegistry(this);
   const def = reg.get(flowName);
   if (!def) throw new TypeError(`Flow "${flowName}" not found`);
-  const triples = await this.queryTriples({ source: instanceUri, predicate: FLOW.STATE });
+  const triples = await this.queryTriples({ subject: instanceUri, predicate: FLOW.STATE });
   if (triples.length === 0) return def.initialState;
-  return triples[0].data.target.replace(/^"|"$/g, '');
+  return triples[0].data.object.replace(/^"|"$/g, '');
 }
 
 async function executeFlowTransition(
@@ -131,7 +131,7 @@ async function executeFlowTransition(
 
   // Temporal check
   if (transition.temporal?.minDelay) {
-    const stateTriples = await this.queryTriples({ source: instanceUri, predicate: FLOW.STATE });
+    const stateTriples = await this.queryTriples({ subject: instanceUri, predicate: FLOW.STATE });
     const enteredAt = stateTriples[0]?.timestamp;
     if (enteredAt) {
       const elapsed = Date.now() - new Date(enteredAt).getTime();
@@ -166,23 +166,23 @@ async function executeFlowTransition(
   }
 
   // Apply the transition.
-  const existing = await this.queryTriples({ source: instanceUri, predicate: FLOW.STATE });
+  const existing = await this.queryTriples({ subject: instanceUri, predicate: FLOW.STATE });
   for (const e of existing) await this.removeTriple(e);
-  await this.addTriple({ source: instanceUri, predicate: FLOW.STATE, target: `"${transition.toState}"` });
+  await this.addTriple({ subject: instanceUri, predicate: FLOW.STATE, object: `"${transition.toState}"` });
   if (transition.actions) {
     for (const action of transition.actions) {
       const kind = flowActionKind(action.type);
-      const source = action.source === 'this' ? instanceUri : action.source;
-      const target = action.target === 'now' ? new Date().toISOString() : action.target;
+      const subject = action.subject === 'this' ? instanceUri : action.subject;
+      const object = action.object === 'now' ? new Date().toISOString() : action.object;
       if (kind === 'setSingleTarget') {
-        const ex = await this.queryTriples({ source, predicate: action.predicate });
+        const ex = await this.queryTriples({ subject, predicate: action.predicate });
         for (const e of ex) await this.removeTriple(e);
-        await this.addTriple({ source, predicate: action.predicate, target });
+        await this.addTriple({ subject, predicate: action.predicate, object });
       } else if (kind === 'addLink') {
-        await this.addTriple({ source, predicate: action.predicate, target });
+        await this.addTriple({ subject, predicate: action.predicate, object });
       } else {
         // removeLink
-        const ex = await this.queryTriples({ source, predicate: action.predicate, target });
+        const ex = await this.queryTriples({ subject, predicate: action.predicate, object });
         for (const e of ex) await this.removeTriple(e);
       }
     }

@@ -28,9 +28,9 @@ export interface GraphStoreRecord {
 
 interface StoredTripleRow {
   graphDid: string;
-  source: string;
+  subject: string;
   predicate: string;
-  target: string;
+  object: string;
   author: string;
   timestamp: string;
   proofMethod: string;
@@ -40,9 +40,9 @@ interface StoredTripleRow {
 interface StoredReifierRow {
   id: string;
   graphDid: string;
-  source: string;
+  subject: string;
   predicate: string;
-  target: string;
+  object: string;
   author: string;
   timestamp: string;
   method: string;
@@ -275,9 +275,9 @@ export class GraphStorage {
   private serializeTriple(graphDid: string, signed: SignedTriple): StoredTripleRow {
     return {
       graphDid,
-      source: signed.data.source,
+      subject: signed.data.subject,
       predicate: signed.data.predicate,
-      target: signed.data.target,
+      object: signed.data.object,
       author: signed.author,
       timestamp: signed.timestamp,
       proofMethod: signed.proof.method,
@@ -287,7 +287,7 @@ export class GraphStorage {
 
   private deserializeTriple(record: StoredTripleRow): SignedTriple {
     return {
-      data: new Triple(record.source, record.predicate, record.target),
+      data: new Triple(record.subject, record.predicate, record.object),
       author: record.author,
       timestamp: record.timestamp,
       proof: { method: record.proofMethod, signature: record.proofSignature },
@@ -298,9 +298,9 @@ export class GraphStorage {
     return {
       id: r.id,
       graphDid,
-      source: r.triple.source,
+      subject: r.triple.subject,
       predicate: r.triple.predicate,
-      target: r.triple.target,
+      object: r.triple.object,
       author: r.author,
       timestamp: r.timestamp,
       method: r.method,
@@ -311,7 +311,7 @@ export class GraphStorage {
   private deserializeReifier(record: StoredReifierRow): Reifier {
     return {
       id: record.id,
-      triple: new Triple(record.source, record.predicate, record.target),
+      triple: new Triple(record.subject, record.predicate, record.object),
       author: record.author,
       timestamp: record.timestamp,
       method: record.method,
@@ -321,9 +321,9 @@ export class GraphStorage {
 
   private tripleMatches(record: StoredTripleRow, signed: SignedTriple): boolean {
     return (
-      record.source === signed.data.source &&
+      record.subject === signed.data.subject &&
       record.predicate === signed.data.predicate &&
-      record.target === signed.data.target &&
+      record.object === signed.data.object &&
       record.author === signed.author &&
       record.timestamp === signed.timestamp
     );

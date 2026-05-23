@@ -30,10 +30,10 @@ export const ACTION_KIND = {
 export interface ConstructorAction {
   action: ConstructorActionType;
   /** "this" — the new ShapeInstance address. */
-  source: string;
+  subject: string;
   predicate: string;
   /** Either a property name (from initialValues) or a literal/URI. */
-  target: string;
+  object: string;
 }
 
 export interface ShapeDefinition {

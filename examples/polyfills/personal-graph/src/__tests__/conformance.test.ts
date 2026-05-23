@@ -29,7 +29,7 @@ beforeEach(() => {
 });
 
 describe('Triple', () => {
-  it('requires a valid source URI', () => {
+  it('requires a valid subject URI', () => {
     expect(() => new Triple('not a uri', 'pred://x', 'value')).toThrow(TypeError);
   });
 
@@ -37,15 +37,15 @@ describe('Triple', () => {
     expect(() => new Triple('urn:a', 'not a uri', 'value')).toThrow(TypeError);
   });
 
-  it('requires a non-empty target', () => {
+  it('requires a non-empty object', () => {
     expect(() => new Triple('urn:a', 'pred://x', '')).toThrow(TypeError);
   });
 
   it('stores all three components when valid', () => {
     const t = new Triple('urn:a', 'pred://x', 'value');
-    expect(t.source).toBe('urn:a');
+    expect(t.subject).toBe('urn:a');
     expect(t.predicate).toBe('pred://x');
-    expect(t.target).toBe('value');
+    expect(t.object).toBe('value');
   });
 });
 
@@ -103,18 +103,18 @@ describe('Context', () => {
     expect(events).toHaveLength(1);
   });
 
-  it('queries by source, predicate, target', async () => {
+  it('queries by subject, predicate, object', async () => {
     await context.addTriple(new Triple('urn:a', 'pred://x', 'v1'));
     await context.addTriple(new Triple('urn:a', 'pred://y', 'v2'));
     await context.addTriple(new Triple('urn:b', 'pred://x', 'v3'));
 
-    const bySource = await context.queryTriples({ source: 'urn:a' });
+    const bySource = await context.queryTriples({ subject: 'urn:a' });
     expect(bySource).toHaveLength(2);
 
     const byPredicate = await context.queryTriples({ predicate: 'pred://x' });
     expect(byPredicate).toHaveLength(2);
 
-    const byTarget = await context.queryTriples({ target: 'v3' });
+    const byTarget = await context.queryTriples({ object: 'v3' });
     expect(byTarget).toHaveLength(1);
   });
 
@@ -175,9 +175,9 @@ describe('Graph snapshots', () => {
     const snap = await getAsSnapshot('did:graph:g', [reifierToSigned(t)], id, null, { signBy: 'agent' });
     const parsed = parseSnapshot(snap);
     expect(parsed.triples).toHaveLength(1);
-    expect(parsed.triples[0].source).toBe('urn:a');
+    expect(parsed.triples[0].subject).toBe('urn:a');
     expect(parsed.triples[0].predicate).toBe('pred://x');
-    expect(parsed.triples[0].target).toBe('value');
+    expect(parsed.triples[0].object).toBe('value');
   });
 
   it('snapshot proofs include the requested role', async () => {
@@ -208,7 +208,7 @@ describe('GraphStoreManager', () => {
     const gs = await manager.create('Workspace');
     const ctx = await gs.createContext({ displayName: 'Calendar' });
     expect(ctx.did.startsWith('did:graph:')).toBe(true);
-    const docTriples = await ctx.queryTriples({ source: ctx.did });
+    const docTriples = await ctx.queryTriples({ subject: ctx.did });
     expect(docTriples.length).toBeGreaterThan(0);
   });
 
@@ -220,11 +220,11 @@ describe('GraphStoreManager', () => {
     const parent = await gs.createContext({ displayName: 'Parent' });
     const child = await gs.createContext({ displayName: 'Child', participatesIn: parent.did });
     const participation = await child.queryTriples({
-      source: child.did,
+      subject: child.did,
       predicate: 'context://participates_in',
     });
     expect(participation).toHaveLength(1);
-    expect(participation[0].data.target).toBe(parent.did);
+    expect(participation[0].data.object).toBe(parent.did);
   });
 
   it('resolveContext finds a mounted context by DID', async () => {

@@ -199,14 +199,14 @@ A conforming **flow engine** is a software component that:
 Actions are triple operations executed atomically with the state change:
 
 ```json
-{ "type": "flow://actions/addLink",         "source": "this", "predicate": "<URI>", "target": "<value>" }
-{ "type": "flow://actions/setSingleTarget", "source": "this", "predicate": "<URI>", "target": "<value>" }
-{ "type": "flow://actions/removeLink",      "source": "this", "predicate": "<URI>", "target": "<value>" }
+{ "type": "flow://actions/addLink",         "subject": "this", "predicate": "<URI>", "object": "<value>" }
+{ "type": "flow://actions/setSingleTarget", "subject": "this", "predicate": "<URI>", "object": "<value>" }
+{ "type": "flow://actions/removeLink",      "subject": "this", "predicate": "<URI>", "object": "<value>" }
 ```
 
-- **source**: MUST be `"this"` (referring to the FlowInstance) or a static URI.
+- **subject**: MUST be `"this"` (referring to the FlowInstance) or a static URI.
 - **predicate**: A URI.
-- **target**: A static URI/literal, or `"now"` (substituted with the current ISO 8601 timestamp), or `"agent"` (substituted with the firing agent's DID).
+- **object**: A static URI/literal, or `"now"` (substituted with the current ISO 8601 timestamp), or `"agent"` (substituted with the firing agent's DID).
 
 ---
 

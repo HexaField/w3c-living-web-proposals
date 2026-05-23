@@ -38,12 +38,12 @@ export function createGovernanceLayer(context: Context, opts: GovernanceOptions 
     queryTriples: async (q) => {
       // Query the context's local store.
       const results = await context.queryTriples({
-        source: q.source ?? undefined,
+        subject: q.subject ?? undefined,
         predicate: q.predicate ?? undefined,
-        target: q.target ?? undefined,
+        object: q.object ?? undefined,
       });
       return results.map(r => ({
-        data: { source: r.data.source, predicate: r.data.predicate, target: r.data.target },
+        data: { subject: r.data.subject, predicate: r.data.predicate, object: r.data.object },
         author: r.author,
         timestamp: r.timestamp,
       }));
@@ -60,10 +60,10 @@ export function createGovernanceLayer(context: Context, opts: GovernanceOptions 
   (async () => {
     if (!ctx.rootCapabilityId) {
       const triples = await ctx.queryTriples({
-        source: context.did,
+        subject: context.did,
         predicate: GOV.ROOT_CAPABILITY,
       });
-      if (triples.length > 0) ctx.rootCapabilityId = triples[0].data.target;
+      if (triples.length > 0) ctx.rootCapabilityId = triples[0].data.object;
     }
   })();
 
@@ -71,22 +71,22 @@ export function createGovernanceLayer(context: Context, opts: GovernanceOptions 
     engine,
     expressionStore,
 
-    async canAddTriple(source: string, predicate: string, target: string): Promise<ValidationResult> {
+    async canAddTriple(subject: string, predicate: string, object: string): Promise<ValidationResult> {
       return engine.validate({
-        source, predicate, target,
+        subject, predicate, object,
         author: 'did:key:unknown',
         timestamp: new Date().toISOString(),
       });
     },
 
     async canAddTripleAs(
-      source: string,
+      subject: string,
       predicate: string,
-      target: string,
+      object: string,
       authorDid: string,
     ): Promise<ValidationResult> {
       return engine.validate({
-        source, predicate, target,
+        subject, predicate, object,
         author: authorDid,
         timestamp: new Date().toISOString(),
       });
@@ -107,9 +107,9 @@ export function createGovernanceLayer(context: Context, opts: GovernanceOptions 
     async setEnforcementMode(mode: EnforcementMode): Promise<void> {
       // Persist as a triple on the context.
       await context.addTriple({
-        source: context.did,
+        subject: context.did,
         predicate: GOV.ENFORCEMENT_MODE,
-        target: `"${mode}"`,
+        object: `"${mode}"`,
       });
       await engine.setEnforcementMode(mode);
     },

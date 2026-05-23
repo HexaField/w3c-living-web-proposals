@@ -70,13 +70,13 @@ function validateConstructorAction(action: unknown): void {
       'ConstraintError',
     );
   }
-  if (a.source !== 'this') {
-    throw new DOMException('Constructor action source MUST be "this"', 'ConstraintError');
+  if (a.subject !== 'this') {
+    throw new DOMException('Constructor action subject MUST be "this"', 'ConstraintError');
   }
   if (typeof a.predicate !== 'string' || a.predicate.length === 0) {
     throw new DOMException('Constructor action MUST have a predicate string', 'ConstraintError');
   }
-  if (a.target === undefined || a.target === null) {
-    throw new DOMException('Constructor action MUST have a target', 'ConstraintError');
+  if (a.object === undefined || a.object === null) {
+    throw new DOMException('Constructor action MUST have a object', 'ConstraintError');
   }
 }

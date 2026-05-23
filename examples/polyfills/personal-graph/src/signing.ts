@@ -90,11 +90,11 @@ export class EphemeralIdentity implements IdentityProvider {
 }
 
 export function canonicalNQuad(t: Triple, graphDid?: string): string {
-  const target = /^[a-zA-Z][\w+\-.]*:.+/.test(t.target) || t.target.startsWith('_:')
-    ? `<${t.target}>`
-    : `"${t.target.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+  const object = /^[a-zA-Z][\w+\-.]*:.+/.test(t.object) || t.object.startsWith('_:')
+    ? `<${t.object}>`
+    : `"${t.object.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
   const graph = graphDid ? ` <${graphDid}>` : '';
-  return `<${t.source}> <${t.predicate}> ${target}${graph} .`;
+  return `<${t.subject}> <${t.predicate}> ${object}${graph} .`;
 }
 
 export function computeSignaturePayload(triple: Triple, timestamp: string, graphDid?: string): Uint8Array {

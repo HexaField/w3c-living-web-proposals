@@ -49,12 +49,12 @@ function makeContext(): ValidationContext {
     enforcementMode: 'open',
     queryTriples: async (q) => {
       const results = await context.queryTriples({
-        source: q.source ?? undefined,
+        subject: q.subject ?? undefined,
         predicate: q.predicate ?? undefined,
-        target: q.target ?? undefined,
+        object: q.object ?? undefined,
       });
       return results.map(r => ({
-        data: { source: r.data.source, predicate: r.data.predicate, target: r.data.target },
+        data: { subject: r.data.subject, predicate: r.data.predicate, object: r.data.object },
         author: r.author,
         timestamp: r.timestamp,
       }));
@@ -62,11 +62,11 @@ function makeContext(): ValidationContext {
   };
 }
 
-function makeTriple(predicate: string, target: string, author = ALICE_DID): TripleInput {
+function makeTriple(predicate: string, object: string, author = ALICE_DID): TripleInput {
   return {
-    source: 'urn:entity:1',
+    subject: 'urn:entity:1',
     predicate,
-    target,
+    object,
     author,
     timestamp: new Date().toISOString(),
   };
@@ -127,9 +127,9 @@ describe('delegateCapability', () => {
 describe('revokeCapability', () => {
   test('produces a revocation triple', () => {
     const r = revokeCapability(OWNER_DID, 'urn:uuid:cap-1');
-    expect(r.source).toBe(OWNER_DID);
+    expect(r.subject).toBe(OWNER_DID);
     expect(r.predicate).toBe(GOV.REVOKES_CAPABILITY);
-    expect(r.target).toBe('urn:uuid:cap-1');
+    expect(r.object).toBe('urn:uuid:cap-1');
   });
 });
 
@@ -159,11 +159,11 @@ describe('Caveat evaluation', () => {
     expect((await evaluateCaveats([cap], triple, 'createLink', ctx)).allowed).toBe(false);
   });
 
-  test('source — glob pattern match', async () => {
+  test('subject — glob pattern match', async () => {
     const ctx = makeContext();
-    const cap: Caveat = { type: 'source', value: { pattern: 'urn:entity:*' } };
+    const cap: Caveat = { type: 'subject', value: { pattern: 'urn:entity:*' } };
     expect((await evaluateCaveats([cap], makeTriple('p', 'v'), 'createLink', ctx)).allowed).toBe(true);
-    const wrongSource = { ...makeTriple('p', 'v'), source: 'urn:other:1' };
+    const wrongSource = { ...makeTriple('p', 'v'), subject: 'urn:other:1' };
     expect((await evaluateCaveats([cap], wrongSource, 'createLink', ctx)).allowed).toBe(false);
   });
 });
@@ -179,9 +179,9 @@ describe('Enforcement mode', () => {
 
   test('announced mode reads from context triples', async () => {
     await context.addTriple({
-      source: GRAPH_DID,
+      subject: GRAPH_DID,
       predicate: GOV.ENFORCEMENT_MODE,
-      target: '"announced"',
+      object: '"announced"',
     });
     const engine = new GraphGovernanceEngine(makeContext());
     const mode = await engine.getEnforcementMode();
@@ -194,14 +194,14 @@ describe('Scope resolution', () => {
     // Set up: child context participates in parent. Use makeContext queries
     // against `context` which holds the participation triple.
     await context.addTriple({
-      source: GRAPH_DID,
+      subject: GRAPH_DID,
       predicate: CONTEXT.PARTICIPATES_IN,
-      target: 'did:graph:parent',
+      object: 'did:graph:parent',
     });
     await context.addTriple({
-      source: 'did:graph:parent',
+      subject: 'did:graph:parent',
       predicate: CONTEXT.ACCEPTS_PARTICIPATION,
-      target: GRAPH_DID,
+      object: GRAPH_DID,
     });
 
     const { resolveAncestry } = await import('../index.js');
@@ -211,9 +211,9 @@ describe('Scope resolution', () => {
 
   test('ignores participation without mutual acceptance', async () => {
     await context.addTriple({
-      source: GRAPH_DID,
+      subject: GRAPH_DID,
       predicate: CONTEXT.PARTICIPATES_IN,
-      target: 'did:graph:parent',
+      object: 'did:graph:parent',
     });
     // No accepts_participation triple — the parent is not honoured.
     const { resolveAncestry } = await import('../index.js');
@@ -225,9 +225,9 @@ describe('Scope resolution', () => {
 describe('createGovernanceLayer', () => {
   test('queries the context for the root capability', async () => {
     await context.addTriple({
-      source: GRAPH_DID,
+      subject: GRAPH_DID,
       predicate: GOV.ROOT_CAPABILITY,
-      target: 'urn:uuid:root',
+      object: 'urn:uuid:root',
     });
     const layer = createGovernanceLayer(context);
     // Allow microtask in integration to read the triple.
@@ -240,9 +240,9 @@ describe('createGovernanceLayer', () => {
     const layer = createGovernanceLayer(context);
     await layer.setEnforcementMode('enforced');
     const triples = await context.queryTriples({
-      source: GRAPH_DID,
+      subject: GRAPH_DID,
       predicate: GOV.ENFORCEMENT_MODE,
     });
-    expect(triples.find(t => t.data.target === '"enforced"')).toBeDefined();
+    expect(triples.find(t => t.data.object === '"enforced"')).toBeDefined();
   });
 });

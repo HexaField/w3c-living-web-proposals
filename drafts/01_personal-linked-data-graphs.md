@@ -88,19 +88,19 @@ A conforming user agent MUST:
 
 ### 3.1 Triple
 
-A **Triple** is a directed labelled relationship — subject (source), predicate, object (target). This specification follows RDF 1.2 semantics.
+A **Triple** is a directed labelled relationship — subject, predicate, object. This specification follows RDF 1.2 semantics.
 
-- The `source` attribute MUST be a valid URI [[RFC3986]].
+- The `subject` attribute MUST be a valid URI [[RFC3986]].
 - The `predicate` attribute MUST be a valid URI [[RFC3986]]. **Predicate is REQUIRED.**
-- The `target` attribute MUST be a valid URI [[RFC3986]] or a literal value.
+- The `object` attribute MUST be a valid URI [[RFC3986]] or a literal value.
 
 ```webidl
 [Exposed=(Window,Worker)]
 interface Triple {
-  constructor(USVString source, USVString predicate, (USVString or LiteralValue) target);
-  readonly attribute USVString source;
+  constructor(USVString subject, USVString predicate, (USVString or LiteralValue) object);
+  readonly attribute USVString subject;
   readonly attribute USVString predicate;
-  readonly attribute (USVString or LiteralValue) target;
+  readonly attribute (USVString or LiteralValue) object;
 };
 
 [Exposed=(Window,Worker)]
@@ -117,10 +117,10 @@ Per-triple provenance — author, timestamp, signature — is carried using RDF 
 
 ```turtle
 # A triple plus its provenance:
-<urn:event:1> <schema://name> "Coffee with Nico" .
+<urn:event:1> <schema://name> "Coffee with Alice" .
 
 # Reifier (typically a blank node):
-_:r1 rdf:reifies <<( <urn:event:1> <schema://name> "Coffee with Nico" )>> .
+_:r1 rdf:reifies <<( <urn:event:1> <schema://name> "Coffee with Alice" )>> .
 _:r1 prov://author      <did:key:z6Mk...> .
 _:r1 prov://timestamp   "2026-05-23T12:00:00Z"^^xsd:dateTime .
 _:r1 prov://signature   "z58D..." .
@@ -251,9 +251,9 @@ interface GraphStoreManager {
 
 ```webidl
 dictionary TripleQuery {
-  USVString? source;
+  USVString? subject;
   USVString? predicate;
-  USVString? target;
+  USVString? object;
   USVString? author;
   DOMString? fromDate;
   DOMString? untilDate;
@@ -647,17 +647,17 @@ console.log(calendar.iri);    // "graph://z6Mk..."
 await calendar.addTriple(new Triple(
   "urn:event:1",
   "schema://name",
-  "Coffee with Nico"
+  "Coffee with Alice"
 ));
 ```
 
 ### 11.2 Reading Triple Provenance
 
 ```javascript
-const triples = await calendar.queryTriples({ source: "urn:event:1" });
+const triples = await calendar.queryTriples({ subject: "urn:event:1" });
 for (const t of triples) {
   const [reifier] = await calendar.provenance(t);
-  console.log(`${t.target}  by ${reifier.author} at ${reifier.timestamp}`);
+  console.log(`${t.object}  by ${reifier.author} at ${reifier.timestamp}`);
 }
 ```
 

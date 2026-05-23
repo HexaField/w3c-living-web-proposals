@@ -94,16 +94,16 @@ async function evalCaveat(
       cardinalityCounters.set(key, current + 1);
       return { allowed: true };
     }
-    case 'source': {
+    case 'subject': {
       const { pattern } = c.value as { pattern: string };
-      if (!globMatch(pattern, triple.source)) {
+      if (!globMatch(pattern, triple.subject)) {
         return { allowed: false, module: 'caveat', reason: `Source does not match ${pattern}` };
       }
       return { allowed: true };
     }
-    case 'target': {
+    case 'object': {
       const { pattern } = c.value as { pattern: string };
-      if (!globMatch(pattern, triple.target)) {
+      if (!globMatch(pattern, triple.object)) {
         return { allowed: false, module: 'caveat', reason: `Target does not match ${pattern}` };
       }
       return { allowed: true };
@@ -118,7 +118,7 @@ async function evalCaveat(
     case 'authorOnly': {
       // The author must be the original instance creator. Polyfill best-effort:
       // we look up an existing rdf://type triple's author and compare.
-      const existing = await ctx.queryTriples({ source: triple.source, predicate: 'rdf://type' });
+      const existing = await ctx.queryTriples({ subject: triple.subject, predicate: 'rdf://type' });
       if (existing.length > 0 && existing[0].author !== triple.author) {
         return { allowed: false, module: 'caveat', reason: 'authorOnly: not the original author' };
       }

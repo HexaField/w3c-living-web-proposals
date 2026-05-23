@@ -97,9 +97,9 @@ function matchPattern(
   for (const binding of bindings) {
     for (const triple of triples) {
       const newBinding = { ...binding };
-      if (!matchTerm(pattern.s, triple.data.source, newBinding)) continue;
+      if (!matchTerm(pattern.s, triple.data.subject, newBinding)) continue;
       if (!matchTerm(pattern.p, triple.data.predicate, newBinding)) continue;
-      if (!matchTerm(pattern.o, triple.data.target, newBinding)) continue;
+      if (!matchTerm(pattern.o, triple.data.object, newBinding)) continue;
       results.push(newBinding);
     }
   }

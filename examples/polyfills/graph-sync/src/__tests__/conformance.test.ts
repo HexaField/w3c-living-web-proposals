@@ -43,10 +43,10 @@ async function newManager(): Promise<GraphStoreManager> {
   return new GraphStoreManager(storage, async () => eph);
 }
 
-function waitForEvent<T extends Event>(target: EventTarget, type: string, timeoutMs = 500): Promise<T> {
+function waitForEvent<T extends Event>(object: EventTarget, type: string, timeoutMs = 500): Promise<T> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`Timeout waiting for ${type}`)), timeoutMs);
-    target.addEventListener(
+    object.addEventListener(
       type,
       (e) => {
         clearTimeout(timer);

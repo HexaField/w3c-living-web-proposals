@@ -65,9 +65,9 @@ export const WorldShape: ShapeDefinition = {
     { path: PREDICATES.WORLD_OWNER, name: 'owner', datatype: 'xsd:string', minCount: 1, maxCount: 1 },
   ],
   constructor: [
-    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.ENTRY_TYPE, target: PREDICATES.WORLD },
-    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.WORLD_NAME, target: 'name' },
-    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.WORLD_OWNER, target: 'owner' },
+    { action: 'shape://actions/setSingleTarget', subject: 'this', predicate: PREDICATES.ENTRY_TYPE, object: PREDICATES.WORLD },
+    { action: 'shape://actions/setSingleTarget', subject: 'this', predicate: PREDICATES.WORLD_NAME, object: 'name' },
+    { action: 'shape://actions/setSingleTarget', subject: 'this', predicate: PREDICATES.WORLD_OWNER, object: 'owner' },
   ],
 };
 
@@ -81,11 +81,11 @@ export const PlayerShape: ShapeDefinition = {
     { path: PREDICATES.PLAYER_SCORE, name: 'score', datatype: 'xsd:string', minCount: 1, maxCount: 1 },
   ],
   constructor: [
-    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.ENTRY_TYPE, target: PREDICATES.PLAYER },
-    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.PLAYER_DID, target: 'did' },
-    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.PLAYER_NAME, target: 'name' },
-    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.PLAYER_COLOR, target: 'color' },
-    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.PLAYER_SCORE, target: 'score' },
+    { action: 'shape://actions/setSingleTarget', subject: 'this', predicate: PREDICATES.ENTRY_TYPE, object: PREDICATES.PLAYER },
+    { action: 'shape://actions/setSingleTarget', subject: 'this', predicate: PREDICATES.PLAYER_DID, object: 'did' },
+    { action: 'shape://actions/setSingleTarget', subject: 'this', predicate: PREDICATES.PLAYER_NAME, object: 'name' },
+    { action: 'shape://actions/setSingleTarget', subject: 'this', predicate: PREDICATES.PLAYER_COLOR, object: 'color' },
+    { action: 'shape://actions/setSingleTarget', subject: 'this', predicate: PREDICATES.PLAYER_SCORE, object: 'score' },
   ],
 };
 
@@ -103,15 +103,15 @@ export const GameObjectShape: ShapeDefinition = {
     { path: PREDICATES.OBJ_COLOR, name: 'color', datatype: 'xsd:string', minCount: 1, maxCount: 1 },
   ],
   constructor: [
-    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.ENTRY_TYPE, target: PREDICATES.GAME_OBJECT },
-    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.OBJ_TYPE, target: 'objectType' },
-    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.OBJ_X, target: 'x' },
-    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.OBJ_Y, target: 'y' },
-    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.OBJ_Z, target: 'z' },
-    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.OBJ_W, target: 'width' },
-    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.OBJ_H, target: 'height' },
-    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.OBJ_D, target: 'depth' },
-    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.OBJ_COLOR, target: 'color' },
+    { action: 'shape://actions/setSingleTarget', subject: 'this', predicate: PREDICATES.ENTRY_TYPE, object: PREDICATES.GAME_OBJECT },
+    { action: 'shape://actions/setSingleTarget', subject: 'this', predicate: PREDICATES.OBJ_TYPE, object: 'objectType' },
+    { action: 'shape://actions/setSingleTarget', subject: 'this', predicate: PREDICATES.OBJ_X, object: 'x' },
+    { action: 'shape://actions/setSingleTarget', subject: 'this', predicate: PREDICATES.OBJ_Y, object: 'y' },
+    { action: 'shape://actions/setSingleTarget', subject: 'this', predicate: PREDICATES.OBJ_Z, object: 'z' },
+    { action: 'shape://actions/setSingleTarget', subject: 'this', predicate: PREDICATES.OBJ_W, object: 'width' },
+    { action: 'shape://actions/setSingleTarget', subject: 'this', predicate: PREDICATES.OBJ_H, object: 'height' },
+    { action: 'shape://actions/setSingleTarget', subject: 'this', predicate: PREDICATES.OBJ_D, object: 'depth' },
+    { action: 'shape://actions/setSingleTarget', subject: 'this', predicate: PREDICATES.OBJ_COLOR, object: 'color' },
   ],
 };
 
@@ -128,13 +128,13 @@ export const CollectibleShape: ShapeDefinition = {
     { path: PREDICATES.COLL_BY, name: 'collectedBy', datatype: 'xsd:string' },
   ],
   constructor: [
-    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.ENTRY_TYPE, target: PREDICATES.COLLECTIBLE },
-    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.COLL_TYPE, target: 'collectibleType' },
-    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.COLL_X, target: 'x' },
-    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.COLL_Y, target: 'y' },
-    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.COLL_Z, target: 'z' },
-    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.COLL_VALUE, target: 'value' },
-    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.COLL_COLOR, target: 'color' },
+    { action: 'shape://actions/setSingleTarget', subject: 'this', predicate: PREDICATES.ENTRY_TYPE, object: PREDICATES.COLLECTIBLE },
+    { action: 'shape://actions/setSingleTarget', subject: 'this', predicate: PREDICATES.COLL_TYPE, object: 'collectibleType' },
+    { action: 'shape://actions/setSingleTarget', subject: 'this', predicate: PREDICATES.COLL_X, object: 'x' },
+    { action: 'shape://actions/setSingleTarget', subject: 'this', predicate: PREDICATES.COLL_Y, object: 'y' },
+    { action: 'shape://actions/setSingleTarget', subject: 'this', predicate: PREDICATES.COLL_Z, object: 'z' },
+    { action: 'shape://actions/setSingleTarget', subject: 'this', predicate: PREDICATES.COLL_VALUE, object: 'value' },
+    { action: 'shape://actions/setSingleTarget', subject: 'this', predicate: PREDICATES.COLL_COLOR, object: 'color' },
   ],
 };
 
@@ -147,9 +147,9 @@ export const ChatMessageShape: ShapeDefinition = {
     { path: PREDICATES.CHAT_AUTHOR_NAME, name: 'authorName', datatype: 'xsd:string', minCount: 1, maxCount: 1 },
   ],
   constructor: [
-    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.ENTRY_TYPE, target: PREDICATES.CHAT_MSG },
-    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.CHAT_BODY, target: 'body' },
-    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.CHAT_AUTHOR, target: 'author' },
-    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.CHAT_AUTHOR_NAME, target: 'authorName' },
+    { action: 'shape://actions/setSingleTarget', subject: 'this', predicate: PREDICATES.ENTRY_TYPE, object: PREDICATES.CHAT_MSG },
+    { action: 'shape://actions/setSingleTarget', subject: 'this', predicate: PREDICATES.CHAT_BODY, object: 'body' },
+    { action: 'shape://actions/setSingleTarget', subject: 'this', predicate: PREDICATES.CHAT_AUTHOR, object: 'author' },
+    { action: 'shape://actions/setSingleTarget', subject: 'this', predicate: PREDICATES.CHAT_AUTHOR_NAME, object: 'authorName' },
   ],
 };

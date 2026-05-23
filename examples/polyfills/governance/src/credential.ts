@@ -32,13 +32,13 @@ export async function verifyCredential(
 
     // Find author's credentials
     const credLinks = await ctx.queryTriples({
-      source: triple.author,
+      subject: triple.author,
       predicate: GOV.HAS_CREDENTIAL,
     });
 
     let found = false;
     for (const link of credLinks) {
-      const vc = await resolveCredential(link.data.target, ctx);
+      const vc = await resolveCredential(link.data.object, ctx);
       if (!vc) continue;
 
       // Check type

@@ -1,7 +1,7 @@
 /**
  * Governance types.
  *
- * - ZCAPs target `did:graph:...` as their canonical resource.
+ * - ZCAPs object `did:graph:...` as their canonical resource.
  * - Enforcement modes (Open / Announced / Enforced) are first-class.
  * - Caveat vocabulary: Expiry, Predicate, Shape, Property, Content, RateLimit,
  *   Cardinality, Source, Target, AuthorOnly, Custom.
@@ -20,8 +20,8 @@ export type CaveatType =
   | 'content'
   | 'rateLimit'
   | 'cardinality'
-  | 'source'
-  | 'target'
+  | 'subject'
+  | 'object'
   | 'authorOnly'
   | 'custom';
 
@@ -103,15 +103,15 @@ export interface VerifiableCredential {
 }
 
 export interface TripleInput {
-  source: string;
+  subject: string;
   predicate: string;
-  target: string;
+  object: string;
   author: string;
   timestamp: string;
 }
 
 export interface TripleRecord {
-  data: { source: string; predicate: string; target: string };
+  data: { subject: string; predicate: string; object: string };
   author: string;
   timestamp: string;
 }
@@ -123,7 +123,7 @@ export interface ValidationContext {
   rootCapabilityId: string | null;
   /** Current enforcement mode (defaults to "open" if not set). */
   enforcementMode: EnforcementMode;
-  queryTriples: (q: { source?: string | null; predicate?: string | null; target?: string | null }) => Promise<TripleRecord[]>;
+  queryTriples: (q: { subject?: string | null; predicate?: string | null; object?: string | null }) => Promise<TripleRecord[]>;
   resolveExpression?: (address: string) => Promise<unknown>;
   now?: () => number;
 }

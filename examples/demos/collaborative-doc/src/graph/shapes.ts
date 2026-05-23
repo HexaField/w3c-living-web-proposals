@@ -55,9 +55,9 @@ export const DocumentShape: ShapeDefinition = {
     { path: PREDICATES.DOC_OWNER, name: 'owner', datatype: 'xsd:string', minCount: 1, maxCount: 1 },
   ],
   constructor: [
-    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.ENTRY_TYPE, target: PREDICATES.DOCUMENT },
-    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.DOC_TITLE, target: 'title' },
-    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.DOC_OWNER, target: 'owner' },
+    { action: 'shape://actions/setSingleTarget', subject: 'this', predicate: PREDICATES.ENTRY_TYPE, object: PREDICATES.DOCUMENT },
+    { action: 'shape://actions/setSingleTarget', subject: 'this', predicate: PREDICATES.DOC_TITLE, object: 'title' },
+    { action: 'shape://actions/setSingleTarget', subject: 'this', predicate: PREDICATES.DOC_OWNER, object: 'owner' },
   ],
 };
 
@@ -70,10 +70,10 @@ export const BlockShape: ShapeDefinition = {
     { path: PREDICATES.BLOCK_AUTHOR, name: 'author', datatype: 'xsd:string', minCount: 1, maxCount: 1 },
   ],
   constructor: [
-    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.ENTRY_TYPE, target: PREDICATES.BLOCK },
-    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.BLOCK_TYPE, target: 'type' },
-    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.BLOCK_CONTENT, target: 'content' },
-    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.BLOCK_AUTHOR, target: 'author' },
+    { action: 'shape://actions/setSingleTarget', subject: 'this', predicate: PREDICATES.ENTRY_TYPE, object: PREDICATES.BLOCK },
+    { action: 'shape://actions/setSingleTarget', subject: 'this', predicate: PREDICATES.BLOCK_TYPE, object: 'type' },
+    { action: 'shape://actions/setSingleTarget', subject: 'this', predicate: PREDICATES.BLOCK_CONTENT, object: 'content' },
+    { action: 'shape://actions/setSingleTarget', subject: 'this', predicate: PREDICATES.BLOCK_AUTHOR, object: 'author' },
   ],
 };
 
@@ -88,11 +88,11 @@ export const CommentShape: ShapeDefinition = {
     { path: PREDICATES.COMMENT_RESOLVED, name: 'resolved', datatype: 'xsd:string' },
   ],
   constructor: [
-    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.ENTRY_TYPE, target: PREDICATES.COMMENT },
-    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.COMMENT_BODY, target: 'body' },
-    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.COMMENT_AUTHOR, target: 'author' },
-    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.COMMENT_TIME, target: 'time' },
-    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.COMMENT_BLOCK, target: 'blockId' },
+    { action: 'shape://actions/setSingleTarget', subject: 'this', predicate: PREDICATES.ENTRY_TYPE, object: PREDICATES.COMMENT },
+    { action: 'shape://actions/setSingleTarget', subject: 'this', predicate: PREDICATES.COMMENT_BODY, object: 'body' },
+    { action: 'shape://actions/setSingleTarget', subject: 'this', predicate: PREDICATES.COMMENT_AUTHOR, object: 'author' },
+    { action: 'shape://actions/setSingleTarget', subject: 'this', predicate: PREDICATES.COMMENT_TIME, object: 'time' },
+    { action: 'shape://actions/setSingleTarget', subject: 'this', predicate: PREDICATES.COMMENT_BLOCK, object: 'blockId' },
   ],
 };
 
@@ -105,10 +105,10 @@ export const CommentReplyShape: ShapeDefinition = {
     { path: PREDICATES.REPLY_TIME, name: 'time', datatype: 'xsd:string', minCount: 1, maxCount: 1 },
   ],
   constructor: [
-    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.ENTRY_TYPE, target: PREDICATES.COMMENT_REPLY },
-    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.REPLY_BODY, target: 'body' },
-    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.REPLY_AUTHOR, target: 'author' },
-    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.REPLY_TIME, target: 'time' },
+    { action: 'shape://actions/setSingleTarget', subject: 'this', predicate: PREDICATES.ENTRY_TYPE, object: PREDICATES.COMMENT_REPLY },
+    { action: 'shape://actions/setSingleTarget', subject: 'this', predicate: PREDICATES.REPLY_BODY, object: 'body' },
+    { action: 'shape://actions/setSingleTarget', subject: 'this', predicate: PREDICATES.REPLY_AUTHOR, object: 'author' },
+    { action: 'shape://actions/setSingleTarget', subject: 'this', predicate: PREDICATES.REPLY_TIME, object: 'time' },
   ],
 };
 
@@ -122,10 +122,10 @@ export const CollaboratorShape: ShapeDefinition = {
     { path: PREDICATES.COLLAB_COLOR, name: 'color', datatype: 'xsd:string', minCount: 1, maxCount: 1 },
   ],
   constructor: [
-    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.ENTRY_TYPE, target: PREDICATES.COLLABORATOR },
-    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.COLLAB_DID, target: 'did' },
-    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.COLLAB_NAME, target: 'name' },
-    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.COLLAB_ROLE, target: 'role' },
-    { action: 'shape://actions/setSingleTarget', source: 'this', predicate: PREDICATES.COLLAB_COLOR, target: 'color' },
+    { action: 'shape://actions/setSingleTarget', subject: 'this', predicate: PREDICATES.ENTRY_TYPE, object: PREDICATES.COLLABORATOR },
+    { action: 'shape://actions/setSingleTarget', subject: 'this', predicate: PREDICATES.COLLAB_DID, object: 'did' },
+    { action: 'shape://actions/setSingleTarget', subject: 'this', predicate: PREDICATES.COLLAB_NAME, object: 'name' },
+    { action: 'shape://actions/setSingleTarget', subject: 'this', predicate: PREDICATES.COLLAB_ROLE, object: 'role' },
+    { action: 'shape://actions/setSingleTarget', subject: 'this', predicate: PREDICATES.COLLAB_COLOR, object: 'color' },
   ],
 };

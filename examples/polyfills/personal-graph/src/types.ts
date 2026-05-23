@@ -2,39 +2,39 @@
  * Core types — RDF 1.2 with reifier-based provenance.
  */
 
-/** A literal value carried by a triple's target. */
+/** A literal value carried by a triple's object. */
 export interface LiteralValue {
   readonly lexicalValue: string;
   readonly datatype: string;        // XSD URI
   readonly language?: string | null;
 }
 
-/** A triple (subject, predicate, target). Predicate is REQUIRED (RDF alignment). */
+/** A triple (subject, predicate, object). Predicate is REQUIRED (RDF alignment). */
 export class Triple {
-  readonly source: string;
+  readonly subject: string;
   readonly predicate: string;
-  readonly target: string;             // URI or stringified literal
+  readonly object: string;             // URI or stringified literal
 
-  constructor(source: string, predicate: string, target: string) {
-    if (!isValidURI(source)) throw new TypeError(`Invalid source URI: ${source}`);
+  constructor(subject: string, predicate: string, object: string) {
+    if (!isValidURI(subject)) throw new TypeError(`Invalid subject URI: ${subject}`);
     if (!isValidURI(predicate)) throw new TypeError(`Invalid predicate URI: ${predicate}`);
-    if (typeof target !== 'string' || target.length === 0) {
+    if (typeof object !== 'string' || object.length === 0) {
       throw new TypeError('Target must be a non-empty string');
     }
-    this.source = source;
+    this.subject = subject;
     this.predicate = predicate;
-    this.target = target;
+    this.object = object;
   }
 
   toString(): string {
-    return `<${this.source}> <${this.predicate}> ${literalize(this.target)} .`;
+    return `<${this.subject}> <${this.predicate}> ${literalize(this.object)} .`;
   }
 
   equals(other: Triple): boolean {
     return (
-      this.source === other.source &&
+      this.subject === other.subject &&
       this.predicate === other.predicate &&
-      this.target === other.target
+      this.object === other.object
     );
   }
 }
@@ -65,9 +65,9 @@ export interface SignedTriple {
 
 /** Query for triples. */
 export interface TripleQuery {
-  source?: string | null;
+  subject?: string | null;
   predicate?: string | null;
-  target?: string | null;
+  object?: string | null;
   author?: string | null;
   fromDate?: string | null;
   untilDate?: string | null;
@@ -117,8 +117,8 @@ function isValidURI(value: string): boolean {
   return /^[a-zA-Z][a-zA-Z0-9+\-.]*:.+$/.test(value) || value.startsWith('_:');
 }
 
-function literalize(target: string): string {
-  return isValidURI(target) ? `<${target}>` : `"${target.replace(/"/g, '\\"')}"`;
+function literalize(object: string): string {
+  return isValidURI(object) ? `<${object}>` : `"${object.replace(/"/g, '\\"')}"`;
 }
 
 export { isValidURI };

@@ -84,15 +84,15 @@ function serialise(triples: readonly SignedTriple[], graphDid: string, format: S
     return triples.map(t => canonicalNQuad(t.data, graphDid)).sort().join('\n');
   }
   return JSON.stringify(triples.map(t => ({
-    '@id': t.data.source,
+    '@id': t.data.subject,
     predicate: t.data.predicate,
-    target: t.data.target,
+    object: t.data.object,
   })));
 }
 
 export interface ParsedSnapshot {
   graphDid: string;
-  triples: Array<{ source: string; predicate: string; target: string }>;
+  triples: Array<{ subject: string; predicate: string; object: string }>;
 }
 
 /** Parse a snapshot back into triples for mounting. */
@@ -104,17 +104,17 @@ export function parseSnapshot(snapshot: GraphSnapshot): ParsedSnapshot {
       if (!line) continue;
       const m = line.match(/^<([^>]+)>\s+<([^>]+)>\s+(<[^>]+>|"[^"]*")(?:\s+<[^>]+>)?\s*\.$/);
       if (!m) continue;
-      const target = m[3].startsWith('<') ? m[3].slice(1, -1) : m[3].slice(1, -1);
-      triples.push({ source: m[1], predicate: m[2], target });
+      const object = m[3].startsWith('<') ? m[3].slice(1, -1) : m[3].slice(1, -1);
+      triples.push({ subject: m[1], predicate: m[2], object });
     }
   } else if (snapshot.format === 'jsonld') {
-    const parsed = JSON.parse(snapshot.data) as Array<{ '@id': string; predicate: string; target: string }>;
-    for (const t of parsed) triples.push({ source: t['@id'], predicate: t.predicate, target: t.target });
+    const parsed = JSON.parse(snapshot.data) as Array<{ '@id': string; predicate: string; object: string }>;
+    for (const t of parsed) triples.push({ subject: t['@id'], predicate: t.predicate, object: t.object });
   }
   return { graphDid: snapshot.graphDid, triples };
 }
 
 /** Re-export for convenience: parseTripleFromNquad just instantiates Triple. */
-export function tripleFrom(parsed: { source: string; predicate: string; target: string }): Triple {
-  return new Triple(parsed.source, parsed.predicate, parsed.target);
+export function tripleFrom(parsed: { subject: string; predicate: string; object: string }): Triple {
+  return new Triple(parsed.subject, parsed.predicate, parsed.object);
 }

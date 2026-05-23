@@ -404,9 +404,9 @@ await team.invite("did:graph:alice-personal");
 // In Alice's GraphStore:
 const alicePersonal = await me.getContext(me.privateGraphDid);
 await alicePersonal.addTriple({
-  source: alicePersonal.did,
+  subject: alicePersonal.did,
   predicate: "context://participates_in",
-  target: team.did
+  object: team.did
 });
 ```
 
@@ -790,14 +790,14 @@ console.log(announcement.proof.method);      // the specific delegate's verifica
 const alicePersonal = await me.getContext(me.privateGraphDid);
 
 await alicePersonal.addTriple({
-  source: alicePersonal.did,
+  subject: alicePersonal.did,
   predicate: "vote://delegates_to",
-  target: "did:graph:energy-experts"
+  object: "did:graph:energy-experts"
 });
 await alicePersonal.addTriple({
-  source: alicePersonal.did,
+  subject: alicePersonal.did,
   predicate: "vote://delegates_topic",
-  target: "topic://climate-energy"
+  object: "topic://climate-energy"
 });
 ```
 

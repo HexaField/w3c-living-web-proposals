@@ -77,16 +77,16 @@ export function delegateCapability(
 }
 
 export interface RevocationTriple {
-  source: string;
+  subject: string;
   predicate: string;
-  target: string;
+  object: string;
 }
 
 export function revokeCapability(revokerDid: string, zcapId: string): RevocationTriple {
   return {
-    source: revokerDid,
+    subject: revokerDid,
     predicate: GOV.REVOKES_CAPABILITY,
-    target: zcapId,
+    object: zcapId,
   };
 }
 
@@ -101,14 +101,14 @@ export async function issueDefaultCapabilities(
 ): Promise<ZCAPDocument[]> {
   const entryTypes = await ctx.queryTriples({
     predicate: GOV.ENTRY_TYPE,
-    target: GOV.DEFAULT_CAPABILITY,
+    object: GOV.DEFAULT_CAPABILITY,
   });
   const zcaps: ZCAPDocument[] = [];
   for (const entry of entryTypes) {
-    const defId = entry.data.source;
-    const defTriples = await ctx.queryTriples({ source: defId });
+    const defId = entry.data.subject;
+    const defTriples = await ctx.queryTriples({ subject: defId });
     const props: Record<string, string> = {};
-    for (const t of defTriples) props[t.data.predicate] = t.data.target;
+    for (const t of defTriples) props[t.data.predicate] = t.data.object;
 
     const actions = props[GOV.DEFAULT_CAPABILITY_ACTIONS];
     if (!actions) continue;

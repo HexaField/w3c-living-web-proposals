@@ -64,29 +64,29 @@ function getPropertyDef(shape: ShapeDefinition, propName: string): PropertyDefin
 }
 
 function resolveTarget(
-  target: string,
+  object: string,
   propertyNames: Set<string>,
   initialValues: Record<string, unknown>,
 ): string {
-  if (propertyNames.has(target)) {
-    const v = initialValues[target];
-    return v !== undefined ? String(v) : target;
+  if (propertyNames.has(object)) {
+    const v = initialValues[object];
+    return v !== undefined ? String(v) : object;
   }
-  return target;
+  return object;
 }
 
 function getDiscriminator(shape: ShapeDefinition): { predicate: string; value: string } | null {
   for (const action of shape.constructor) {
     if ((action.predicate === 'rdf://type' || action.predicate === 'rdf:type')
-        && action.target === shape.targetClass
+        && action.object === shape.targetClass
         && actionKind(action.action) === 'setSingleTarget') {
-      return { predicate: action.predicate, value: action.target };
+      return { predicate: action.predicate, value: action.object };
     }
   }
   for (const action of shape.constructor) {
     const prop = shape.properties.find(p => p.path === action.predicate);
-    if (prop && !isWritable(prop) && !shape.properties.some(p => p.name === action.target)) {
-      return { predicate: action.predicate, value: action.target };
+    if (prop && !isWritable(prop) && !shape.properties.some(p => p.name === action.object)) {
+      return { predicate: action.predicate, value: action.object };
     }
   }
   return null;
@@ -114,14 +114,14 @@ async function addShape(this: Context, name: string, shapeJson: string): Promise
   const definition = validateShapeDefinition(shapeJson);
   const address = contentAddress(shapeJson);
 
-  await this.addTriple({ source: this.did, predicate: SHAPE_PREDICATE, target: address });
-  await this.addTriple({ source: address, predicate: 'rdf://type', target: SHAPE_TYPE });
-  await this.addTriple({ source: address, predicate: SHAPE_NAME_PREDICATE, target: `"${name}"` });
-  await this.addTriple({ source: address, predicate: SHAPE_TARGET_CLASS_PREDICATE, target: definition.targetClass });
+  await this.addTriple({ subject: this.did, predicate: SHAPE_PREDICATE, object: address });
+  await this.addTriple({ subject: address, predicate: 'rdf://type', object: SHAPE_TYPE });
+  await this.addTriple({ subject: address, predicate: SHAPE_NAME_PREDICATE, object: `"${name}"` });
+  await this.addTriple({ subject: address, predicate: SHAPE_TARGET_CLASS_PREDICATE, object: definition.targetClass });
   await this.addTriple({
-    source: address,
+    subject: address,
     predicate: SHAPE_DEFINITION_PREDICATE,
-    target: `"${shapeJson.replace(/"/g, '\\"')}"`,
+    object: `"${shapeJson.replace(/"/g, '\\"')}"`,
   });
 
   registry.set(name, { name, definition, address, contextDid: this.did });
@@ -132,9 +132,9 @@ async function removeShape(this: Context, name: string): Promise<void> {
   const shape = registry.get(name);
   if (!shape) return;
   const triples = await this.queryTriples({
-    source: this.did,
+    subject: this.did,
     predicate: SHAPE_PREDICATE,
-    target: shape.address,
+    object: shape.address,
   });
   for (const t of triples) await this.removeTriple(t);
   registry.delete(name);
@@ -178,11 +178,11 @@ async function collectInheritedShapes(context: Context): Promise<ShapeInfo[]> {
   if (!manager || typeof manager.resolveContext !== 'function') return inherited;
 
   const participations = await context.queryTriples({
-    source: context.did,
+    subject: context.did,
     predicate: 'context://participates_in',
   });
   for (const link of participations) {
-    const parent = await manager.resolveContext(link.data.target);
+    const parent = await manager.resolveContext(link.data.object);
     if (parent && parent !== context) {
       const parentShapes = await getShapes.call(parent, { includeInherited: true });
       for (const p of parentShapes) inherited.push(p);
@@ -198,11 +198,11 @@ async function resolveShape(context: Context, shapeName: string): Promise<Regist
   const manager = nav.graph;
   if (!manager) return null;
   const participations = await context.queryTriples({
-    source: context.did,
+    subject: context.did,
     predicate: 'context://participates_in',
   });
   for (const link of participations) {
-    const parent = await manager.resolveContext(link.data.target);
+    const parent = await manager.resolveContext(link.data.object);
     if (parent) {
       const inherited = await resolveShape(parent, shapeName);
       if (inherited) return inherited;
@@ -226,7 +226,7 @@ async function createShapeInstance(
     const minCount = prop.minCount ?? 0;
     if (minCount > 0 && isWritable(prop) && initialValues[prop.name] === undefined) {
       const hasLiteralInConstructor = def.constructor.some(
-        a => a.predicate === prop.path && !propertyNames.has(a.target),
+        a => a.predicate === prop.path && !propertyNames.has(a.object),
       );
       if (!hasLiteralInConstructor) {
         throw new TypeError(`Required property "${prop.name}" missing from initialValues`);
@@ -235,22 +235,22 @@ async function createShapeInstance(
   }
 
   for (const action of def.constructor) {
-    const source = address;
-    const target = resolveTarget(action.target, propertyNames, initialValues);
+    const subject = address;
+    const object = resolveTarget(action.object, propertyNames, initialValues);
     const prop = def.properties.find(p => p.path === action.predicate);
-    if (prop?.datatype && propertyNames.has(action.target)) {
-      const val = initialValues[action.target];
+    if (prop?.datatype && propertyNames.has(action.object)) {
+      const val = initialValues[action.object];
       if (val !== undefined && !validateDatatype(String(val), prop.datatype)) {
         throw new TypeError(`Value "${String(val)}" does not match datatype ${prop.datatype} for "${prop.name}"`);
       }
     }
     const kind = actionKind(action.action);
     if (kind === 'setSingleTarget') {
-      const existing = await this.queryTriples({ source, predicate: action.predicate });
+      const existing = await this.queryTriples({ subject, predicate: action.predicate });
       for (const t of existing) await this.removeTriple(t);
-      await this.addTriple({ source, predicate: action.predicate, target });
+      await this.addTriple({ subject, predicate: action.predicate, object });
     } else {
-      await this.addTriple({ source, predicate: action.predicate, target });
+      await this.addTriple({ subject, predicate: action.predicate, object });
     }
   }
 
@@ -262,8 +262,8 @@ async function getShapeInstances(this: Context, shapeName: string): Promise<stri
   if (!shape) throw new TypeError(`Shape "${shapeName}" not found`);
   const disc = getDiscriminator(shape.definition);
   if (!disc) return [];
-  const triples = await this.queryTriples({ predicate: disc.predicate, target: disc.value });
-  return [...new Set(triples.map(t => t.data.source))];
+  const triples = await this.queryTriples({ predicate: disc.predicate, object: disc.value });
+  return [...new Set(triples.map(t => t.data.subject))];
 }
 
 async function getShapeInstanceData(
@@ -294,11 +294,11 @@ async function getShapeInstanceData(
       }
       continue;
     }
-    const triples = await this.queryTriples({ source: address, predicate: prop.path });
+    const triples = await this.queryTriples({ subject: address, predicate: prop.path });
     if (isScalar(prop)) {
-      result[prop.name] = triples.length > 0 ? triples[0].data.target : null;
+      result[prop.name] = triples.length > 0 ? triples[0].data.object : null;
     } else {
-      result[prop.name] = triples.map(t => t.data.target);
+      result[prop.name] = triples.map(t => t.data.object);
     }
   }
   return result;
@@ -319,9 +319,9 @@ async function setShapeProperty(
   if (prop.datatype && !validateDatatype(String(value), prop.datatype)) {
     throw new TypeError(`Value "${String(value)}" does not match datatype ${prop.datatype}`);
   }
-  const existing = await this.queryTriples({ source: address, predicate: prop.path });
+  const existing = await this.queryTriples({ subject: address, predicate: prop.path });
   for (const t of existing) await this.removeTriple(t);
-  await this.addTriple({ source: address, predicate: prop.path, target: String(value) });
+  await this.addTriple({ subject: address, predicate: prop.path, object: String(value) });
 }
 
 async function addToShapeCollection(
@@ -340,12 +340,12 @@ async function addToShapeCollection(
     throw new TypeError(`Value "${String(value)}" does not match datatype ${prop.datatype}`);
   }
   if (prop.maxCount !== undefined) {
-    const existing = await this.queryTriples({ source: address, predicate: prop.path });
+    const existing = await this.queryTriples({ subject: address, predicate: prop.path });
     if (existing.length >= prop.maxCount) {
       throw new DOMException(`Adding value would exceed maxCount (${prop.maxCount})`, 'ConstraintError');
     }
   }
-  await this.addTriple({ source: address, predicate: prop.path, target: String(value) });
+  await this.addTriple({ subject: address, predicate: prop.path, object: String(value) });
 }
 
 async function removeFromShapeCollection(
@@ -358,8 +358,8 @@ async function removeFromShapeCollection(
   const shape = await resolveShape(this, shapeName);
   if (!shape) throw new TypeError(`Shape "${shapeName}" not found`);
   const prop = getPropertyDef(shape.definition, collection);
-  const existing = await this.queryTriples({ source: address, predicate: prop.path });
-  const toRemove = existing.find(t => t.data.target === String(value));
+  const existing = await this.queryTriples({ subject: address, predicate: prop.path });
+  const toRemove = existing.find(t => t.data.object === String(value));
   if (!toRemove) {
     throw new DOMException(`Value "${String(value)}" not found in collection "${collection}"`, 'NotFoundError');
   }

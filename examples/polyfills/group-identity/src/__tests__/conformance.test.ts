@@ -51,18 +51,18 @@ describe('§4 Group creation', () => {
     const g = await gs.createGroup({ name: 'Test' });
 
     const typeT = await g.context.queryTriples({
-      source: g.did,
+      subject: g.did,
       predicate: RDF.TYPE,
-      target: GROUP.TYPE,
+      object: GROUP.TYPE,
     });
     expect(typeT.length).toBeGreaterThanOrEqual(1);
 
-    const createdT = await g.context.queryTriples({ source: g.did, predicate: GROUP.CREATED });
+    const createdT = await g.context.queryTriples({ subject: g.did, predicate: GROUP.CREATED });
     expect(createdT.length).toBeGreaterThanOrEqual(1);
 
-    const creatorT = await g.context.queryTriples({ source: g.did, predicate: GROUP.CREATOR });
+    const creatorT = await g.context.queryTriples({ subject: g.did, predicate: GROUP.CREATOR });
     expect(creatorT.length).toBeGreaterThanOrEqual(1);
-    expect(creatorT[0].data.target).toBe(gs.agentDid);
+    expect(creatorT[0].data.object).toBe(gs.agentDid);
   });
 
   it('stores optional name and description', async () => {
@@ -71,9 +71,9 @@ describe('§4 Group creation', () => {
     expect(g.name).toBe('My Group');
     expect(g.description).toBe('A test group');
 
-    const nameT = await g.context.queryTriples({ source: g.did, predicate: RDF.NAME });
+    const nameT = await g.context.queryTriples({ subject: g.did, predicate: RDF.NAME });
     expect(nameT.length).toBeGreaterThanOrEqual(1);
-    expect(nameT[0].data.target.replace(/^"|"$/g, '')).toBe('My Group');
+    expect(nameT[0].data.object.replace(/^"|"$/g, '')).toBe('My Group');
   });
 
   it('two groups have different DIDs', async () => {
@@ -96,9 +96,9 @@ describe('§5 Participation', () => {
   it('invite() writes accepts_participation', async () => {
     await group.invite('did:key:zMember1');
     const t = await group.context.queryTriples({
-      source: group.did,
+      subject: group.did,
       predicate: CONTEXT.ACCEPTS_PARTICIPATION,
-      target: 'did:key:zMember1',
+      object: 'did:key:zMember1',
     });
     expect(t.length).toBe(1);
   });
@@ -131,9 +131,9 @@ describe('§5.5 Nested groups (participation chains)', () => {
 
     // child.createContext should have written participates_in.
     const t = await child.context.queryTriples({
-      source: child.did,
+      subject: child.did,
       predicate: CONTEXT.PARTICIPATES_IN,
-      target: parent.did,
+      object: parent.did,
     });
     expect(t.length).toBe(1);
   });

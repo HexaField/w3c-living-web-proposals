@@ -56,7 +56,7 @@ const calendar = await me.createContext({ displayName: "My Calendar" });
 await calendar.addTriple(new Triple(
   "urn:event:1",
   "schema://name",
-  "Coffee with Nico"
+  "Coffee with Alice"
 ));
 
 const events = await calendar.querySparql(`
@@ -127,9 +127,9 @@ await calendar.addShape("Event", JSON.stringify({
     { path: "schema://startDate", name: "startDate", datatype: "xsd:dateTime", minCount: 1, maxCount: 1 }
   ],
   constructor: [
-    { action: "shape://actions/setSingleTarget", source: "this", predicate: "rdf://type",         target: "schema://Event" },
-    { action: "shape://actions/setSingleTarget", source: "this", predicate: "schema://name",      target: "name" },
-    { action: "shape://actions/setSingleTarget", source: "this", predicate: "schema://startDate", target: "startDate" }
+    { action: "shape://actions/setSingleTarget", subject: "this", predicate: "rdf://type",         object: "schema://Event" },
+    { action: "shape://actions/setSingleTarget", subject: "this", predicate: "schema://name",      object: "name" },
+    { action: "shape://actions/setSingleTarget", subject: "this", predicate: "schema://startDate", object: "startDate" }
   ]
 }));
 

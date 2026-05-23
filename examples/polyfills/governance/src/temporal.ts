@@ -98,12 +98,12 @@ async function getRecentTriples(
   const results: RecentTriple[] = [];
   
   // Query all triples by this author
-  const authorTriples = await ctx.queryTriples({ source: null, predicate: null, target: null });
+  const authorTriples = await ctx.queryTriples({ subject: null, predicate: null, object: null });
   
   for (const t of authorTriples) {
     if (t.author !== author) continue;
-    // Check if triple's source is in the scope (ancestry)
-    if (!ancestry.includes(t.data.source)) continue;
+    // Check if triple's subject is in the scope (ancestry)
+    if (!ancestry.includes(t.data.subject)) continue;
     // Check predicate filter
     if (appliesTo.length > 0 && t.data.predicate && !appliesTo.includes(t.data.predicate)) continue;
     if (appliesTo.length > 0 && !t.data.predicate) continue;

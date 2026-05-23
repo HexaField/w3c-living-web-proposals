@@ -7,8 +7,8 @@
  *
  * The DID document for a did:graph DID is composed from triples stored INSIDE the
  * graph it identifies. This module exposes a resolver interface that takes a
- * triple source as input; @living-web/personal-graph registers itself as that
- * source.
+ * triple subject as input; @living-web/personal-graph registers itself as that
+ * subject.
  */
 
 import {
@@ -50,9 +50,9 @@ export const DID_DOC_PREDICATES = {
 } as const;
 
 export interface GraphTriple {
-  source: string;
+  subject: string;
   predicate: string;
-  target: string;
+  object: string;
 }
 
 /** Source of triples for resolving a did:graph DID. Provided by personal-graph. */
@@ -69,7 +69,7 @@ export interface GraphTripleSource {
  */
 export function resolveDIDGraph(
   did: string,
-  source: GraphTripleSource,
+  provider: GraphTripleSource,
   trustLevel: DIDDocumentTrustLevel = 'local',
 ): DIDDocument {
   if (!isGraphDID(did)) throw new Error('Invalid did:graph URI');
@@ -83,7 +83,7 @@ export function resolveDIDGraph(
   const authentication = new Set<string>();
   let deactivated = false;
 
-  for (const { source: s, predicate: p, target: t } of source.readGraph(did)) {
+  for (const { subject: s, predicate: p, object: t } of provider.readGraph(did)) {
     if (s === did) {
       switch (p) {
         case DID_DOC_PREDICATES.hasMethod:
@@ -186,14 +186,14 @@ export function seedDIDDocumentTriples(graphDid: string): GraphTriple[] {
   const identifier = graphDid.slice('did:graph:'.length);
   const methodId = `${graphDid}#${identifier}`;
   return [
-    { source: graphDid, predicate: DID_DOC_PREDICATES.hasMethod, target: methodId },
-    { source: methodId, predicate: DID_DOC_PREDICATES.type, target: '"Ed25519VerificationKey2020"' },
-    { source: methodId, predicate: DID_DOC_PREDICATES.controller, target: graphDid },
-    { source: methodId, predicate: DID_DOC_PREDICATES.publicKeyMultibase, target: `"${identifier}"` },
-    { source: graphDid, predicate: DID_DOC_PREDICATES.capabilityInvocation, target: methodId },
-    { source: graphDid, predicate: DID_DOC_PREDICATES.capabilityDelegation, target: methodId },
-    { source: graphDid, predicate: DID_DOC_PREDICATES.assertionMethod, target: methodId },
-    { source: graphDid, predicate: DID_DOC_PREDICATES.authentication, target: methodId },
+    { subject: graphDid, predicate: DID_DOC_PREDICATES.hasMethod, object: methodId },
+    { subject: methodId, predicate: DID_DOC_PREDICATES.type, object: '"Ed25519VerificationKey2020"' },
+    { subject: methodId, predicate: DID_DOC_PREDICATES.controller, object: graphDid },
+    { subject: methodId, predicate: DID_DOC_PREDICATES.publicKeyMultibase, object: `"${identifier}"` },
+    { subject: graphDid, predicate: DID_DOC_PREDICATES.capabilityInvocation, object: methodId },
+    { subject: graphDid, predicate: DID_DOC_PREDICATES.capabilityDelegation, object: methodId },
+    { subject: graphDid, predicate: DID_DOC_PREDICATES.assertionMethod, object: methodId },
+    { subject: graphDid, predicate: DID_DOC_PREDICATES.authentication, object: methodId },
   ];
 }
 
@@ -212,16 +212,16 @@ export function addMethodTriples(
 ): GraphTriple[] {
   const multibase = encodeEd25519Multibase(publicKey);
   const triples: GraphTriple[] = [
-    { source: graphDid, predicate: DID_DOC_PREDICATES.hasMethod, target: methodId },
-    { source: methodId, predicate: DID_DOC_PREDICATES.type, target: '"Ed25519VerificationKey2020"' },
-    { source: methodId, predicate: DID_DOC_PREDICATES.controller, target: graphDid },
-    { source: methodId, predicate: DID_DOC_PREDICATES.publicKeyMultibase, target: `"${multibase}"` },
+    { subject: graphDid, predicate: DID_DOC_PREDICATES.hasMethod, object: methodId },
+    { subject: methodId, predicate: DID_DOC_PREDICATES.type, object: '"Ed25519VerificationKey2020"' },
+    { subject: methodId, predicate: DID_DOC_PREDICATES.controller, object: graphDid },
+    { subject: methodId, predicate: DID_DOC_PREDICATES.publicKeyMultibase, object: `"${multibase}"` },
   ];
   for (const section of sections) {
     triples.push({
-      source: graphDid,
+      subject: graphDid,
       predicate: DID_DOC_PREDICATES[section],
-      target: methodId,
+      object: methodId,
     });
   }
   return triples;
@@ -229,15 +229,15 @@ export function addMethodTriples(
 
 /**
  * Produce the triples to remove for `removeMethodFromGraph`.
- * Returns the (source, predicate, target) tuples whose matching triples should
+ * Returns the (subject, predicate, object) tuples whose matching triples should
  * be deleted to retract the method from all capability sections.
  */
 export function removeMethodTriples(graphDid: string, methodId: string): GraphTriple[] {
   return [
-    { source: graphDid, predicate: DID_DOC_PREDICATES.hasMethod, target: methodId },
-    { source: graphDid, predicate: DID_DOC_PREDICATES.capabilityInvocation, target: methodId },
-    { source: graphDid, predicate: DID_DOC_PREDICATES.capabilityDelegation, target: methodId },
-    { source: graphDid, predicate: DID_DOC_PREDICATES.assertionMethod, target: methodId },
-    { source: graphDid, predicate: DID_DOC_PREDICATES.authentication, target: methodId },
+    { subject: graphDid, predicate: DID_DOC_PREDICATES.hasMethod, object: methodId },
+    { subject: graphDid, predicate: DID_DOC_PREDICATES.capabilityInvocation, object: methodId },
+    { subject: graphDid, predicate: DID_DOC_PREDICATES.capabilityDelegation, object: methodId },
+    { subject: graphDid, predicate: DID_DOC_PREDICATES.assertionMethod, object: methodId },
+    { subject: graphDid, predicate: DID_DOC_PREDICATES.authentication, object: methodId },
   ];
 }

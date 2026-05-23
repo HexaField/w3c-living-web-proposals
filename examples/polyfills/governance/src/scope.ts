@@ -31,18 +31,18 @@ export async function resolveAncestry(
 
   for (let i = 0; i < MAX_ANCESTRY_DEPTH; i++) {
     const participations = await ctx.queryTriples({
-      source: current,
+      subject: current,
       predicate: CONTEXT.PARTICIPATES_IN,
     });
     if (participations.length === 0) break;
-    const parent = participations[0].data.target;
+    const parent = participations[0].data.object;
     if (visited.has(parent)) break;
     // Verify mutual acceptance (best-effort: in this polyfill we only check that the
     // accepts_participation triple exists locally).
     const accepts = await ctx.queryTriples({
-      source: parent,
+      subject: parent,
       predicate: CONTEXT.ACCEPTS_PARTICIPATION,
-      target: current,
+      object: current,
     });
     if (accepts.length === 0) {
       // Unilateral participation — skip
@@ -63,11 +63,11 @@ export async function collectConstraints(
   for (let depth = 0; depth < ancestry.length; depth++) {
     const contextDid = ancestry[depth];
     const bindings = await ctx.queryTriples({
-      source: contextDid,
+      subject: contextDid,
       predicate: GOV.HAS_CONSTRAINT,
     });
     for (const binding of bindings) {
-      const constraintId = binding.data.target;
+      const constraintId = binding.data.object;
       const constraint = await resolveConstraint(constraintId, contextDid, depth, ctx);
       if (constraint) constraints.push(constraint);
     }
@@ -81,9 +81,9 @@ async function resolveConstraint(
   depth: number,
   ctx: ValidationContext,
 ): Promise<GraphConstraint | null> {
-  const triples = await ctx.queryTriples({ source: constraintId });
+  const triples = await ctx.queryTriples({ subject: constraintId });
   const props: Record<string, string> = {};
-  for (const t of triples) props[t.data.predicate] = t.data.target;
+  for (const t of triples) props[t.data.predicate] = t.data.object;
 
   const kindRaw = props[GOV.CONSTRAINT_KIND]?.replace(/^"|"$/g, '');
   if (!kindRaw || !VALID_KINDS.has(kindRaw as ConstraintKind)) return null;

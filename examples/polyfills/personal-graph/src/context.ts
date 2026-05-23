@@ -36,9 +36,9 @@ export class TripleEvent extends Event {
 const DEFAULT_QUOTA_BYTES = 50 * 1024 * 1024;
 
 export interface TriplePattern {
-  source: string;
+  subject: string;
   predicate: string;
-  target: string;
+  object: string;
 }
 
 export class Context extends EventTarget {
@@ -148,7 +148,7 @@ export class Context extends EventTarget {
     }
     const triple = input instanceof Triple
       ? input
-      : new Triple(input.source, input.predicate, input.target);
+      : new Triple(input.subject, input.predicate, input.object);
     const reifier = await signTripleWithReifier(triple, this.identity, this.did);
     const signed = reifierToSigned(reifier);
     const size = this.estimateSize(signed);
@@ -169,7 +169,7 @@ export class Context extends EventTarget {
     for (const input of inputs) {
       const triple = input instanceof Triple
         ? input
-        : new Triple(input.source, input.predicate, input.target);
+        : new Triple(input.subject, input.predicate, input.object);
       const reifier = await signTripleWithReifier(triple, this.identity, this.did);
       const s = reifierToSigned(reifier);
       signed.push(s);
@@ -193,9 +193,9 @@ export class Context extends EventTarget {
     if (idx === -1) return false;
     const [removed] = this.triples.splice(idx, 1);
     this.reifiers = this.reifiers.filter(r => !(
-      r.triple.source === removed.data.source &&
+      r.triple.subject === removed.data.subject &&
       r.triple.predicate === removed.data.predicate &&
-      r.triple.target === removed.data.target &&
+      r.triple.object === removed.data.object &&
       r.author === removed.author &&
       r.timestamp === removed.timestamp
     ));
@@ -207,9 +207,9 @@ export class Context extends EventTarget {
 
   async queryTriples(query: TripleQuery): Promise<SignedTriple[]> {
     let results = this.triples.filter(t => {
-      if (query.source != null && t.data.source !== query.source) return false;
+      if (query.subject != null && t.data.subject !== query.subject) return false;
       if (query.predicate != null && t.data.predicate !== query.predicate) return false;
-      if (query.target != null && t.data.target !== query.target) return false;
+      if (query.object != null && t.data.object !== query.object) return false;
       if (query.author != null && t.author !== query.author) return false;
       if (query.fromDate != null && t.timestamp < query.fromDate) return false;
       if (query.untilDate != null && t.timestamp >= query.untilDate) return false;
@@ -231,9 +231,9 @@ export class Context extends EventTarget {
   /** Get reifier(s) attached to a specific triple. */
   async provenance(triple: Triple): Promise<Reifier[]> {
     return this.reifiers.filter(r =>
-      r.triple.source === triple.source &&
+      r.triple.subject === triple.subject &&
       r.triple.predicate === triple.predicate &&
-      r.triple.target === triple.target,
+      r.triple.object === triple.object,
     );
   }
 
@@ -268,9 +268,9 @@ export class Context extends EventTarget {
   }
 
   private equalSigned(a: SignedTriple, b: SignedTriple): boolean {
-    return a.data.source === b.data.source &&
+    return a.data.subject === b.data.subject &&
            a.data.predicate === b.data.predicate &&
-           a.data.target === b.data.target &&
+           a.data.object === b.data.object &&
            a.author === b.author &&
            a.timestamp === b.timestamp;
   }

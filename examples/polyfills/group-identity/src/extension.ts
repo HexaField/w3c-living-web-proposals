@@ -37,36 +37,36 @@ async function createGroup(this: GraphStore, options: GroupOptions = {}): Promis
   });
   const registry = getRegistry(this);
 
-  await context.addTriple({ source: context.did, predicate: RDF.TYPE, target: GROUP.TYPE });
+  await context.addTriple({ subject: context.did, predicate: RDF.TYPE, object: GROUP.TYPE });
   const label = options.displayName ?? options.name;
   if (label) {
     await context.addTriple({
-      source: context.did,
+      subject: context.did,
       predicate: GROUP.NAME,
-      target: `"${label.replace(/"/g, '\\"')}"`,
+      object: `"${label.replace(/"/g, '\\"')}"`,
     });
     await context.addTriple({
-      source: context.did,
+      subject: context.did,
       predicate: RDF.NAME,
-      target: `"${label.replace(/"/g, '\\"')}"`,
+      object: `"${label.replace(/"/g, '\\"')}"`,
     });
   }
   if (options.description) {
     await context.addTriple({
-      source: context.did,
+      subject: context.did,
       predicate: GROUP.DESCRIPTION,
-      target: `"${options.description.replace(/"/g, '\\"')}"`,
+      object: `"${options.description.replace(/"/g, '\\"')}"`,
     });
   }
   await context.addTriple({
-    source: context.did,
+    subject: context.did,
     predicate: GROUP.CREATED,
-    target: `"${new Date().toISOString()}"`,
+    object: `"${new Date().toISOString()}"`,
   });
   await context.addTriple({
-    source: context.did,
+    subject: context.did,
     predicate: GROUP.CREATOR,
-    target: this.agentDid,
+    object: this.agentDid,
   });
 
   const group = new Group(context, registry, options);
@@ -83,10 +83,10 @@ async function openGroup(this: GraphStore, groupDid: string): Promise<Group> {
   let group = registry.resolve(groupDid);
   if (group) return group;
 
-  const nameT = await context.queryTriples({ source: groupDid, predicate: GROUP.NAME });
-  const descT = await context.queryTriples({ source: groupDid, predicate: GROUP.DESCRIPTION });
-  const name = nameT[0]?.data.target.replace(/^"|"$/g, '') ?? '';
-  const description = descT[0]?.data.target.replace(/^"|"$/g, '') ?? '';
+  const nameT = await context.queryTriples({ subject: groupDid, predicate: GROUP.NAME });
+  const descT = await context.queryTriples({ subject: groupDid, predicate: GROUP.DESCRIPTION });
+  const name = nameT[0]?.data.object.replace(/^"|"$/g, '') ?? '';
+  const description = descT[0]?.data.object.replace(/^"|"$/g, '') ?? '';
   group = new Group(context, registry, { displayName: name, description });
   registry.register(group);
   return group;

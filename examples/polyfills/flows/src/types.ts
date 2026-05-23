@@ -45,10 +45,10 @@ export type FlowActionType =
 export interface FlowAction {
   type: FlowActionType;
   /** "this" — the FlowInstance — or a static URI. */
-  source: string;
+  subject: string;
   predicate: string;
   /** Static URI/literal, or `"now"` (current timestamp), or `"agent"` (firing agent DID). */
-  target: string;
+  object: string;
 }
 
 export interface FlowTransitionResult {

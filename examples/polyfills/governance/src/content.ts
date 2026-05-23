@@ -64,8 +64,8 @@ export async function verifyContent(
     if (appliesTo.length > 0 && triple.predicate && !appliesTo.includes(triple.predicate)) continue;
     if (appliesTo.length > 0 && !triple.predicate) continue;
 
-    // Resolve target content
-    const text = triple.target; // For this polyfill, target is literal text
+    // Resolve object content
+    const text = triple.object; // For this polyfill, object is literal text
 
     // Length check
     const maxLengthStr = cc.properties[GOV.CONTENT_MAX_LENGTH];

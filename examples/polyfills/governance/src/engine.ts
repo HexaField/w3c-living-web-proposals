@@ -38,11 +38,11 @@ export class GraphGovernanceEngine {
 
   async getEnforcementMode(): Promise<EnforcementMode> {
     const triples = await this._ctx.queryTriples({
-      source: this._ctx.graphDid,
+      subject: this._ctx.graphDid,
       predicate: GOV.ENFORCEMENT_MODE,
     });
     if (triples.length === 0) return 'open';
-    const raw = triples[0].data.target.replace(/^"|"$/g, '');
+    const raw = triples[0].data.object.replace(/^"|"$/g, '');
     if (raw === 'enforced' || raw === 'announced' || raw === 'open') return raw;
     return 'open';
   }
@@ -129,20 +129,20 @@ export class GraphGovernanceEngine {
 
   async myCapabilities(myDid: string): Promise<CapabilityInfo[]> {
     const zcapLinks = await this._ctx.queryTriples({
-      source: myDid,
+      subject: myDid,
       predicate: GOV.HAS_ZCAP,
     });
     const caps: CapabilityInfo[] = [];
     const now = this._ctx.now ? this._ctx.now() : Date.now();
     for (const link of zcapLinks) {
-      const zcap = await this._resolveZCAP(link.data.target);
+      const zcap = await this._resolveZCAP(link.data.object);
       if (!zcap) continue;
       const expiryCaveat = (zcap.caveats ?? []).find(c => c.type === 'expiry');
       const expiresAt = (expiryCaveat?.value as any)?.expiresAt ?? zcap.expires ?? null;
       if (expiresAt && new Date(expiresAt).getTime() < now) continue;
       const revocations = await this._ctx.queryTriples({
         predicate: GOV.REVOKES_CAPABILITY,
-        target: zcap.id,
+        object: zcap.id,
       });
       if (revocations.length > 0) continue;
       caps.push({

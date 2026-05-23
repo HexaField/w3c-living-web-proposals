@@ -48,12 +48,12 @@ export async function verifyCapability(
 
   // Find the author's ZCAPs (their declared has_zcap links).
   const zcapLinks = await ctx.queryTriples({
-    source: triple.author,
+    subject: triple.author,
     predicate: GOV.HAS_ZCAP,
   });
 
   for (const link of zcapLinks) {
-    const zcap = await resolveZCAP(link.data.target, ctx);
+    const zcap = await resolveZCAP(link.data.object, ctx);
     if (!zcap) continue;
 
     // Action match
@@ -103,11 +103,11 @@ async function resolveZCAP(address: string, ctx: ValidationContext): Promise<ZCA
       if (doc && typeof doc === 'object' && 'id' in (doc as any)) return doc as ZCAPDocument;
     } catch {}
   }
-  // ZCAP stored as serialised triple target
-  const triples = await ctx.queryTriples({ source: address });
+  // ZCAP stored as serialised triple object
+  const triples = await ctx.queryTriples({ subject: address });
   for (const t of triples) {
     try {
-      const parsed = JSON.parse(t.data.target);
+      const parsed = JSON.parse(t.data.object);
       if (parsed.id) return parsed as ZCAPDocument;
     } catch {}
   }
@@ -117,7 +117,7 @@ async function resolveZCAP(address: string, ctx: ValidationContext): Promise<ZCA
 async function isRevoked(zcapId: string, ctx: ValidationContext): Promise<boolean> {
   const revocations = await ctx.queryTriples({
     predicate: GOV.REVOKES_CAPABILITY,
-    target: zcapId,
+    object: zcapId,
   });
   return revocations.length > 0;
 }
@@ -166,7 +166,7 @@ async function verifyChain(
 async function resolveZCAPById(zcapId: string, ctx: ValidationContext): Promise<ZCAPDocument | null> {
   const allZcapLinks = await ctx.queryTriples({ predicate: GOV.HAS_ZCAP });
   for (const link of allZcapLinks) {
-    const zcap = await resolveZCAP(link.data.target, ctx);
+    const zcap = await resolveZCAP(link.data.object, ctx);
     if (zcap && zcap.id === zcapId) return zcap;
   }
   return null;

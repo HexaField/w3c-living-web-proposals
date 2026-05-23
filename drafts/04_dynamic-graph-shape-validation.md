@@ -193,35 +193,35 @@ A constructor is an ordered array of action objects. Each action is one of three
 ```json
 {
   "action": "shape://actions/addLink",
-  "source": "this",
+  "subject": "this",
   "predicate": "<predicate URI>",
-  "target": "<property name or literal>"
+  "object": "<property name or literal>"
 }
 ```
 
-Adds a triple `(source, predicate, target)`. Used for collection-like properties.
+Adds a triple `(subject, predicate, object)`. Used for collection-like properties.
 
 #### 4.3.2 setSingleTarget
 
 ```json
 {
   "action": "shape://actions/setSingleTarget",
-  "source": "this",
+  "subject": "this",
   "predicate": "<predicate URI>",
-  "target": "<property name or literal>"
+  "object": "<property name or literal>"
 }
 ```
 
-Sets exactly one triple, removing any existing triple with the same source and predicate. Used for scalar properties.
+Sets exactly one triple, removing any existing triple with the same subject and predicate. Used for scalar properties.
 
 #### 4.3.3 addCollectionTarget
 
 ```json
 {
   "action": "shape://actions/addCollectionTarget",
-  "source": "this",
+  "subject": "this",
   "predicate": "<predicate URI>",
-  "target": "<property name or literal>"
+  "object": "<property name or literal>"
 }
 ```
 
@@ -230,9 +230,9 @@ Adds a value to a collection. Similar to `addLink` but with explicit collection 
 For all actions:
 
 - **action**: MUST be a URI under `shape://actions/`.
-- **source**: MUST be `"this"` — the new ShapeInstance's URI.
+- **subject**: MUST be `"this"` — the new ShapeInstance's URI.
 - **predicate**: MUST be a valid predicate URI.
-- **target**: If the value matches a property `name`, it is resolved from initial values supplied at creation. Otherwise it is treated as a literal.
+- **object**: If the value matches a property `name`, it is resolved from initial values supplied at creation. Otherwise it is treated as a literal.
 
 ### 4.4 Property Setters
 
@@ -269,9 +269,9 @@ The constructor MUST set this flag:
 ```json
 {
   "action": "shape://actions/setSingleTarget",
-  "source": "this",
+  "subject": "this",
   "predicate": "rdf://type",
-  "target": "<targetClass URI>"
+  "object": "<targetClass URI>"
 }
 ```
 

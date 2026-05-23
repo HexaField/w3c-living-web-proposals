@@ -54,16 +54,16 @@ export class Group {
   /** Direct participants — those for whom the group has written `accepts_participation`. */
   async participants(): Promise<Participant[]> {
     const accepts = await this.context.queryTriples({
-      source: this.did,
+      subject: this.did,
       predicate: CONTEXT.ACCEPTS_PARTICIPATION,
     });
     const result: Participant[] = [];
     for (const t of accepts) {
-      const did = t.data.target;
+      const did = t.data.object;
       const isGroup = await this.isGroupDid(did);
       let name: string | undefined;
-      const nameTriples = await this.context.queryTriples({ source: did, predicate: RDF.NAME });
-      if (nameTriples.length > 0) name = stripLit(nameTriples[0].data.target);
+      const nameTriples = await this.context.queryTriples({ subject: did, predicate: RDF.NAME });
+      if (nameTriples.length > 0) name = stripLit(nameTriples[0].data.object);
       result.push({
         did,
         isGroup,
@@ -77,27 +77,27 @@ export class Group {
   /** Accept a participant — writes the `accepts_participation` triple. */
   async invite(participantDid: string): Promise<void> {
     await this.context.addTriple({
-      source: this.did,
+      subject: this.did,
       predicate: CONTEXT.ACCEPTS_PARTICIPATION,
-      target: participantDid,
+      object: participantDid,
     });
   }
 
   /** Revoke participation acceptance. */
   async revokeParticipation(participantDid: string): Promise<void> {
     const triples = await this.context.queryTriples({
-      source: this.did,
+      subject: this.did,
       predicate: CONTEXT.ACCEPTS_PARTICIPATION,
-      target: participantDid,
+      object: participantDid,
     });
     for (const t of triples) await this.context.removeTriple(t);
   }
 
   async hasParticipant(did: string): Promise<boolean> {
     const triples = await this.context.queryTriples({
-      source: this.did,
+      subject: this.did,
       predicate: CONTEXT.ACCEPTS_PARTICIPATION,
-      target: did,
+      object: did,
     });
     return triples.length > 0;
   }
@@ -132,9 +132,9 @@ export class Group {
     const removals = removeMethodTriples(this.did, methodId);
     for (const removal of removals) {
       const matches = await this.context.queryTriples({
-        source: removal.source,
+        subject: removal.subject,
         predicate: removal.predicate,
-        target: removal.target,
+        object: removal.object,
       });
       for (const m of matches) await this.context.removeTriple(m);
     }
@@ -150,12 +150,12 @@ export class Group {
   /** Groups this group participates in. */
   async parentGroups(): Promise<Group[]> {
     const participations = await this.context.queryTriples({
-      source: this.did,
+      subject: this.did,
       predicate: CONTEXT.PARTICIPATES_IN,
     });
     const parents: Group[] = [];
     for (const p of participations) {
-      const did = p.data.target;
+      const did = p.data.object;
       const known = this.registry.resolve(did);
       if (known) parents.push(known);
     }
@@ -231,13 +231,13 @@ export class Group {
     validUntil?: string;
     revocable?: boolean;
   }): Promise<void> {
-    await this.context.addTriple({ source: this.did, predicate: VOTE.DELEGATES_TO, target: opts.delegateTo });
-    await this.context.addTriple({ source: this.did, predicate: VOTE.DELEGATES_TOPIC, target: opts.topic });
+    await this.context.addTriple({ subject: this.did, predicate: VOTE.DELEGATES_TO, object: opts.delegateTo });
+    await this.context.addTriple({ subject: this.did, predicate: VOTE.DELEGATES_TOPIC, object: opts.topic });
     if (opts.validUntil) {
-      await this.context.addTriple({ source: this.did, predicate: VOTE.VALID_UNTIL, target: `"${opts.validUntil}"` });
+      await this.context.addTriple({ subject: this.did, predicate: VOTE.VALID_UNTIL, object: `"${opts.validUntil}"` });
     }
     if (opts.revocable !== undefined) {
-      await this.context.addTriple({ source: this.did, predicate: VOTE.REVOCABLE, target: `"${opts.revocable}"` });
+      await this.context.addTriple({ subject: this.did, predicate: VOTE.REVOCABLE, object: `"${opts.revocable}"` });
     }
   }
 

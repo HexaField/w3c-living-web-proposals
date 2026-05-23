@@ -24,9 +24,9 @@ const TASK_SHAPE = {
     { path: 'schema://agent',      name: 'assignees', datatype: 'URI',         minCount: 0 },
   ],
   constructor: [
-    { action: 'shape://actions/setSingleTarget' as const, source: 'this', predicate: 'rdf://type',      target: 'https://schema.org/Action' },
-    { action: 'shape://actions/setSingleTarget' as const, source: 'this', predicate: 'schema://name',   target: 'title' },
-    { action: 'shape://actions/setSingleTarget' as const, source: 'this', predicate: 'schema://status', target: 'status' },
+    { action: 'shape://actions/setSingleTarget' as const, subject: 'this', predicate: 'rdf://type',      object: 'https://schema.org/Action' },
+    { action: 'shape://actions/setSingleTarget' as const, subject: 'this', predicate: 'schema://name',   object: 'title' },
+    { action: 'shape://actions/setSingleTarget' as const, subject: 'this', predicate: 'schema://status', object: 'status' },
   ],
 };
 
@@ -46,11 +46,11 @@ describe('Shape registration', () => {
   it('registers a shape and stores it as content-addressed triples', async () => {
     await context.addShape('Task', JSON.stringify(TASK_SHAPE));
     const links = await context.queryTriples({
-      source: context.did,
+      subject: context.did,
       predicate: SHAPE_PREDICATE,
     });
     expect(links).toHaveLength(1);
-    expect(links[0].data.target).toBe(contentAddress(JSON.stringify(TASK_SHAPE)));
+    expect(links[0].data.object).toBe(contentAddress(JSON.stringify(TASK_SHAPE)));
   });
 
   it('rejects re-registering the same shape name', async () => {
@@ -62,7 +62,7 @@ describe('Shape registration', () => {
     await context.addShape('Task', JSON.stringify(TASK_SHAPE));
     await context.removeShape('Task');
     const links = await context.queryTriples({
-      source: context.did,
+      subject: context.did,
       predicate: SHAPE_PREDICATE,
     });
     expect(links).toHaveLength(0);
@@ -86,10 +86,10 @@ describe('Shape instances', () => {
       status: 'InProgress',
     });
     expect(uri).toBe('task:1');
-    const triples = await context.queryTriples({ source: 'task:1' });
-    expect(triples.find(t => t.data.predicate === 'rdf://type')?.data.target).toBe('https://schema.org/Action');
-    expect(triples.find(t => t.data.predicate === 'schema://name')?.data.target).toBe('Write spec');
-    expect(triples.find(t => t.data.predicate === 'schema://status')?.data.target).toBe('InProgress');
+    const triples = await context.queryTriples({ subject: 'task:1' });
+    expect(triples.find(t => t.data.predicate === 'rdf://type')?.data.object).toBe('https://schema.org/Action');
+    expect(triples.find(t => t.data.predicate === 'schema://name')?.data.object).toBe('Write spec');
+    expect(triples.find(t => t.data.predicate === 'schema://status')?.data.object).toBe('InProgress');
   });
 
   it('rejects when a required property is missing', async () => {
@@ -151,7 +151,7 @@ describe('Shape validation', () => {
   it('rejects legacy short action name like "addLink"', async () => {
     const badShape = {
       ...TASK_SHAPE,
-      constructor: [{ action: 'addLink', source: 'this', predicate: 'x', target: 'y' }],
+      constructor: [{ action: 'addLink', subject: 'this', predicate: 'x', object: 'y' }],
     };
     await expect(context.addShape('Legacy', JSON.stringify(badShape))).rejects.toThrow(/shape:\/\/actions/);
   });
