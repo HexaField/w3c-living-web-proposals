@@ -6,7 +6,7 @@
     "build": "pnpm -r build",
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
-    "build:polyfills": "for p in polyfills/identity polyfills/personal-graph polyfills/shape-validation polyfills/governance polyfills/flows polyfills/graph-sync polyfills/group-identity; do (cd $p && pnpm build); done",
+    "build:polyfills": "for p in polyfills/identity polyfills/personal-graph polyfills/capability-framework polyfills/context-sync polyfills/sync-module polyfills/shape-validation polyfills/constraint-vocabulary polyfills/default-sync-module polyfills/flows polyfills/group-identity; do (cd $p && pnpm build); done",
     "build:demos": "for d in demos/community-chat demos/p2p-vcs demos/collaborative-doc demos/collaborative-canvas demos/multiplayer-game; do (cd $d && pnpm build); done",
     "build:all": "pnpm build:polyfills && pnpm build:demos",
     "dev:chat": "cd demos/community-chat && pnpm dev",
