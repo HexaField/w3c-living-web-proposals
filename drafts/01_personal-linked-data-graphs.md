@@ -131,6 +131,8 @@ The signature is computed as `Ed25519-Sign(privateKey, SHA-256(canonical(triple)
 
 User agents MUST attach a reifier carrying author, timestamp, and signature to every triple they accept via `addTriple()`. User agents SHOULD verify reifier signatures on every triple read from a non-trusted source.
 
+All **provenance-bearing timestamps** in this and related specifications — values that travel on the wire, enter signed material, or are otherwise reproducible across agents (`Reifier.timestamp`, `SignedContent.timestamp` [[DECENTRALISED-IDENTITY]], `GraphSnapshot.timestamp`, `ContextDiff.timestamp` [[P2P-GRAPH-SYNC]]) — MUST be `DOMString`s in RFC 3339 [[RFC3339]] format. **Operational timestamps** local to the user agent (e.g., `Peer.lastSeen`) MAY use `DOMTimeStamp` (milliseconds since the Unix epoch).
+
 ### 3.3 Context
 
 A **Context** is a named graph of triples identified by a `did:graph:...` DID ([[DECENTRALISED-IDENTITY]]). The IRI alias `graph://<did-fragment>` resolves to the same context.
@@ -201,6 +203,7 @@ interface GraphStore : EventTarget {
   [NewObject] Promise<Context> createContext(optional ContextCreationOptions options);
   [NewObject] Promise<Context> mount(USVString graphDid, optional MountOptions options);
   [NewObject] Promise<undefined> unmount(USVString graphDid);
+  [NewObject] Promise<boolean> dissolveContext(USVString graphDid);
   [NewObject] Promise<Context?> getContext(USVString graphDid);
 
   [NewObject] Promise<SparqlResult> querySparql(USVString sparql, optional SparqlQueryOptions options);
@@ -306,7 +309,7 @@ interface Reifier {
 
 The `create()` method MUST:
 
-1. Generate a new UUID for the GraphStore.
+1. Generate a fresh version 4 UUID [[RFC4122]] for the GraphStore.
 2. Mint a fresh `did:graph:...` for the GraphStore's private graph (per [[DECENTRALISED-IDENTITY]] §4). The owning agent becomes the sole `capabilityInvocation` delegate.
 3. Persist the GraphStore record with the private graph mounted in `"governance"` mode.
 4. Return the `GraphStore`.
@@ -345,6 +348,16 @@ The `mount()` method MUST:
 6. Return the `Context`.
 
 The `unmount()` method MUST remove the mount entry from the GraphStore and fire `contextunmounted`. The per-context store stays on disk; other GraphStores that mount it are unaffected.
+
+The `dissolveContext()` method MUST:
+
+1. Reject with `"NotFoundError"` if the named context has no per-context store in this GraphStore.
+2. Reject with `"NotAllowedError"` if the calling agent does not hold a `"governance"`-mode mount of the context.
+3. Unmount the context (if mounted) and remove its per-context store from local persistent storage.
+4. Fire a `contextdissolved` event with `eventType = "dissolved"`.
+5. Resolve with `true` if storage was removed, `false` if it was already absent.
+
+Dissolution is local to the dissolving agent's GraphStore; it does not propagate to other agents that have mounted the same `did:graph:...`. Other agents continue to hold their own copies.
 
 ### 4.3 Triple Operations
 
@@ -520,18 +533,9 @@ A community application with many channels does not need to statically subscribe
 
 ## 7. Shape System
 
-This section is informative; the normative specification of action semantics lives in [[SHAPE-VALIDATION]]. The API surface exposed on a `Context` is:
+This section is informative. The normative shape API — registration, instance lifecycle, property setters, and constructor action semantics — is specified by [[SHAPE-VALIDATION]] as `partial interface Context` extensions.
 
-```webidl
-partial interface Context {
-  Promise<undefined> addShape(USVString name, USVString shaclJson);
-  [NewObject] Promise<sequence<USVString>> getShapeInstances(USVString shapeName);
-  [NewObject] Promise<USVString> createShapeInstance(USVString shapeName, USVString address, optional object data);
-  [NewObject] Promise<object> getShapeInstanceData(USVString shapeName, USVString instanceUri);
-};
-```
-
-Shapes are stored as triples inside the context they describe. They participate in graph-snapshot serialisation — exporting a context exports its shapes; mounting a snapshot mounts the shapes. A shape registered on a parent context is visible to child contexts that participate in it via `context://participates_in`. See [[SHAPE-VALIDATION]] for details.
+Shapes are stored as triples inside the context they describe and participate in graph-snapshot serialisation: exporting a context exports its shapes; mounting a snapshot mounts the shapes. A shape registered on a parent context is visible to child contexts that participate in it via `context://participates_in`. See [[SHAPE-VALIDATION]] for the full API surface and processing model.
 
 ---
 
@@ -719,6 +723,7 @@ me.oncontextcreated = (e) => console.log(`New context ${e.graphDid} created by $
 - **[RFC3986]** Berners-Lee, T., Fielding, R., and L. Masinter, "Uniform Resource Identifier (URI): Generic Syntax", STD 66, RFC 3986, January 2005. https://www.rfc-editor.org/rfc/rfc3986
 - **[RFC3339]** Klyne, G. and C. Newman, "Date and Time on the Internet: Timestamps", RFC 3339, July 2002. https://www.rfc-editor.org/rfc/rfc3339
 - **[RFC8032]** Josefsson, S. and I. Liusvaara, "Edwards-Curve Digital Signature Algorithm (EdDSA)", RFC 8032, January 2017. https://www.rfc-editor.org/rfc/rfc8032
+- **[RFC4122]** Leach, P., Mealling, M., and R. Salz, "A Universally Unique IDentifier (UUID) URN Namespace", RFC 4122, July 2005. https://www.rfc-editor.org/rfc/rfc4122
 - **[WEBIDL]** Chen, E., "Web IDL Standard". https://webidl.spec.whatwg.org/
 - **[DID-CORE]** Sporny, M., Guy, A., Sabadello, M., and D. Reed, "Decentralized Identifiers (DIDs) v1.0", W3C Recommendation, 19 July 2022. https://www.w3.org/TR/did-core/
 - **[DECENTRALISED-IDENTITY]** [Decentralised Identity Integration for the Web Platform](./02_decentralised-identity-web-platform.md) (companion specification).

@@ -36,7 +36,8 @@ export class Group {
   readonly context: Context;
   readonly name: string;
   readonly description: string;
-  readonly created: number;
+  /** RFC 3339 timestamp. */
+  readonly created: string;
 
   private readonly registry: GroupRegistry;
 
@@ -45,7 +46,7 @@ export class Group {
     this.did = context.did;
     this.name = options.displayName || options.name || context.displayName || '';
     this.description = options.description || '';
-    this.created = Date.now();
+    this.created = new Date().toISOString();
     this.registry = registry;
   }
 
@@ -68,7 +69,7 @@ export class Group {
         did,
         isGroup,
         name,
-        joinedAt: new Date(t.timestamp).getTime(),
+        joinedAt: t.timestamp,
       });
     }
     return result;

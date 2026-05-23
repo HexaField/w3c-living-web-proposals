@@ -15,7 +15,8 @@ export interface Participant {
   /** true if the participant is itself a group (a did:graph). */
   isGroup: boolean;
   name?: string;
-  joinedAt?: number;
+  /** RFC 3339; derived from the accepts_participation reifier. */
+  joinedAt?: string;
 }
 
 export interface GroupOptions {

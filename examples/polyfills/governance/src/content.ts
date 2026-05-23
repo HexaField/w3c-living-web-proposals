@@ -3,7 +3,7 @@
  */
 
 import { GOV } from './predicates.js';
-import type { GraphConstraint, ValidationResult, TripleInput, ValidationContext } from './types.js';
+import type { GraphConstraint, GovernanceValidationResult, TripleInput, ValidationContext } from './types.js';
 
 const REGEX_TIMEOUT_MS = 10;
 // Simple URL regex for detection
@@ -53,7 +53,7 @@ export async function verifyContent(
   triple: TripleInput,
   constraints: GraphConstraint[],
   ctx: ValidationContext,
-): Promise<ValidationResult> {
+): Promise<GovernanceValidationResult> {
   const contentConstraints = constraints.filter(c => c.kind === 'content');
   if (contentConstraints.length === 0) return { allowed: true };
 

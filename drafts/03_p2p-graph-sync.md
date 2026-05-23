@@ -230,7 +230,7 @@ interface ContextDiff {
   readonly attribute FrozenArray<USVString> dependencies;  // prior revisions in this context's chain
   readonly attribute CapabilityProof? capabilityProof;
   readonly attribute USVString author;             // did:key:... (the committing agent)
-  readonly attribute DOMTimeStamp timestamp;       // authoritative
+  readonly attribute DOMString timestamp;          // RFC 3339; authoritative commit time
   readonly attribute unsigned long diffsSinceSnapshot;
 };
 ```
@@ -300,10 +300,10 @@ enum ContextSyncState {
 };
 ```
 
-### 5.6 ValidationResult
+### 5.6 SyncValidationResult
 
 ```webidl
-dictionary ValidationResult {
+dictionary SyncValidationResult {
   required boolean accepted;
   USVString? module;        // "capability" | "temporal" | "content" | "credential"
   USVString? constraintId;
@@ -355,30 +355,20 @@ The `publish()` method MUST:
 
 ### 6.2 Mounting a Remote Context
 
-Mounting is defined in [[PERSONAL-LINKED-DATA-GRAPHS]] §4.2. This specification adds sync-layer semantics to the mount options:
+The `mount()` method is defined in [[PERSONAL-LINKED-DATA-GRAPHS]] §4.2. This specification extends its options dictionary with sync-layer hints:
 
 ```webidl
-partial interface GraphStore {
-  [NewObject] Promise<Context> mount(USVString graphDid, optional MountOptions options);
-};
-
-dictionary MountOptions {
-  MountMode mode = "read";
-  object capabilityProof;        // ZCAP chain; required for "write" or "governance"
-  USVString snapshotUri;         // optional; initial state if context not already locally known
+partial dictionary MountOptions {
   USVString spaceUri;            // hint: the space carrying this context's diffs
   USVString moduleHash;          // hint: the sync module the space uses
   sequence<USVString> relays;    // hint: relay endpoints
 };
 ```
 
-The mount handshake:
+When a `Context` is mounted with any of these hints present, the user agent MUST in addition to the steps of [[PERSONAL-LINKED-DATA-GRAPHS]] §4.2:
 
-1. Resolve `did:graph:<key>` via [[DECENTRALISED-IDENTITY]] §8.2. If locally mounted, the resolution is trivial; otherwise pull a snapshot via the provided `snapshotUri` or known sync spaces.
-2. Verify any `capabilityProof` against the resolved context's governance.
-3. Open or create the per-context store ([[PERSONAL-LINKED-DATA-GRAPHS]] §8).
-4. Subscribe to `spaceUri` using `moduleHash` (download module if needed, with user consent).
-5. Fire the `contextmounted` event on the GraphStore.
+1. Subscribe to `spaceUri` using `moduleHash` (downloading the module if needed, with user consent — see [§9.5](#95-user-consent)).
+2. Begin emitting and accepting `ContextDiff`s scoped to the mounted `did:graph:...`.
 
 ### 6.3 Sync Operations
 
@@ -672,11 +662,11 @@ interface GraphSyncModule {
 
   // Governance validation — graphDid is explicit so a module serving multiple
   // contexts in one space can route to the correct governance engine.
-  ValidationResult validate(USVString graphDid, ContextDiff diff,
+  SyncValidationResult validate(USVString graphDid, ContextDiff diff,
                              USVString author, GraphReader graphState);
 };
 
-callback RemoteDiffCallback = ValidationResult (USVString graphDid, ContextDiff diff);
+callback RemoteDiffCallback = SyncValidationResult (USVString graphDid, ContextDiff diff);
 callback SignalCallback = undefined (USVString remoteDid, bytes payload);
 ```
 

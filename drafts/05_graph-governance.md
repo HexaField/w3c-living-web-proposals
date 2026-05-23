@@ -688,7 +688,7 @@ This specification does NOT define multisig, threshold signing, or aggregate-key
 ```webidl
 [Exposed=Window,Worker]
 partial interface Context {
-  [NewObject] Promise<ValidationResult> canAddTriple(Triple triple);
+  [NewObject] Promise<GovernanceValidationResult> canAddTriple(Triple triple);
   [NewObject] Promise<sequence<GraphConstraint>> constraintsFor(USVString contextDid);
   [NewObject] Promise<sequence<CapabilityInfo>> myCapabilities();
   [NewObject] Promise<DOMString> enforcementMode();
@@ -697,7 +697,7 @@ partial interface Context {
 
 enum EnforcementMode { "open", "announced", "enforced" };
 
-dictionary ValidationResult {
+dictionary GovernanceValidationResult {
   required boolean allowed;
   USVString? rejectedBy;       // constraint id
   USVString? module;            // "capability" | "temporal" | "content" | "credential"

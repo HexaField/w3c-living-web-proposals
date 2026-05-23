@@ -5,7 +5,7 @@
 import { GOV } from './predicates.js';
 import { evaluateCaveats } from './caveats.js';
 import type {
-  GraphConstraint, ValidationResult, TripleInput,
+  GraphConstraint, GovernanceValidationResult, TripleInput,
   ValidationContext, ZCAPDocument, Caveat,
 } from './types.js';
 
@@ -26,7 +26,7 @@ export async function verifyCapability(
   constraints: GraphConstraint[],
   ancestry: string[],
   ctx: ValidationContext,
-): Promise<ValidationResult> {
+): Promise<GovernanceValidationResult> {
   const action = inferAction(triple);
   const capConstraints = constraints.filter(
     c => c.kind === 'capability' && c.properties[GOV.CAPABILITY_ENFORCEMENT] === '"required"',

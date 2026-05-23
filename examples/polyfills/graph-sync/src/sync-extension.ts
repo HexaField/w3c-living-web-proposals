@@ -291,7 +291,7 @@ interface ChannelDiffPayload {
   dependencies: string[];
   capabilityProof: { chain: string[]; caveatsSatisfied?: string[]; hasContentCaveats?: boolean } | null;
   author: string;
-  timestamp: number;
+  timestamp: string;
   diffsSinceSnapshot: number;
 }
 

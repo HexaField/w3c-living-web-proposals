@@ -13,7 +13,7 @@ import { verifyTemporal } from './temporal.js';
 import { verifyContent } from './content.js';
 import type {
   GraphConstraint,
-  ValidationResult,
+  GovernanceValidationResult,
   TripleInput,
   ValidationContext,
   CapabilityInfo,
@@ -57,7 +57,7 @@ export class GraphGovernanceEngine {
    * Order: scope → capability → credential → temporal → content → custom.
    * Capability checks honour the enforcement mode (open/announced/enforced).
    */
-  async validate(triple: TripleInput): Promise<ValidationResult> {
+  async validate(triple: TripleInput): Promise<GovernanceValidationResult> {
     // Refresh enforcement mode from graph (cheap query)
     this._ctx.enforcementMode = await this.getEnforcementMode();
 
@@ -116,7 +116,7 @@ export class GraphGovernanceEngine {
       }
     }
 
-    const result: ValidationResult = { allowed: true };
+    const result: GovernanceValidationResult = { allowed: true };
     this._recordHistory(triple, result);
     return result;
   }
@@ -167,7 +167,7 @@ export class GraphGovernanceEngine {
 
   reload(): void { this._history = []; }
 
-  private _recordHistory(triple: TripleInput, result: ValidationResult): void {
+  private _recordHistory(triple: TripleInput, result: GovernanceValidationResult): void {
     this._history.push({
       triple,
       result,

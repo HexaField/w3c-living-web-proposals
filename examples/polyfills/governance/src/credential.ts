@@ -3,7 +3,7 @@
  */
 
 import { GOV } from './predicates.js';
-import type { GraphConstraint, ValidationResult, TripleInput, ValidationContext, VerifiableCredential } from './types.js';
+import type { GraphConstraint, GovernanceValidationResult, TripleInput, ValidationContext, VerifiableCredential } from './types.js';
 
 function parseCommaSeparated(val: string | undefined): string[] {
   if (!val || val.trim() === '') return [];
@@ -19,7 +19,7 @@ export async function verifyCredential(
   triple: TripleInput,
   constraints: GraphConstraint[],
   ctx: ValidationContext,
-): Promise<ValidationResult> {
+): Promise<GovernanceValidationResult> {
   const credConstraints = constraints.filter(c => c.kind === 'credential');
   if (credConstraints.length === 0) return { allowed: true };
 

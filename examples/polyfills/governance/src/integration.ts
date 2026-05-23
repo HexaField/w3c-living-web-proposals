@@ -12,7 +12,7 @@ import { GOV } from './predicates.js';
 import { resetCaveatCounters } from './caveats.js';
 import type {
   GraphConstraint,
-  ValidationResult,
+  GovernanceValidationResult,
   CapabilityInfo,
   TripleInput,
   ValidationContext,
@@ -71,7 +71,7 @@ export function createGovernanceLayer(context: Context, opts: GovernanceOptions 
     engine,
     expressionStore,
 
-    async canAddTriple(subject: string, predicate: string, object: string): Promise<ValidationResult> {
+    async canAddTriple(subject: string, predicate: string, object: string): Promise<GovernanceValidationResult> {
       return engine.validate({
         subject, predicate, object,
         author: 'did:key:unknown',
@@ -84,7 +84,7 @@ export function createGovernanceLayer(context: Context, opts: GovernanceOptions 
       predicate: string,
       object: string,
       authorDid: string,
-    ): Promise<ValidationResult> {
+    ): Promise<GovernanceValidationResult> {
       return engine.validate({
         subject, predicate, object,
         author: authorDid,

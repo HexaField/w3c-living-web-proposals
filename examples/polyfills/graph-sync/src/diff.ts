@@ -39,7 +39,7 @@ export function createContextDiff(opts: {
   dependencies?: string[];
   capabilityProof?: CapabilityProof | null;
   author: string;
-  timestamp?: number;
+  timestamp?: string;
   diffsSinceSnapshot?: number;
 }): ContextDiff {
   const dependencies = opts.dependencies ?? [];
@@ -52,7 +52,7 @@ export function createContextDiff(opts: {
     dependencies,
     capabilityProof: opts.capabilityProof ?? null,
     author: opts.author,
-    timestamp: opts.timestamp ?? Date.now(),
+    timestamp: opts.timestamp ?? new Date().toISOString(),
     diffsSinceSnapshot: opts.diffsSinceSnapshot ?? 0,
   });
 }

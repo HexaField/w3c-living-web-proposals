@@ -36,7 +36,8 @@ export class ContextDiff {
   readonly dependencies: readonly string[];
   readonly capabilityProof: CapabilityProof | null;
   readonly author: string;
-  readonly timestamp: number;
+  /** RFC 3339; authoritative commit time. */
+  readonly timestamp: string;
   readonly diffsSinceSnapshot: number;
 
   constructor(opts: {
@@ -47,7 +48,7 @@ export class ContextDiff {
     dependencies: string[];
     capabilityProof?: CapabilityProof | null;
     author: string;
-    timestamp: number;
+    timestamp: string;
     diffsSinceSnapshot?: number;
   }) {
     this.graphDid = opts.graphDid;
@@ -63,7 +64,7 @@ export class ContextDiff {
   }
 }
 
-export interface ValidationResult {
+export interface SyncValidationResult {
   accepted: boolean;
   module?: string;
   constraintId?: string;

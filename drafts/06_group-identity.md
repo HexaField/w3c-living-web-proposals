@@ -275,10 +275,10 @@ The `Group` interface is a thin convenience wrapper over `Context` + `DIDCredent
 interface Group {
   readonly attribute USVString did;          // did:graph:...
   readonly attribute Context context;
-  readonly attribute USVString? name;
-  readonly attribute USVString? description;
-  readonly attribute DOMTimeStamp created;
-  readonly attribute USVString creator;
+  readonly attribute DOMString? name;
+  readonly attribute DOMString? description;
+  readonly attribute DOMString created;      // RFC 3339
+  readonly attribute USVString creator;      // did:key:... or did:graph:...
 
   // Participation
   [NewObject] Promise<sequence<Participant>> participants();
@@ -305,8 +305,8 @@ interface Group {
 dictionary Participant {
   required USVString did;
   required boolean isGroup;     // true if the participant is itself a did:graph
-  USVString name;
-  DOMTimeStamp joinedAt;
+  required DOMString joinedAt;  // RFC 3339; derived from the accepts_participation reifier
+  DOMString name;
 };
 
 dictionary DelegateOptions {
@@ -339,10 +339,12 @@ Wraps [[DECENTRALISED-IDENTITY]] §5.4's delegate management. Modifies the group
 
 Issues a ZCAP whose `resource` is this group's `did:graph:...` (or another resource the group has authority over). Signed by a current `capabilityDelegation` delegate. Optionally `transitiveToParticipants` carries the `context://capability_transitive: true` predicate so the capability MAY be invoked by participants of the named invoker group.
 
-### 6.2 GraphStoreManager Extension
+### 6.2 GraphStore Extension
+
+A group is created inside, and mounted into, a specific `GraphStore` ([[PERSONAL-LINKED-DATA-GRAPHS]] §3.4). The group's `did:graph:...` context joins that store's mount table.
 
 ```webidl
-partial interface GraphStoreManager {
+partial interface GraphStore {
   [NewObject] Promise<Group> createGroup(optional GroupCreationOptions options);
   [NewObject] Promise<Group> openGroup(USVString groupDid);
   [NewObject] Promise<sequence<Group>> listGroups();
@@ -355,10 +357,8 @@ dictionary GroupCreationOptions {
   USVString participatesIn;                // did:graph of parent (if creating a sub-group)
   USVString syncModule;                    // module hash for the group's sync
   sequence<USVString> relays;
-  EnforcementMode enforcementMode;         // initial governance mode
+  EnforcementMode enforcementMode;         // initial governance mode — see [[GRAPH-GOVERNANCE]] §13
 };
-
-enum EnforcementMode { "open", "announced", "enforced" };
 ```
 
 #### 6.2.1 createGroup
@@ -590,7 +590,7 @@ The resulting ballot is signed by a current `capabilityInvocation` delegate of t
 
 Delegated voting is not a feature added to this substrate. It is the result of:
 
-- Holonic identity at every scale (DIDs).
+- Identity at every scale, via DIDs.
 - Per-context governance (ZCAPs, immanent rules).
 - Structured reasoning as data (triples — delegate reasoning is queryable).
 - Nesting (parts forming wholes forming parts).

@@ -4,7 +4,7 @@
  * Each caveat narrows a ZCAP. Evaluated at write time against the operation.
  */
 
-import type { Caveat, TripleInput, ValidationResult, ValidationContext } from './types.js';
+import type { Caveat, TripleInput, GovernanceValidationResult, ValidationContext } from './types.js';
 
 // Per-(zcapId,window) rate counters
 const rateCounters = new Map<string, number[]>();
@@ -15,7 +15,7 @@ export async function evaluateCaveats(
   triple: TripleInput,
   action: string,
   ctx: ValidationContext,
-): Promise<ValidationResult> {
+): Promise<GovernanceValidationResult> {
   const now = ctx.now ? ctx.now() : Date.now();
 
   for (const c of caveats) {
@@ -31,7 +31,7 @@ async function evalCaveat(
   _action: string,
   now: number,
   ctx: ValidationContext,
-): Promise<ValidationResult> {
+): Promise<GovernanceValidationResult> {
   switch (c.type) {
     case 'expiry': {
       const { expiresAt } = c.value as { expiresAt: string };

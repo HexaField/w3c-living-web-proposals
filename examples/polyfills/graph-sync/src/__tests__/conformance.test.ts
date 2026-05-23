@@ -66,7 +66,7 @@ describe('§5.1 ContextDiff', () => {
       removals: [],
       dependencies: [],
       author: 'did:key:author',
-      timestamp: 1700000000000,
+      timestamp: '2023-11-15T22:13:20.000Z',
     });
     expect(Object.isFrozen(diff)).toBe(true);
     expect(Object.isFrozen(diff.additions)).toBe(true);

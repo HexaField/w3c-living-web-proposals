@@ -40,7 +40,7 @@ export interface GraphConstraint {
   readonly properties: Record<string, string>;
 }
 
-export interface ValidationResult {
+export interface GovernanceValidationResult {
   readonly allowed: boolean;
   readonly module?: string;
   readonly reason?: string;
@@ -130,7 +130,7 @@ export interface ValidationContext {
 
 export interface ConstraintHandler {
   kind: string;
-  validate(triple: TripleInput, constraint: GraphConstraint, context: ValidationContext): ValidationResult | Promise<ValidationResult>;
+  validate(triple: TripleInput, constraint: GraphConstraint, context: ValidationContext): GovernanceValidationResult | Promise<GovernanceValidationResult>;
 }
 
 export interface CapabilityProof {
@@ -141,6 +141,6 @@ export interface CapabilityProof {
 
 export interface ValidationHistoryEntry {
   triple: TripleInput;
-  result: ValidationResult;
+  result: GovernanceValidationResult;
   timestamp: number;
 }

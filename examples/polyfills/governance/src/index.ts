@@ -18,7 +18,7 @@ export { createGovernanceLayer } from './integration.js';
 export type { GovernanceOptions } from './integration.js';
 export type {
   GraphConstraint,
-  ValidationResult,
+  GovernanceValidationResult,
   CapabilityInfo,
   ZCAPDocument,
   CapabilityProof,

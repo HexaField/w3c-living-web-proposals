@@ -22,7 +22,7 @@ export type {
   PublishedContext,
   SyncSpaceInfo,
   SyncModuleInfo,
-  ValidationResult,
+  SyncValidationResult,
 } from './types.js';
 
 export { deriveSpaceUri } from './space.js';
