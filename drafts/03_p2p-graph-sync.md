@@ -64,7 +64,7 @@ The web's data model is fundamentally client–server. Local-first software addr
 
 This specification defines a **synchronisation protocol for linked data contexts** — a standard interface and diff format that enables multiple agents to maintain a shared, eventually-consistent named graph without a central server.
 
-No single sync strategy is optimal for all use cases. A collaborative editor needs different merge semantics than a social feed. Rather than prescribing one approach, this specification defines a **pluggable sync module architecture** — each sync space specifies a WebAssembly module that implements the strategy. The browser downloads, verifies, sandboxes, and executes the module.
+No single sync strategy is optimal for all use cases. A collaborative editor needs different merge semantics than a social feed. Rather than prescribing one approach, this specification defines a **pluggable sync module architecture** — each sync space specifies a WebAssembly module that implements the strategy. The user agent downloads, verifies, sandboxes, and executes the module.
 
 ### 1.3 Use Cases
 
@@ -610,9 +610,9 @@ If a module cannot be retrieved, the relevant operation MUST reject with `"Netwo
 
 ### 9.4 Module Execution Environment
 
-Modules execute in the **browser process** (not the renderer):
+Modules execute in a **user-agent-managed execution environment** outside the page realm:
 
-- Modules persist across tab navigations and browser restarts.
+- Modules persist across tab navigations and user agent restarts.
 - Modules are not tied to any origin.
 - Multiple pages from different origins can interact with the same context through the same module instance.
 
@@ -1016,16 +1016,16 @@ Content, temporal, and credential constraints are applied in all modes.
 
 ## 20. Background Operation
 
-Sync modules execute in the browser process and persist across:
+Sync modules execute in the user-agent-managed environment and persist across:
 
 - Tab navigation
 - Window closing (with active mounted contexts in other windows)
 - Background tabs
-- Browser restart (sessions reconnect)
+- User agent restart (sessions reconnect)
 
 The user agent MAY pause sync modules under battery / network / resource pressure, surfacing pause/resume controls via the management UI.
 
-When all browser windows are closed, the user agent MAY continue running modules briefly (e.g., to flush pending diffs) before fully suspending.
+When all top-level browsing contexts are closed, the user agent MAY continue running modules briefly (e.g., to flush pending diffs) before fully suspending.
 
 ---
 

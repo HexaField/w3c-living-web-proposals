@@ -539,7 +539,7 @@ Shapes are stored as triples inside the context they describe. They participate 
 
 ### 8.1 Per-Context Stores
 
-Each context has its own backing store, keyed by `did:graph:...`. The recommended layout for browser implementations:
+Each context has its own backing store, keyed by `did:graph:...`. The RECOMMENDED layout for a conforming user agent:
 
 ```
 <agent-storage>/graphs/<did:graph:...>/   ← one IndexedDB / OPFS subtree per context
@@ -571,7 +571,7 @@ When storage quota is exceeded, the user agent SHOULD prompt the user before evi
 
 Origin is not the sole authorisation boundary for context data; the graph DID is. Multiple origins MAY mount the same `did:graph:...` for the same agent, subject to:
 
-1. A user gesture and a browser-mediated prompt identifying the requesting origin and the target context.
+1. A user gesture and a user-agent-mediated prompt identifying the requesting origin and the target context.
 2. The origin presenting (or the user supplying) a valid capability proof for the requested mount mode.
 
 ```webidl

@@ -48,7 +48,7 @@ Feedback and comments are welcome. Please file issues on the GitHub repository.
 
 Identity on the web is fundamentally server-dependent. Users authenticate to services using passwords, OAuth tokens, or federated identity providers — all of which require a trusted third party to vouch for the user's identity.
 
-Browsers have demonstrated that they can manage cryptographic keys on behalf of users. Passkeys (built on WebAuthn) store asymmetric key pairs in the OS keychain, protect them with biometrics, sync them across devices, and present user-friendly permission prompts. Over 13 billion accounts support passkeys as of 2025.
+User agents have demonstrated that they can manage cryptographic keys on behalf of users. Passkeys (built on WebAuthn) store asymmetric key pairs in the OS keychain, protect them with biometrics, sync them across devices, and present user-friendly permission prompts. Over 13 billion accounts support passkeys as of 2025.
 
 This specification applies the same architectural pattern to **decentralised identifiers (DIDs)** and extends it in a critical way that passkeys do not: identity is not only for *people*. A graph, a working group, a community, an AI agent, an organisation — all hold DIDs through the same API surface. The substrate does not distinguish between individual and collective identity at the data model level.
 
@@ -75,7 +75,7 @@ This replaces multisig in this specification. Multisig answers "how do many agen
 
 ### 1.4 Use Cases
 
-- **User-controlled identity.** A user creates a DID in the browser, stored in the OS keychain alongside their passkeys.
+- **User-controlled identity.** A user creates a DID through the user agent, stored in the OS keychain alongside their passkeys.
 - **Collective identity.** A team creates a `did:graph` for itself; multiple members are listed as `capabilityInvocation` delegates, and any one of them can sign as the team.
 - **Content signing.** A user or a graph signs a document. Any party can verify the signature without contacting a server.
 - **Cross-application identity.** A user uses the same DID across multiple applications.
@@ -156,7 +156,7 @@ dictionary GraphDIDCreationOptions {
 When `navigator.credentials.create({ did: options })` is called:
 
 1. The user agent MUST verify the call is triggered by a user gesture. If not, reject with `"NotAllowedError"`.
-2. The user agent MUST display a browser-mediated prompt naming the `method` and `displayName`. For `method = "graph"`, the prompt MUST make clear that the identity *belongs to a graph*, not to the user personally.
+2. The user agent MUST display a user-agent-mediated prompt naming the `method` and `displayName`. For `method = "graph"`, the prompt MUST make clear that the identity *belongs to a graph*, not to the user personally.
 3. If the user consents:
    - For `method = "key"`: generate an Ed25519 keypair, derive a `did:key` URI ([§4.1](#41-didkey-method)), store the private key in platform secure storage ([§6.1](#61-key-storage)), and return a `DIDCredential` with `kind = "individual"`.
    - For `method = "graph"`: generate an Ed25519 keypair, derive a `did:graph` URI ([§4.2](#42-didgraph-method)), create the graph (or use the provided `graphIri`) with the initial DID document, store the private key in platform secure storage, write any `initialDelegates` to the DID document via the graph's governance, and return a `DIDCredential` with `kind = "graph"`.
@@ -176,7 +176,7 @@ dictionary DIDCredentialRequestOptions {
 };
 ```
 
-When the user has multiple credentials matching the filter, the browser MUST present a credential picker. For a graph DID, the picker MUST indicate that selecting the credential will allow signing *on behalf of the graph*.
+When the user has multiple credentials matching the filter, the user agent MUST present a credential picker. For a graph DID, the picker MUST indicate that selecting the credential will allow signing *on behalf of the graph*.
 
 ### 3.3 Supported Algorithms
 
@@ -453,7 +453,7 @@ The `sign(data)` method MUST:
 
 1. Verify the call is triggered by a user gesture.
 2. Reject with `"InvalidStateError"` if the credential is locked.
-3. Display a browser-mediated prompt indicating the requesting origin, the action, and — for `did:graph` credentials — that the signature will be *on behalf of the graph*.
+3. Display a user-agent-mediated prompt indicating the requesting origin, the action, and — for `did:graph` credentials — that the signature will be *on behalf of the graph*.
 4. Canonicalise `data` using JSON Canonicalization Scheme [[RFC8785]].
 5. Compute the timestamp as the current time in RFC 3339 [[RFC3339]] format.
 6. Compute `SHA-256(canonical(data) || timestamp)`.
@@ -567,13 +567,13 @@ This specification deliberately does not define a global resolution infrastructu
 
 ### 9.1 DID Creation
 
-Creating a new DIDCredential MUST require a user gesture and a browser-mediated prompt indicating the `method` and `kind` (and, for `did:graph`, the graph being brought into existence).
+Creating a new DIDCredential MUST require a user gesture and a user-agent-mediated prompt indicating the `method` and `kind` (and, for `did:graph`, the graph being brought into existence).
 
 ### 9.2 Signing
 
-Signing data MUST require a user gesture and a browser-mediated prompt indicating the requesting origin. For `did:graph` credentials, the prompt MUST clearly indicate that the signature will be **on behalf of the graph**.
+Signing data MUST require a user gesture and a user-agent-mediated prompt indicating the requesting origin. For `did:graph` credentials, the prompt MUST clearly indicate that the signature will be **on behalf of the graph**.
 
-The user agent MAY allow the user to "remember" the signing permission for a specific origin. Remembered permissions MUST be revocable via browser settings.
+The user agent MAY allow the user to "remember" the signing permission for a specific origin. Remembered permissions MUST be revocable via user agent settings.
 
 ### 9.3 DID Disclosure
 
@@ -581,7 +581,7 @@ When an application requests the user's DID, the user agent MUST present an allo
 
 ### 9.4 Delegate Management
 
-Operations that modify a DID document (`addDelegate`, `removeDelegate`, `grantSection`, `revokeSection`) MUST require a user gesture and a browser-mediated prompt describing the change. For `did:graph`, the prompt MUST identify the target graph and (if applicable) display the ZCAP under which the operation is authorised.
+Operations that modify a DID document (`addDelegate`, `removeDelegate`, `grantSection`, `revokeSection`) MUST require a user gesture and a user-agent-mediated prompt describing the change. For `did:graph`, the prompt MUST identify the target graph and (if applicable) display the ZCAP under which the operation is authorised.
 
 ---
 
@@ -589,7 +589,7 @@ Operations that modify a DID document (`addDelegate`, `removeDelegate`, `grantSe
 
 ### 10.1 Key Isolation
 
-Private keys MUST be isolated from web content. The user agent MUST NOT expose private key material to JavaScript. All signing operations are mediated by the browser.
+Private keys MUST be isolated from web content. The user agent MUST NOT expose private key material to JavaScript. All signing operations are mediated by the user agent.
 
 ### 10.2 Delegate Compromise
 
@@ -607,7 +607,7 @@ User agents SHOULD implement constant-time signature verification to prevent tim
 
 ### 10.4 No Key Export by Default
 
-Private keys MUST NOT be exportable by default. User agents MAY provide a key-export mechanism in browser settings (not via API) for advanced users.
+Private keys MUST NOT be exportable by default. User agents MAY provide a key-export mechanism via user agent settings (not via API) for advanced users.
 
 ### 10.5 Replay Protection
 
