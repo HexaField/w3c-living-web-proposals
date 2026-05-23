@@ -27,10 +27,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@living-web/personal-graph": "workspace:*",
+    "@living-web/capability-framework": "workspace:*",
+    "@living-web/context-sync": "workspace:*",
     "@living-web/identity": "workspace:*",
-    "@living-web/graph-sync": "workspace:*",
-    "@living-web/governance": "workspace:*",
+    "@living-web/personal-graph": "workspace:*",
     "@noble/ed25519": "^3.0.1",
     "@noble/hashes": "^2.0.1",
     "uuid": "^13.0.0"

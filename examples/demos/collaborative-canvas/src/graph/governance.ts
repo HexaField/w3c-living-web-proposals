@@ -7,7 +7,7 @@ import {
   createCapability,
   delegateCapability,
   type ZCAPDocument,
-} from '@living-web/governance';
+} from '@living-web/capability-framework';
 import { PREDICATES } from './shapes.js';
 
 type SharedGraph = Context;

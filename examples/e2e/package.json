@@ -13,11 +13,13 @@
     "typescript": "^6.0.2"
   },
   "dependencies": {
-    "@living-web/personal-graph": "workspace:*",
+    "@living-web/capability-framework": "workspace:*",
+    "@living-web/context-sync": "workspace:*",
+    "@living-web/default-sync-module": "workspace:*",
+    "@living-web/group-identity": "workspace:*",
     "@living-web/identity": "workspace:*",
-    "@living-web/graph-sync": "workspace:*",
+    "@living-web/personal-graph": "workspace:*",
     "@living-web/shape-validation": "workspace:*",
-    "@living-web/governance": "workspace:*",
-    "@living-web/group-identity": "workspace:*"
+    "@living-web/sync-module": "workspace:*"
   }
 }

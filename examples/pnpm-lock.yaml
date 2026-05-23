@@ -14,12 +14,15 @@ importers:
 
   demos/collaborative-canvas:
     dependencies:
-      '@living-web/governance':
+      '@living-web/capability-framework':
         specifier: workspace:*
-        version: link:../../polyfills/governance
-      '@living-web/graph-sync':
+        version: link:../../polyfills/capability-framework
+      '@living-web/context-sync':
         specifier: workspace:*
-        version: link:../../polyfills/graph-sync
+        version: link:../../polyfills/context-sync
+      '@living-web/default-sync-module':
+        specifier: workspace:*
+        version: link:../../polyfills/default-sync-module
       '@living-web/identity':
         specifier: workspace:*
         version: link:../../polyfills/identity
@@ -29,6 +32,9 @@ importers:
       '@living-web/shape-validation':
         specifier: workspace:*
         version: link:../../polyfills/shape-validation
+      '@living-web/sync-module':
+        specifier: workspace:*
+        version: link:../../polyfills/sync-module
     devDependencies:
       typescript:
         specifier: ^6.0.2
@@ -39,12 +45,15 @@ importers:
 
   demos/collaborative-doc:
     dependencies:
-      '@living-web/governance':
+      '@living-web/capability-framework':
         specifier: workspace:*
-        version: link:../../polyfills/governance
-      '@living-web/graph-sync':
+        version: link:../../polyfills/capability-framework
+      '@living-web/context-sync':
         specifier: workspace:*
-        version: link:../../polyfills/graph-sync
+        version: link:../../polyfills/context-sync
+      '@living-web/default-sync-module':
+        specifier: workspace:*
+        version: link:../../polyfills/default-sync-module
       '@living-web/identity':
         specifier: workspace:*
         version: link:../../polyfills/identity
@@ -54,6 +63,9 @@ importers:
       '@living-web/shape-validation':
         specifier: workspace:*
         version: link:../../polyfills/shape-validation
+      '@living-web/sync-module':
+        specifier: workspace:*
+        version: link:../../polyfills/sync-module
     devDependencies:
       typescript:
         specifier: ^6.0.2
@@ -64,15 +76,18 @@ importers:
 
   demos/community-chat:
     dependencies:
+      '@living-web/capability-framework':
+        specifier: workspace:*
+        version: link:../../polyfills/capability-framework
+      '@living-web/context-sync':
+        specifier: workspace:*
+        version: link:../../polyfills/context-sync
+      '@living-web/default-sync-module':
+        specifier: workspace:*
+        version: link:../../polyfills/default-sync-module
       '@living-web/flows':
         specifier: workspace:*
         version: link:../../polyfills/flows
-      '@living-web/governance':
-        specifier: workspace:*
-        version: link:../../polyfills/governance
-      '@living-web/graph-sync':
-        specifier: workspace:*
-        version: link:../../polyfills/graph-sync
       '@living-web/group-identity':
         specifier: workspace:*
         version: link:../../polyfills/group-identity
@@ -85,6 +100,9 @@ importers:
       '@living-web/shape-validation':
         specifier: workspace:*
         version: link:../../polyfills/shape-validation
+      '@living-web/sync-module':
+        specifier: workspace:*
+        version: link:../../polyfills/sync-module
     devDependencies:
       typescript:
         specifier: ^6.0.2
@@ -95,12 +113,15 @@ importers:
 
   demos/multiplayer-game:
     dependencies:
-      '@living-web/governance':
+      '@living-web/capability-framework':
         specifier: workspace:*
-        version: link:../../polyfills/governance
-      '@living-web/graph-sync':
+        version: link:../../polyfills/capability-framework
+      '@living-web/context-sync':
         specifier: workspace:*
-        version: link:../../polyfills/graph-sync
+        version: link:../../polyfills/context-sync
+      '@living-web/default-sync-module':
+        specifier: workspace:*
+        version: link:../../polyfills/default-sync-module
       '@living-web/identity':
         specifier: workspace:*
         version: link:../../polyfills/identity
@@ -110,6 +131,9 @@ importers:
       '@living-web/shape-validation':
         specifier: workspace:*
         version: link:../../polyfills/shape-validation
+      '@living-web/sync-module':
+        specifier: workspace:*
+        version: link:../../polyfills/sync-module
       three:
         specifier: ^0.183.2
         version: 0.183.2
@@ -126,12 +150,15 @@ importers:
 
   demos/p2p-vcs:
     dependencies:
-      '@living-web/governance':
+      '@living-web/capability-framework':
         specifier: workspace:*
-        version: link:../../polyfills/governance
-      '@living-web/graph-sync':
+        version: link:../../polyfills/capability-framework
+      '@living-web/context-sync':
         specifier: workspace:*
-        version: link:../../polyfills/graph-sync
+        version: link:../../polyfills/context-sync
+      '@living-web/default-sync-module':
+        specifier: workspace:*
+        version: link:../../polyfills/default-sync-module
       '@living-web/identity':
         specifier: workspace:*
         version: link:../../polyfills/identity
@@ -141,6 +168,9 @@ importers:
       '@living-web/shape-validation':
         specifier: workspace:*
         version: link:../../polyfills/shape-validation
+      '@living-web/sync-module':
+        specifier: workspace:*
+        version: link:../../polyfills/sync-module
     devDependencies:
       typescript:
         specifier: ^6.0.2
@@ -151,12 +181,15 @@ importers:
 
   e2e:
     dependencies:
-      '@living-web/governance':
+      '@living-web/capability-framework':
         specifier: workspace:*
-        version: link:../polyfills/governance
-      '@living-web/graph-sync':
+        version: link:../polyfills/capability-framework
+      '@living-web/context-sync':
         specifier: workspace:*
-        version: link:../polyfills/graph-sync
+        version: link:../polyfills/context-sync
+      '@living-web/default-sync-module':
+        specifier: workspace:*
+        version: link:../polyfills/default-sync-module
       '@living-web/group-identity':
         specifier: workspace:*
         version: link:../polyfills/group-identity
@@ -169,6 +202,9 @@ importers:
       '@living-web/shape-validation':
         specifier: workspace:*
         version: link:../polyfills/shape-validation
+      '@living-web/sync-module':
+        specifier: workspace:*
+        version: link:../polyfills/sync-module
     devDependencies:
       '@playwright/test':
         specifier: ^1.52.0
@@ -182,15 +218,21 @@ importers:
 
   extension:
     dependencies:
+      '@living-web/capability-framework':
+        specifier: workspace:*
+        version: link:../polyfills/capability-framework
+      '@living-web/constraint-vocabulary':
+        specifier: workspace:*
+        version: link:../polyfills/constraint-vocabulary
+      '@living-web/context-sync':
+        specifier: workspace:*
+        version: link:../polyfills/context-sync
+      '@living-web/default-sync-module':
+        specifier: workspace:*
+        version: link:../polyfills/default-sync-module
       '@living-web/flows':
         specifier: workspace:*
         version: link:../polyfills/flows
-      '@living-web/governance':
-        specifier: workspace:*
-        version: link:../polyfills/governance
-      '@living-web/graph-sync':
-        specifier: workspace:*
-        version: link:../polyfills/graph-sync
       '@living-web/group-identity':
         specifier: workspace:*
         version: link:../polyfills/group-identity
@@ -203,6 +245,9 @@ importers:
       '@living-web/shape-validation':
         specifier: workspace:*
         version: link:../polyfills/shape-validation
+      '@living-web/sync-module':
+        specifier: workspace:*
+        version: link:../polyfills/sync-module
     devDependencies:
       '@types/chrome':
         specifier: ^0.1.39
@@ -214,51 +259,14 @@ importers:
         specifier: ^8.0.3
         version: 8.0.3(@emnapi/core@1.9.2)(@emnapi/runtime@1.9.2)(@types/node@25.5.2)(esbuild@0.27.7)(tsx@4.21.0)
 
-  polyfills/flows:
+  polyfills/capability-framework:
     dependencies:
-      '@living-web/governance':
-        specifier: workspace:*
-        version: link:../governance
-      '@living-web/personal-graph':
-        specifier: workspace:*
-        version: link:../personal-graph
-      '@noble/hashes':
-        specifier: ^2.0.1
-        version: 2.0.1
-      uuid:
-        specifier: ^13.0.0
-        version: 13.0.0
-    devDependencies:
-      '@types/uuid':
-        specifier: ^11.0.0
-        version: 11.0.0
-      fake-indexeddb:
-        specifier: ^6.2.5
-        version: 6.2.5
-      tsup:
-        specifier: ^8.5.1
-        version: 8.5.1(postcss@8.5.8)(tsx@4.21.0)(typescript@6.0.2)
-      typescript:
-        specifier: ^6.0.2
-        version: 6.0.2
-      vitest:
-        specifier: ^4.1.2
-        version: 4.1.2(@types/node@25.5.2)(vite@8.0.3(@emnapi/core@1.9.2)(@emnapi/runtime@1.9.2)(@types/node@25.5.2)(esbuild@0.27.7)(tsx@4.21.0))
-
-  polyfills/governance:
-    dependencies:
-      '@living-web/graph-sync':
-        specifier: workspace:*
-        version: link:../graph-sync
       '@living-web/identity':
         specifier: workspace:*
         version: link:../identity
       '@living-web/personal-graph':
         specifier: workspace:*
         version: link:../personal-graph
-      '@living-web/shape-validation':
-        specifier: workspace:*
-        version: link:../shape-validation
       '@noble/ed25519':
         specifier: ^3.0.1
         version: 3.0.1
@@ -287,30 +295,96 @@ importers:
       vitest:
         specifier: ^4.1.2
         version: 4.1.2(@types/node@25.5.2)(vite@8.0.3(@emnapi/core@1.9.2)(@emnapi/runtime@1.9.2)(@types/node@25.5.2)(esbuild@0.27.7)(tsx@4.21.0))
-      yjs:
-        specifier: ^13.6.30
-        version: 13.6.30
 
-  polyfills/graph-sync:
+  polyfills/constraint-vocabulary:
     dependencies:
-      '@living-web/identity':
+      '@living-web/capability-framework':
         specifier: workspace:*
-        version: link:../identity
+        version: link:../capability-framework
+      '@living-web/personal-graph':
+        specifier: workspace:*
+        version: link:../personal-graph
+    devDependencies:
+      fake-indexeddb:
+        specifier: ^6.2.5
+        version: 6.2.5
+      tsup:
+        specifier: ^8.5.1
+        version: 8.5.1(postcss@8.5.8)(tsx@4.21.0)(typescript@6.0.2)
+      typescript:
+        specifier: ^6.0.2
+        version: 6.0.2
+      vitest:
+        specifier: ^4.1.2
+        version: 4.1.2(@types/node@25.5.2)(vite@8.0.3(@emnapi/core@1.9.2)(@emnapi/runtime@1.9.2)(@types/node@25.5.2)(esbuild@0.27.7)(tsx@4.21.0))
+
+  polyfills/context-sync:
+    dependencies:
       '@living-web/personal-graph':
         specifier: workspace:*
         version: link:../personal-graph
       '@noble/hashes':
         specifier: ^2.0.1
         version: 2.0.1
-      canonicalize:
-        specifier: ^2.1.0
-        version: 2.1.0
+    devDependencies:
+      '@living-web/identity':
+        specifier: workspace:*
+        version: link:../identity
+      fake-indexeddb:
+        specifier: ^6.2.5
+        version: 6.2.5
+      tsup:
+        specifier: ^8.5.1
+        version: 8.5.1(postcss@8.5.8)(tsx@4.21.0)(typescript@6.0.2)
+      typescript:
+        specifier: ^6.0.2
+        version: 6.0.2
+      vitest:
+        specifier: ^4.1.2
+        version: 4.1.2(@types/node@25.5.2)(vite@8.0.3(@emnapi/core@1.9.2)(@emnapi/runtime@1.9.2)(@types/node@25.5.2)(esbuild@0.27.7)(tsx@4.21.0))
+
+  polyfills/default-sync-module:
+    dependencies:
+      '@living-web/context-sync':
+        specifier: workspace:*
+        version: link:../context-sync
+      '@living-web/personal-graph':
+        specifier: workspace:*
+        version: link:../personal-graph
+      '@living-web/sync-module':
+        specifier: workspace:*
+        version: link:../sync-module
+    devDependencies:
+      '@living-web/identity':
+        specifier: workspace:*
+        version: link:../identity
+      fake-indexeddb:
+        specifier: ^6.2.5
+        version: 6.2.5
+      tsup:
+        specifier: ^8.5.1
+        version: 8.5.1(postcss@8.5.8)(tsx@4.21.0)(typescript@6.0.2)
+      typescript:
+        specifier: ^6.0.2
+        version: 6.0.2
+      vitest:
+        specifier: ^4.1.2
+        version: 4.1.2(@types/node@25.5.2)(vite@8.0.3(@emnapi/core@1.9.2)(@emnapi/runtime@1.9.2)(@types/node@25.5.2)(esbuild@0.27.7)(tsx@4.21.0))
+
+  polyfills/flows:
+    dependencies:
+      '@living-web/capability-framework':
+        specifier: workspace:*
+        version: link:../capability-framework
+      '@living-web/personal-graph':
+        specifier: workspace:*
+        version: link:../personal-graph
+      '@noble/hashes':
+        specifier: ^2.0.1
+        version: 2.0.1
       uuid:
         specifier: ^13.0.0
         version: 13.0.0
-      yjs:
-        specifier: ^13.6.30
-        version: 13.6.30
     devDependencies:
       '@types/uuid':
         specifier: ^11.0.0
@@ -330,12 +404,12 @@ importers:
 
   polyfills/group-identity:
     dependencies:
-      '@living-web/governance':
+      '@living-web/capability-framework':
         specifier: workspace:*
-        version: link:../governance
-      '@living-web/graph-sync':
+        version: link:../capability-framework
+      '@living-web/context-sync':
         specifier: workspace:*
-        version: link:../graph-sync
+        version: link:../context-sync
       '@living-web/identity':
         specifier: workspace:*
         version: link:../identity
@@ -445,6 +519,22 @@ importers:
       fake-indexeddb:
         specifier: ^6.2.5
         version: 6.2.5
+      tsup:
+        specifier: ^8.5.1
+        version: 8.5.1(postcss@8.5.8)(tsx@4.21.0)(typescript@6.0.2)
+      typescript:
+        specifier: ^6.0.2
+        version: 6.0.2
+      vitest:
+        specifier: ^4.1.2
+        version: 4.1.2(@types/node@25.5.2)(vite@8.0.3(@emnapi/core@1.9.2)(@emnapi/runtime@1.9.2)(@types/node@25.5.2)(esbuild@0.27.7)(tsx@4.21.0))
+
+  polyfills/sync-module:
+    dependencies:
+      '@living-web/context-sync':
+        specifier: workspace:*
+        version: link:../context-sync
+    devDependencies:
       tsup:
         specifier: ^8.5.1
         version: 8.5.1(postcss@8.5.8)(tsx@4.21.0)(typescript@6.0.2)

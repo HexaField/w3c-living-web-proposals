@@ -9,11 +9,13 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@living-web/governance": "workspace:*",
-    "@living-web/graph-sync": "workspace:*",
+    "@living-web/capability-framework": "workspace:*",
+    "@living-web/context-sync": "workspace:*",
+    "@living-web/default-sync-module": "workspace:*",
     "@living-web/identity": "workspace:*",
     "@living-web/personal-graph": "workspace:*",
     "@living-web/shape-validation": "workspace:*",
+    "@living-web/sync-module": "workspace:*",
     "three": "^0.183.2"
   },
   "devDependencies": {

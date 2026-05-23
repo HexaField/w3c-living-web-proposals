@@ -4,15 +4,20 @@ Reference implementations (polyfills) and interactive demos for the [Living Web]
 
 ## Polyfills
 
+One polyfill package per spec. Strict dependency order matches the spec DAG: each row depends only on packages above it.
+
 | Package | Spec | Notes |
 |---------|------|-------|
-| [`@living-web/identity`](./polyfills/identity/) | [02 — Decentralised Identity](../drafts/02_decentralised-identity-web-platform.md) | `did:key` + `did:graph`; DID-document delegate management; resolver router |
-| [`@living-web/personal-graph`](./polyfills/personal-graph/) | [01 — Personal Linked-Data Graphs](../drafts/01_personal-linked-data-graphs.md) | GraphStore + Context + mount table; RDF 1.2 reifiers; graph snapshots; cross-context queries |
-| [`@living-web/shape-validation`](./polyfills/shape-validation/) | [04 — Dynamic Graph Shape Validation](../drafts/04_dynamic-graph-shape-validation.md) | Context-registered shapes; `shape://actions/` namespace; cross-context inheritance via `context://participates_in` |
-| [`@living-web/governance`](./polyfills/governance/) | [05 — Graph Governance](../drafts/05_graph-governance.md) | Root Capability; ZCAPs target `did:graph`; Open/Announced/Enforced enforcement modes; full caveat vocabulary (Expiry, Predicate, Shape, Property, Content, RateLimit, Cardinality, Subject, Object, AuthorOnly) |
-| [`@living-web/flows`](./polyfills/flows/) | [07 — Graph Flows](../drafts/07_graph-flows.md) | State machines, SPARQL ASK guards, temporal constraints, role requirements |
-| [`@living-web/graph-sync`](./polyfills/graph-sync/) | [03 — P2P Graph Sync](../drafts/03_p2p-graph-sync.md) | ContextDiff (graph-DID-keyed) + sync spaces + per-context subscription; default BroadcastChannel transport; topologies (Unified / Privacy-Tiered / Fully-Partitioned / Custom) |
-| [`@living-web/group-identity`](./polyfills/group-identity/) | [06 — Decentralised Group Identity](../drafts/06_group-identity.md) | Thin convenience layer over Context + did:graph; participation (`context://`) and signing (DID delegates) kept structurally distinct |
+| [`@living-web/identity`](./polyfills/identity/) | [01 — Decentralised Identity](../drafts/01_decentralised-identity-web-platform.md) | `did:key` + `did:graph`; DID-document delegate management; resolver router |
+| [`@living-web/personal-graph`](./polyfills/personal-graph/) | [02 — Personal Linked-Data Graphs](../drafts/02_personal-linked-data-graphs.md) | GraphStore + Context + mount table; RDF 1.2 reifiers; graph snapshots; cross-context queries |
+| [`@living-web/capability-framework`](./polyfills/capability-framework/) | [03 — Graph Capability Framework](../drafts/03_graph-capability-framework.md) | Root Capability; ZCAPs target `did:graph`; Open/Announced/Enforced enforcement modes; plug-in constraint-kind registry; built-in caveat vocabulary (Expiry, Predicate, Shape, Property, RateLimit, Cardinality, Subject, Object, AuthorOnly) |
+| [`@living-web/context-sync`](./polyfills/context-sync/) | [04 — Context Sync Protocol](../drafts/04_context-sync-protocol.md) | ContextDiff (graph-DID-keyed) + sync spaces + per-context subscription; topologies (Unified / Privacy-Tiered / Fully-Partitioned / Custom); `Context.publish()` extension; runtime-slot registry that a sync module fills |
+| [`@living-web/sync-module`](./polyfills/sync-module/) | [05 — Sync Module Architecture](../drafts/05_sync-module-architecture.md) | `SyncModule` contract + `installSyncModule()` wrapper around the context-sync runtime slot; manifest type stubs (production module hosts add WASM sandbox, capability mediation, lifecycle) |
+| [`@living-web/shape-validation`](./polyfills/shape-validation/) | [06 — Dynamic Graph Shape Validation](../drafts/06_dynamic-graph-shape-validation.md) | Context-registered shapes; `shape://actions/` namespace; cross-context inheritance via `context://participates_in` |
+| [`@living-web/constraint-vocabulary`](./polyfills/constraint-vocabulary/) | [07 — Governance Constraint Vocabulary](../drafts/07_governance-constraint-vocabulary.md) | Plug-in `ConstraintHandler`s for temporal, content, and credential constraint kinds; install via `createGovernanceLayer({ constraintKinds: standardConstraintKinds })` |
+| [`@living-web/default-sync-module`](./polyfills/default-sync-module/) | [08 — Default Sync Module](../drafts/08_default-sync-module.md) | BroadcastChannel-backed reference sync module; importing `/polyfill` installs the Context sync extension and registers itself as the active runtime |
+| [`@living-web/flows`](./polyfills/flows/) | [09 — Graph Flows](../drafts/09_graph-flows.md) | State machines, SPARQL ASK guards, temporal constraints, role requirements |
+| [`@living-web/group-identity`](./polyfills/group-identity/) | [10 — Decentralised Group Identity](../drafts/10_decentralised-group-identity.md) | Thin convenience layer over Context + did:graph; participation (`context://`) and signing (DID delegates) kept structurally distinct |
 
 ## Demos
 
@@ -60,12 +65,18 @@ if ('graph' in navigator) {
     ],
   }));
 
-  // Graph sync — Context.publish() into a sync space
+  // Context sync — Context.publish() into a sync space. A sync module
+  // (e.g. @living-web/default-sync-module) must be installed first.
   const shared = await calendar.publish({ spaceTopology: 'unified' });
   console.log(shared.graphDid, shared.spaceUri);
 
-  // Governance — Root Capability, did:graph as resource, enforcement modes
-  const gov = createGovernanceLayer(calendar, { enforcementMode: 'announced' });
+  // Capability framework — Root Capability, did:graph as resource, enforcement modes.
+  // Pass standardConstraintKinds (from @living-web/constraint-vocabulary) to enable
+  // temporal/content/credential caveats.
+  const gov = createGovernanceLayer(calendar, {
+    enforcementMode: 'announced',
+    constraintKinds: standardConstraintKinds,
+  });
   const result = await gov.canAddTripleAs(s, p, t, authorDid);
 
   // Flows — declarative state machines
@@ -132,27 +143,30 @@ cd extension && pnpm build
 
 Then in Chrome: `chrome://extensions` → Developer mode → Load unpacked → select `examples/extension/dist/`.
 
-The extension installs identity (did:key + did:graph), personal-graph (GraphStoreManager + Context), shape-validation, graph-sync, group-identity, and flows extensions in the page's main world.
+The extension installs identity (did:key + did:graph), personal-graph (GraphStoreManager + Context), shape-validation, context-sync + default-sync-module, group-identity, and flows extensions in the page's main world.
 
 ## Structure
 
 ```
 examples/
-├── polyfills/
-│   ├── identity/             # did:key + did:graph + delegates
-│   ├── personal-graph/       # GraphStore + Context + mount table
-│   ├── shape-validation/     # shape:// + context-scoped + inheritance
-│   ├── governance/           # Root Capability + caveats + enforcement modes
-│   ├── flows/                # guards + temporal + roles
-│   ├── graph-sync/           # ContextDiff + sync spaces + per-context subscription
-│   └── group-identity/       # group convenience over Context + did:graph
+├── polyfills/                       # one package per spec (10 total)
+│   ├── identity/                    # 01 — did:key + did:graph + delegates
+│   ├── personal-graph/              # 02 — GraphStore + Context + mount table
+│   ├── capability-framework/        # 03 — Root Capability + caveats + enforcement modes + handler registry
+│   ├── context-sync/                # 04 — ContextDiff + sync spaces + Context.publish() + runtime slot
+│   ├── sync-module/                 # 05 — SyncModule contract + install wrapper
+│   ├── shape-validation/            # 06 — shape:// + context-scoped + inheritance
+│   ├── constraint-vocabulary/       # 07 — temporal/content/credential constraint handlers
+│   ├── default-sync-module/         # 08 — BroadcastChannel reference sync module
+│   ├── flows/                       # 09 — guards + temporal + roles
+│   └── group-identity/              # 10 — group convenience over Context + did:graph
 ├── demos/
 │   ├── community-chat/
 │   ├── p2p-vcs/
 │   ├── collaborative-doc/
 │   ├── collaborative-canvas/
 │   └── multiplayer-game/
-├── extension/                # Chrome extension (Manifest V3)
-├── relay/                    # Minimal WebSocket relay (space-routed)
-└── index.html                # Landing page with feature detection
+├── extension/                       # Chrome extension (Manifest V3)
+├── relay/                           # Minimal WebSocket relay (space-routed)
+└── index.html                       # Landing page with feature detection
 ```

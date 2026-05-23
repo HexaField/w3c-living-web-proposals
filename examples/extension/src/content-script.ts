@@ -5,14 +5,14 @@
  * support and only installs polyfills if needed.
  *
  * Installs identity (did:key + did:graph), personal-graph
- * (GraphStoreManager on navigator.graph), shape-validation, graph-sync,
- * group-identity, and flows extensions.
+ * (GraphStoreManager on navigator.graph), shape-validation, context-sync +
+ * default-sync-module, group-identity, and flows extensions.
  */
 
 import { install as installIdentity } from '@living-web/identity';
 import { install as installPersonalGraph } from '@living-web/personal-graph';
 import '@living-web/shape-validation/polyfill';
-import '@living-web/graph-sync/polyfill';
+import '@living-web/default-sync-module/polyfill';
 import '@living-web/group-identity/polyfill';
 import '@living-web/flows/polyfill';
 

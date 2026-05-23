@@ -108,7 +108,7 @@
 <body>
   <div class="container">
     <h1>The Living Web</h1>
-    <p class="subtitle">Seven browser primitives for a decentralised semantic web — personal graphs, identity, peer-to-peer sync, dynamic schemas, governance, group identity, and flows.</p>
+    <p class="subtitle">Ten browser primitives for a decentralised semantic web — identity, personal graphs, capability framework, context sync, sync modules, shape validation, constraint vocabulary, default sync module, flows, and group identity.</p>
     <p class="links">
       <a href="https://joshuafield.au/posts/closing-the-loop-on-the-semantic-web">Read the article</a>
       <span>·</span>
@@ -123,7 +123,7 @@
 
     <!-- Specifications -->
     <h2>The Specifications</h2>
-    <p class="section-sub">Seven W3C-format draft specifications.</p>
+    <p class="section-sub">Ten W3C-format draft specifications, arranged so each depends only on the ones above it.</p>
     <table class="specs-table">
       <thead>
         <tr><th>#</th><th>Specification</th><th>Description</th></tr>
@@ -131,38 +131,53 @@
       <tbody>
         <tr>
           <td class="num">01</td>
-          <td><a href="https://github.com/HexaField/w3c-living-web-proposals/blob/main/drafts/01_personal-linked-data-graphs.md">Personal Linked-Data Graphs</a></td>
-          <td><code>navigator.graph</code> — GraphStore + Context + SPARQL 1.2 + RDF 1.2 reifiers</td>
-        </tr>
-        <tr>
-          <td class="num">02</td>
-          <td><a href="https://github.com/HexaField/w3c-living-web-proposals/blob/main/drafts/02_decentralised-identity-web-platform.md">Decentralised Identity</a></td>
+          <td><a href="https://github.com/HexaField/w3c-living-web-proposals/blob/main/drafts/01_decentralised-identity-web-platform.md">Decentralised Identity</a></td>
           <td>Extends <code>navigator.credentials</code> with <code>did:key</code> and <code>did:graph</code></td>
         </tr>
         <tr>
+          <td class="num">02</td>
+          <td><a href="https://github.com/HexaField/w3c-living-web-proposals/blob/main/drafts/02_personal-linked-data-graphs.md">Personal Linked-Data Graphs</a></td>
+          <td><code>navigator.graph</code> — GraphStore + Context + SPARQL 1.2 + RDF 1.2 reifiers</td>
+        </tr>
+        <tr>
           <td class="num">03</td>
-          <td><a href="https://github.com/HexaField/w3c-living-web-proposals/blob/main/drafts/03_p2p-graph-sync.md">P2P Graph Sync</a></td>
-          <td>ContextDiff + sync spaces + per-context subscription, with pluggable WASM sync modules</td>
+          <td><a href="https://github.com/HexaField/w3c-living-web-proposals/blob/main/drafts/03_graph-capability-framework.md">Graph Capability Framework</a></td>
+          <td>Root Capability + ZCAPs + caveat type system; Open / Announced / Enforced enforcement modes</td>
         </tr>
         <tr>
           <td class="num">04</td>
-          <td><a href="https://github.com/HexaField/w3c-living-web-proposals/blob/main/drafts/04_dynamic-graph-shape-validation.md">Dynamic Graph Shape Validation</a></td>
-          <td>SHACL extension with constructors, setters, collections, cross-context inheritance</td>
+          <td><a href="https://github.com/HexaField/w3c-living-web-proposals/blob/main/drafts/04_context-sync-protocol.md">Context Sync Protocol</a></td>
+          <td>ContextDiff + sync spaces + per-context subscription</td>
         </tr>
         <tr>
           <td class="num">05</td>
-          <td><a href="https://github.com/HexaField/w3c-living-web-proposals/blob/main/drafts/05_graph-governance.md">Graph Governance</a></td>
-          <td>Root Capability + ZCAPs + caveat vocabulary; Open / Announced / Enforced modes</td>
+          <td><a href="https://github.com/HexaField/w3c-living-web-proposals/blob/main/drafts/05_sync-module-architecture.md">Sync Module Architecture</a></td>
+          <td>Pluggable WASM module interface, capability sandbox, lifecycle, user consent</td>
         </tr>
         <tr>
           <td class="num">06</td>
-          <td><a href="https://github.com/HexaField/w3c-living-web-proposals/blob/main/drafts/06_group-identity.md">Decentralised Group Identity</a></td>
-          <td>A group <em>is</em> a Context with a <code>did:graph</code>; participation distinct from signing</td>
+          <td><a href="https://github.com/HexaField/w3c-living-web-proposals/blob/main/drafts/06_dynamic-graph-shape-validation.md">Dynamic Graph Shape Validation</a></td>
+          <td>SHACL extension with constructors, setters, collections, cross-context inheritance</td>
         </tr>
         <tr>
           <td class="num">07</td>
-          <td><a href="https://github.com/HexaField/w3c-living-web-proposals/blob/main/drafts/07_graph-flows.md">Graph Flows</a></td>
+          <td><a href="https://github.com/HexaField/w3c-living-web-proposals/blob/main/drafts/07_governance-constraint-vocabulary.md">Governance Constraint Vocabulary</a></td>
+          <td>Standard constraint kinds: temporal, content, credential, shape — plugged into the capability framework</td>
+        </tr>
+        <tr>
+          <td class="num">08</td>
+          <td><a href="https://github.com/HexaField/w3c-living-web-proposals/blob/main/drafts/08_default-sync-module.md">Default Sync Module</a></td>
+          <td>Built-in OR-Set CRDT module with WebTransport relay protocol, NAT traversal, snapshot promotion</td>
+        </tr>
+        <tr>
+          <td class="num">09</td>
+          <td><a href="https://github.com/HexaField/w3c-living-web-proposals/blob/main/drafts/09_graph-flows.md">Graph Flows</a></td>
           <td>Declarative state machines with SPARQL ASK guards, temporal constraints, and role requirements</td>
+        </tr>
+        <tr>
+          <td class="num">10</td>
+          <td><a href="https://github.com/HexaField/w3c-living-web-proposals/blob/main/drafts/10_decentralised-group-identity.md">Decentralised Group Identity</a></td>
+          <td>A group <em>is</em> a Context with a <code>did:graph</code>; participation distinct from signing</td>
         </tr>
       </tbody>
     </table>

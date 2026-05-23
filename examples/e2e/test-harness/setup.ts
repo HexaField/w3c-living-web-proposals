@@ -1,24 +1,26 @@
 // Test harness setup — loads all polyfills and exposes them on window/navigator
 
-// 01 — Personal Graph polyfill (auto-installs navigator.graph)
+// 02 — Personal Graph polyfill (auto-installs navigator.graph)
 import '@living-web/personal-graph/polyfill';
 
-// 02 — Identity polyfill (patches navigator.credentials for DID)
+// 01 — Identity polyfill (patches navigator.credentials for DID)
 import { install as installIdentity } from '@living-web/identity';
 installIdentity();
 
-// 04 — Shape validation extension (adds shape methods to PersonalGraph.prototype)
+// 06 — Shape validation extension (adds shape methods to PersonalGraph.prototype)
 import { installShapeExtension } from '@living-web/shape-validation';
 import { PersonalGraph } from '@living-web/personal-graph';
 installShapeExtension(PersonalGraph);
 
-// 03 — Graph sync (used directly in tests, not auto-installed)
-import { SharedGraphManager, SharedGraph } from '@living-web/graph-sync';
-(window as any).__SharedGraphManager = SharedGraphManager;
-(window as any).__SharedGraph = SharedGraph;
+// 04 + 05 + 08 — Context sync + sync module + default sync module
+// Importing the default-sync-module polyfill installs the Context sync
+// extension and registers the BroadcastChannel-based module as the active
+// runtime. Tests use `Context.publish()` / peers() / signals on contexts
+// produced by `navigator.graph`.
+import '@living-web/default-sync-module/polyfill';
 
-// 05 — Governance
-import { createGovernanceLayer, GOV, createCapability, issueDefaultCapabilities } from '@living-web/governance';
+// 03 — Capability framework
+import { createGovernanceLayer, GOV, createCapability, issueDefaultCapabilities } from '@living-web/capability-framework';
 (window as any).__createGovernanceLayer = createGovernanceLayer;
 (window as any).__GOV = GOV;
 (window as any).__createCapability = createCapability;
@@ -28,7 +30,7 @@ import { createGovernanceLayer, GOV, createCapability, issueDefaultCapabilities 
 import { SemanticTriple, type IdentityProvider } from '@living-web/personal-graph';
 (window as any).__SemanticTriple = SemanticTriple;
 
-// DIDIdentityProvider adapter (wraps DIDCredential for SharedGraph)
+// DIDIdentityProvider adapter
 import { DIDIdentityProvider } from '@living-web/identity';
 (window as any).__DIDIdentityProvider = DIDIdentityProvider;
 
@@ -40,7 +42,7 @@ import { DIDIdentityProvider } from '@living-web/identity';
   return { cred, provider, did: cred.did };
 };
 
-// 06 — Group Identity
+// 10 — Group Identity
 import { GroupManager, DefaultGroupRegistry, Group, GROUP, RDF } from '@living-web/group-identity';
 (window as any).__GroupIdentity = { GroupManager, DefaultGroupRegistry, Group, GROUP, RDF };
 

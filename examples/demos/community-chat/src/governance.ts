@@ -9,7 +9,7 @@ import {
   delegateCapability,
   revokeCapability,
   type ZCAPDocument,
-} from '@living-web/governance';
+} from '@living-web/capability-framework';
 import { PREDICATES } from './shapes.js';
 
 /** Actions a regular member can perform. */

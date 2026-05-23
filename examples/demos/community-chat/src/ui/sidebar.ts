@@ -18,7 +18,7 @@ export function renderSidebar(container: HTMLElement, state: AppState): void {
   nameSpan.textContent = state.communityName;
   header.appendChild(nameSpan);
 
-  // Show group DID (Spec 06)
+  // Show group DID (Spec 10)
   if (state.groupDid) {
     const didEl = document.createElement('div');
     didEl.className = 'group-did';

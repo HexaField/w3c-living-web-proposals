@@ -9,13 +9,15 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@living-web/governance": "workspace:*",
-    "@living-web/graph-sync": "workspace:*",
+    "@living-web/capability-framework": "workspace:*",
+    "@living-web/context-sync": "workspace:*",
+    "@living-web/default-sync-module": "workspace:*",
+    "@living-web/flows": "workspace:*",
+    "@living-web/group-identity": "workspace:*",
     "@living-web/identity": "workspace:*",
     "@living-web/personal-graph": "workspace:*",
     "@living-web/shape-validation": "workspace:*",
-    "@living-web/group-identity": "workspace:*",
-    "@living-web/flows": "workspace:*"
+    "@living-web/sync-module": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^6.0.2",

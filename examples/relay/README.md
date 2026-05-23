@@ -30,7 +30,7 @@ Peers connect to:
 ws://<host>:<port>/space/<spaceId>
 ```
 
-- `spaceId` is the sync-space identifier derived from the chosen topology (see [P2P Graph Sync §7](../../drafts/03_p2p-graph-sync.md)).
+- `spaceId` is the sync-space identifier derived from the chosen topology (see [Context Sync Protocol §7](../../drafts/04_context-sync-protocol.md)).
 - All messages from a peer are forwarded to every other peer in the same `spaceId` room.
 - Binary and text messages are both supported.
 - The relay does not inspect or validate message contents — authorisation is per graph DID and enforced by the sync module on each peer.

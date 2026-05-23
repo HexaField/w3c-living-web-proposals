@@ -1,6 +1,6 @@
 # The Living Web
 
-**Seven browser primitives for a decentralised, self-describing semantic web — graph identity, decentralised identity, peer-to-peer synchronisation, shape validation, governance, group identity, and flows.**
+**Ten browser primitives for a decentralised, self-describing semantic web — identity, personal graphs, a capability framework, sync protocol, sync modules, shape validation, a constraint vocabulary, a default sync module, flows, and group identity.**
 
 [View the Demos](examples/) · [Chromium Fork](https://github.com/HexaField/living-web-chromium)
 
@@ -20,17 +20,20 @@ These specifications define the missing primitives.
 
 ## The Specifications
 
-Seven W3C-format draft specifications.
+Ten W3C-format draft specifications, arranged so each spec depends only on the ones above it:
 
 | # | Spec | Description |
 |---|------|-------------|
-| 01 | [Personal Linked Data Graphs](drafts/01_personal-linked-data-graphs.md) | `navigator.graph` — **GraphStore** = mount table; **Context** = named graph with `did:graph:...` identity; graph snapshots for portable, signed serialisation |
-| 02 | [Decentralised Identity](drafts/02_decentralised-identity-web-platform.md) | Extends `navigator.credentials` with `did:key` (individuals) AND `did:graph` (graphs); DID-document delegates for shared signing — **no multisig, no threshold cryptography** |
-| 03 | [P2P Context Sync](drafts/03_p2p-graph-sync.md) | Pluggable WASM sync modules; ContextDiff (graph-DID-keyed); sync spaces decoupled from logical contexts; subscription replaces boolean join |
-| 04 | [Dynamic Graph Shape Validation](drafts/04_dynamic-graph-shape-validation.md) | SHACL extension with action semantics under stable `shape://actions/`; cross-context shape inheritance via `context://participates_in` |
-| 05 | [Graph Governance](drafts/05_graph-governance.md) | Root Capability; ZCAPs target `did:graph:...`; Open/Announced/Enforced enforcement modes; full caveat vocabulary; governance of DID delegates |
-| 06 | [Decentralised Group Identity](drafts/06_group-identity.md) | A group **is** a `did:graph` context; participation (`context://participates_in`) and signing authority (DID-document delegates) kept structurally distinct |
-| 07 | [Graph Flows](drafts/07_graph-flows.md) | Declarative state machines: SPARQL ASK guards, temporal constraints, role requirements, composite flows |
+| 01 | [Decentralised Identity](drafts/01_decentralised-identity-web-platform.md) | Extends `navigator.credentials` with `did:key` (individuals) AND `did:graph` (graphs); DID-document delegates for shared signing — **no multisig, no threshold cryptography** |
+| 02 | [Personal Linked Data Graphs](drafts/02_personal-linked-data-graphs.md) | `navigator.graph` — **GraphStore** = mount table; **Context** = named graph with `did:graph:...` identity; graph snapshots for portable, signed serialisation |
+| 03 | [Graph Capability Framework](drafts/03_graph-capability-framework.md) | Root Capability; ZCAPs target `did:graph:...`; Open/Announced/Enforced enforcement modes; caveat type system; scope inheritance; governance of DID delegates |
+| 04 | [Context Sync Protocol](drafts/04_context-sync-protocol.md) | ContextDiff (graph-DID-keyed); mount-and-subscribe lifecycle; sync spaces decoupled from logical contexts |
+| 05 | [Sync Module Architecture](drafts/05_sync-module-architecture.md) | Pluggable WASM module interface, capability sandbox, lifecycle, user consent |
+| 06 | [Dynamic Graph Shape Validation](drafts/06_dynamic-graph-shape-validation.md) | SHACL extension with action semantics under stable `shape://actions/`; cross-context shape inheritance via `context://participates_in` |
+| 07 | [Governance Constraint Vocabulary](drafts/07_governance-constraint-vocabulary.md) | The standard constraint kinds that plug into the capability framework: temporal, content, credential, shape |
+| 08 | [Default Sync Module](drafts/08_default-sync-module.md) | The built-in module: OR-Set CRDT, WebTransport relay protocol, NAT traversal, snapshot promotion |
+| 09 | [Graph Flows](drafts/09_graph-flows.md) | Declarative state machines: SPARQL ASK guards, temporal constraints, role requirements, composite flows |
+| 10 | [Decentralised Group Identity](drafts/10_decentralised-group-identity.md) | A group **is** a `did:graph` context; participation (`context://participates_in`) and signing authority (DID-document delegates) kept structurally distinct |
 
 ### Key Design Decisions
 
@@ -47,28 +50,7 @@ Seven W3C-format draft specifications.
 ### Quick Examples
 
 <details>
-<summary>01 — Personal Linked Data Graphs (GraphStore + Context)</summary>
-
-```javascript
-const me = await navigator.graph.create("My Workspace");
-const calendar = await me.createContext({ displayName: "My Calendar" });
-
-await calendar.addTriple(new Triple(
-  "urn:event:1",
-  "schema://name",
-  "Coffee with Alice"
-));
-
-const events = await calendar.querySparql(`
-  SELECT ?event ?name WHERE {
-    ?event <schema://name> ?name
-  }
-`);
-```
-</details>
-
-<details>
-<summary>02 — Decentralised Identity (did:key + did:graph)</summary>
+<summary>01 — Decentralised Identity (did:key + did:graph)</summary>
 
 ```javascript
 // Individual identity
@@ -94,17 +76,64 @@ console.log(announcement.author);  // team.did
 </details>
 
 <details>
-<summary>03 — P2P Context Sync (Publish + Mount)</summary>
+<summary>02 — Personal Linked Data Graphs (GraphStore + Context)</summary>
+
+```javascript
+const store = await navigator.graph.create("My Workspace");
+const calendar = await store.createContext({ displayName: "My Calendar" });
+
+await calendar.addTriple(new Triple(
+  "urn:event:1",
+  "schema://name",
+  "Coffee with Alice"
+));
+
+const events = await calendar.querySparql(`
+  SELECT ?event ?name WHERE {
+    ?event <schema://name> ?name
+  }
+`);
+```
+</details>
+
+<details>
+<summary>03 — Graph Capability Framework (Root Capability + enforcement modes)</summary>
+
+```javascript
+// A context begins in "open" mode by default
+const community = await store.createContext({ displayName: "Community" });
+await community.setEnforcementMode("announced");  // start observing capability chains
+// ...later
+await community.setEnforcementMode("enforced");   // require valid chains
+
+// Delegate a scoped capability to a contractor
+const myCred = await navigator.credentials.get({ did: { kind: "individual" } });
+const contractorCap = await myCred.signCapability({
+  parentCapability: rootCap.id,
+  invoker: "did:key:z6MkContractor...",
+  actions: ["createLink"],
+  resource: community.did,
+  caveats: [
+    { type: "expiry",    value: { expiresAt: "2026-06-22T00:00:00Z" }},
+    { type: "shape",     value: { shapeIri: "msg://MessageShape" }},  // shape caveat — see spec 07
+    { type: "rateLimit", value: { maxPerWindow: 50, windowSeconds: 3600 }}
+  ]
+});
+```
+</details>
+
+<details>
+<summary>04 — Context Sync Protocol (Publish + Mount)</summary>
 
 ```javascript
 // Publish a context to a sync space
-const planning = await me.createContext({ displayName: "Q3 Planning" });
+const planning = await store.createContext({ displayName: "Q3 Planning" });
 const published = await planning.publish({
   spaceTopology: "privacy-tiered",
   relays: ["relay.example.com"]
 });
 
-// Another browser mounts it
+// Another user agent mounts it
 const mounted = await otherStore.mount(published.graphDid, {
   mode: "write",
   capabilityProof: invitedCapabilityChain,
@@ -117,7 +146,7 @@ const mounted = await otherStore.mount(published.graphDid, {
 </details>
 
 <details>
-<summary>04 — Dynamic Graph Shape Validation</summary>
+<summary>06 — Dynamic Graph Shape Validation</summary>
 
 ```javascript
 await calendar.addShape("Event", JSON.stringify({
@@ -140,58 +169,7 @@ await calendar.createShapeInstance("Event", "urn:event:2", {
 </details>
 
 <details>
-<summary>05 — Graph Governance (ZCAP target = did:graph; enforcement modes)</summary>
-
-```javascript
-// A context begins in "open" mode by default
-const community = await me.createContext({ displayName: "Community" });
-await community.setEnforcementMode("announced");  // start observing capability chains
-// ...later
-await community.setEnforcementMode("enforced");   // require valid chains
-
-// Delegate a scoped capability to a contractor
-const myCred = await navigator.credentials.get({ did: { kind: "individual" } });
-const contractorCap = await myCred.signCapability({
-  parentCapability: rootCap.id,
-  invoker: "did:key:z6MkContractor...",
-  actions: ["createLink"],
-  resource: community.did,
-  caveats: [
-    { type: "expiry",    value: { expiresAt: "2026-06-22T00:00:00Z" }},
-    { type: "shape",     value: { shapeIri: "msg://MessageShape" }},
-    { type: "rateLimit", value: { maxPerWindow: 50, windowSeconds: 3600 }}
-  ]
-});
-```
-</details>
-
-<details>
-<summary>06 — Decentralised Group Identity (a Group IS a did:graph)</summary>
-
-```javascript
-const team = await navigator.graph.createGroup({
-  displayName: "Project Alpha",
-  initialDelegates: ["did:key:z6MkAlice...", "did:key:z6MkBob..."]
-});
-
-// Invite participation (separate from signing authority)
-await team.invite("did:graph:carol-personal");
-// Carol completes by adding context://participates_in in her own context
-
-// Add Charlie as a signer (does NOT make him a participant)
-await team.addSigner(
-  { id: `${team.did}#key-charlie`, type: "Ed25519VerificationKey2020",
-    controller: team.did, publicKeyMultibase: "z6MkCharlie..." },
-  ["capabilityInvocation", "assertionMethod"]
-);
-
-console.log((await team.participants()).map(p => p.did));
-console.log((await team.signers("capabilityInvocation")).map(s => s.id));
-```
-</details>
-
-<details>
-<summary>07 — Graph Flows (declarative state machines)</summary>
+<summary>09 — Graph Flows (declarative state machines)</summary>
 
 ```javascript
 await community.addFlow("Proposal", JSON.stringify({
@@ -222,33 +200,75 @@ const result = await community.executeFlowTransition("Proposal", "proposal:42", 
 ```
 </details>
 
+<details>
+<summary>10 — Decentralised Group Identity (a Group IS a did:graph)</summary>
+
+```javascript
+const team = await store.createGroup({
+  displayName: "Project Alpha",
+  initialDelegates: ["did:key:z6MkAlice...", "did:key:z6MkBob..."]
+});
+
+// Invite participation (separate from signing authority)
+await team.invite("did:graph:carol-personal");
+// Carol completes by adding context://participates_in in her own context
+
+// Add Charlie as a signer (does NOT make him a participant)
+await team.addSigner(
+  { id: `${team.did}#key-charlie`, type: "Ed25519VerificationKey2020",
+    controller: team.did, publicKeyMultibase: "z6MkCharlie..." },
+  ["capabilityInvocation", "assertionMethod"]
+);
+
+console.log((await team.participants()).map(p => p.did));
+console.log((await team.signers("capabilityInvocation")).map(s => s.id));
+```
+</details>
+
 ## How It Composes
+
+The specs form a strict DAG — each level builds only on the levels below it:
 
 ```
                        ┌─────────────────────────┐
                        │      Applications        │
                        └────────────┬─────────────┘
                                     │
-       ┌──────────────┬─────────────┼────────────────┬─────────────┐
-       │              │             │                │             │
-   ┌───┴────┐    ┌───┴───┐    ┌────┴────┐      ┌───┴───┐    ┌────┴────┐
-   │   06   │    │  03   │    │   04    │      │  07   │    │   05    │
-   │ Groups │    │ Sync  │    │ Shapes  │      │ Flows │    │  Gov.   │
-   │did:graph│   │spaces │    │shape:// │      │guards │    │did:graph│
-   └───┬────┘    └───┬───┘    └─────────┘      └───────┘    │ resource│
-       │             │                                       └─────────┘
-       │             │       ┌───────────────────────────────────────┐
-       └─────────────┴───────┤  01  Personal Linked Data Graphs       │
-                             │     (GraphStore = mount table)         │
-                             │     (Context = named graph)            │
-                             └───────────────┬───────────────────────┘
-                                             │
-                                       ┌─────┴─────┐
-                                       │    02     │
-                                       │  did:key  │
-                                       │ did:graph │
-                                       │+delegates │
-                                       └───────────┘
+   ┌────────────────┬───────────────┼────────────────┐
+   │       10       │       09      │       08       │
+   │ Group Identity │     Flows     │  Default Sync  │
+   │  (pattern)     │  (process)    │  (CRDT + wire) │
+   └────────┬───────┴───────┬───────┴────────┬───────┘
+            │               │                │
+            │       ┌───────┴───────┐ ┌──────┴──────┐
+            │       │      06       │ │      07     │
+            │       │    Shapes     │ │ Constraints │
+            │       │  (structure)  │ │  (vocab)    │
+            │       └───────┬───────┘ └──────┬──────┘
+            │               │                │
+            │       ┌───────┴────────┐ ┌─────┴──────┐
+            │       │      05        │ │     04     │
+            │       │  Sync Module   │ │  Context   │
+            │       │  Architecture  │ │  Sync      │
+            │       └────────────────┘ └─────┬──────┘
+            │                                │
+            │                  ┌─────────────┴─────────┐
+            └──────────────────┤         03            │
+                               │  Capability Framework │
+                               └───────────┬───────────┘
+                                           │
+                               ┌───────────┴───────────┐
+                               │         02            │
+                               │  Personal Linked      │
+                               │  Data Graphs          │
+                               └───────────┬───────────┘
+                                           │
+                                     ┌─────┴─────┐
+                                     │    01     │
+                                     │  Identity │
+                                     │  did:key  │
+                                     │ did:graph │
+                                     └───────────┘
 ```
 
 ## Implementations
@@ -261,15 +281,20 @@ npm packages implementing the API surface.
 cd examples && pnpm install && pnpm dev:chat
 ```
 
-| Package | Description |
-|---------|-------------|
-| `@living-web/identity` | `did:key` + `did:graph` + DID-document delegate management |
-| `@living-web/personal-graph` | GraphStore, Context, mount table, graph snapshots, holonic queries |
-| `@living-web/shape-validation` | SHACL action semantics, context-scoped, cross-context inheritance |
-| `@living-web/governance` | ZCAP runtime, enforcement modes, full caveat vocabulary |
-| `@living-web/flows` | Guards, temporal constraints, role requirements |
-| `@living-web/graph-sync` | ContextDiff sync, default OR-Set module, sync space topologies |
-| `@living-web/group-identity` | Group convenience layer over Context + did:graph + governance |
+One package per spec, strict dependency order:
+
+| Spec | Package | Description |
+|-----:|---------|-------------|
+| 01 | `@living-web/identity` | `did:key` + `did:graph` + DID-document delegate management |
+| 02 | `@living-web/personal-graph` | GraphStore, Context, mount table, graph snapshots, cross-context queries |
+| 03 | `@living-web/capability-framework` | ZCAP runtime, enforcement modes, plug-in constraint-kind registry, core caveat vocabulary |
+| 04 | `@living-web/context-sync` | ContextDiff + sync spaces + `Context.publish()`; sync runtime slot for a module to fill |
+| 05 | `@living-web/sync-module` | `SyncModule` contract + `installSyncModule()` (production hosts add WASM sandbox + lifecycle) |
+| 06 | `@living-web/shape-validation` | SHACL action semantics, context-scoped, cross-context inheritance |
+| 07 | `@living-web/constraint-vocabulary` | Plug-in `ConstraintHandler`s for temporal / content / credential constraint kinds |
+| 08 | `@living-web/default-sync-module` | Reference BroadcastChannel sync module — `/polyfill` auto-installs |
+| 09 | `@living-web/flows` | Guards, temporal constraints, role requirements |
+| 10 | `@living-web/group-identity` | Group convenience layer over Context + did:graph + capability-framework |
 
 ### Chrome Extension
 

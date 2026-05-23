@@ -4,7 +4,7 @@
 import { install as installIdentity, IdentityManager, DIDIdentityProvider } from '@living-web/identity';
 import { install as installPersonalGraph, Context, type IdentityProvider } from '@living-web/personal-graph';
 import '@living-web/shape-validation/polyfill';
-import '@living-web/graph-sync/polyfill';
+import '@living-web/default-sync-module/polyfill';
 
 import {
   WorldShape, PlayerShape, GameObjectShape, CollectibleShape, ChatMessageShape,

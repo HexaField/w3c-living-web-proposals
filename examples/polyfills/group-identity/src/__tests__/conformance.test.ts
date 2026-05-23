@@ -1,5 +1,5 @@
 /**
- * Group Identity (Spec 06) — conformance tests.
+ * Group Identity (Spec 10) — conformance tests.
  *
  * A Group IS a Context (a did:graph context); the group surface adds:
  *   – Participation (context://accepts_participation)

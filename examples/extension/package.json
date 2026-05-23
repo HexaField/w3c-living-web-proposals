@@ -14,12 +14,15 @@
     "vite": "^8.0.3"
   },
   "dependencies": {
+    "@living-web/capability-framework": "workspace:*",
+    "@living-web/constraint-vocabulary": "workspace:*",
+    "@living-web/context-sync": "workspace:*",
+    "@living-web/default-sync-module": "workspace:*",
     "@living-web/flows": "workspace:*",
-    "@living-web/governance": "workspace:*",
-    "@living-web/graph-sync": "workspace:*",
     "@living-web/group-identity": "workspace:*",
     "@living-web/identity": "workspace:*",
     "@living-web/personal-graph": "workspace:*",
-    "@living-web/shape-validation": "workspace:*"
+    "@living-web/shape-validation": "workspace:*",
+    "@living-web/sync-module": "workspace:*"
   }
 }

@@ -59,7 +59,7 @@ export const RDF = {
   DESCRIPTION: 'rdf://description',
 } as const;
 
-/** Vote delegation predicates (liquid democracy — Spec 06 §10). */
+/** Vote delegation predicates (liquid democracy — Spec 10 §10). */
 export const VOTE = {
   DELEGATES_TO: 'vote://delegates_to',
   DELEGATES_TOPIC: 'vote://delegates_topic',

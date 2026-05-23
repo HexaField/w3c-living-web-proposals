@@ -51,7 +51,7 @@ export interface Reifier {
 
 /**
  * A triple plus its provenance reifier. Returned from query methods and
- * carried over the wire by [[P2P-GRAPH-SYNC]].
+ * carried over the wire by [[CONTEXT-SYNC]].
  */
 export interface SignedTriple {
   readonly data: Triple;

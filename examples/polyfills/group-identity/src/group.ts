@@ -12,7 +12,7 @@ import {
   removeMethodTriples,
   type DIDDocument,
 } from '@living-web/identity';
-import { createCapability } from '@living-web/governance';
+import { createCapability } from '@living-web/capability-framework';
 import {
   GROUP,
   CONTEXT,
@@ -224,7 +224,7 @@ export class Group {
     return this.resolveDIDDocument();
   }
 
-  // ── Liquid democracy (Spec 06 §10) ────────────────────────────────────────
+  // ── Liquid democracy (Spec 10 §10) ────────────────────────────────────────
 
   async delegateVote(opts: {
     topic: string;
