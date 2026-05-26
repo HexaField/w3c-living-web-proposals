@@ -1,19 +1,29 @@
 /**
  * Graph snapshots — serialise a context's triples as an addressable, signed
  * payload that can be mounted by another GraphStore.
+ *
+ * A snapshot's `graphIri` IS its content hash — the IRI is computed from
+ * the triples themselves, not assigned. Verification is a single rehash.
+ * For evolving graphs that mutate over time, see Spec 10's `did:graph`:
+ * a snapshot carries its source context's `graphDid` (when present) so
+ * that the recipient can subscribe to the *graph* via sync, rather than
+ * being limited to this one frozen state.
  */
 
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import { Triple, type SignedTriple } from './types.js';
-import { canonicalNQuad, type IdentityProvider } from './signing.js';
+import { type IdentityProvider } from './signing.js';
+import { computeGraphIri } from './context.js';
 
 export type GraphSignBy = 'agent' | 'graph' | 'both';
 export type SnapshotFormat = 'nquads' | 'jsonld';
 
 export interface GraphSnapshot {
-  readonly graphDid: string;
-  readonly contentHash: string;
+  /** The context's content-hash IRI at the time the snapshot was taken. */
+  readonly graphIri: string;
+  /** Optional did:graph:... of the underlying context, if groupified. */
+  readonly graphDid: string | null;
   readonly format: SnapshotFormat;
   readonly timestamp: string;
   readonly data: string;
@@ -27,9 +37,9 @@ export interface SnapshotProof {
   readonly signature: string;
 }
 
-export function computeContentHash(triples: readonly SignedTriple[], graphDid: string): string {
-  const lines = triples.map(t => canonicalNQuad(t.data, graphDid)).sort();
-  return bytesToHex(sha256(new TextEncoder().encode(lines.join('\n'))));
+/** Recompute a context's IRI from its signed triples. */
+export function computeContentHash(triples: readonly SignedTriple[]): string {
+  return computeGraphIri(triples);
 }
 
 export interface GetAsSnapshotOptions {
@@ -38,7 +48,8 @@ export interface GetAsSnapshotOptions {
 }
 
 export async function getAsSnapshot(
-  graphDid: string,
+  graphIri: string,
+  graphDid: string | null,
   triples: readonly SignedTriple[],
   agentIdentity: IdentityProvider | null,
   graphIdentity: IdentityProvider | null,
@@ -46,12 +57,11 @@ export async function getAsSnapshot(
 ): Promise<GraphSnapshot> {
   const format = options.format ?? 'nquads';
   const signBy = options.signBy ?? 'agent';
-  const contentHash = computeContentHash(triples, graphDid);
   const timestamp = new Date().toISOString();
-  const data = serialise(triples, graphDid, format);
+  const data = serialise(triples, format);
 
   const proofs: SnapshotProof[] = [];
-  const payload = sha256(new TextEncoder().encode(contentHash + timestamp));
+  const payload = sha256(new TextEncoder().encode(graphIri + timestamp));
 
   if ((signBy === 'agent' || signBy === 'both') && agentIdentity) {
     const sig = await agentIdentity.sign(payload);
@@ -76,12 +86,16 @@ export async function getAsSnapshot(
     throw new Error(`No identity available for signBy="${signBy}"`);
   }
 
-  return { graphDid, contentHash, format, timestamp, data, proofs };
+  return { graphIri, graphDid, format, timestamp, data, proofs };
 }
 
-function serialise(triples: readonly SignedTriple[], graphDid: string, format: SnapshotFormat): string {
+function serialise(triples: readonly SignedTriple[], format: SnapshotFormat): string {
   if (format === 'nquads') {
-    return triples.map(t => canonicalNQuad(t.data, graphDid)).sort().join('\n');
+    return triples.map(t => {
+      const isUri = /^[a-zA-Z][\w+\-.]*:.+/.test(t.data.object);
+      const obj = isUri ? `<${t.data.object}>` : `"${t.data.object.replace(/"/g, '\\"')}"`;
+      return `<${t.data.subject}> <${t.data.predicate}> ${obj} .`;
+    }).sort().join('\n');
   }
   return JSON.stringify(triples.map(t => ({
     '@id': t.data.subject,
@@ -91,7 +105,7 @@ function serialise(triples: readonly SignedTriple[], graphDid: string, format: S
 }
 
 export interface ParsedSnapshot {
-  graphDid: string;
+  graphIri: string;
   triples: Array<{ subject: string; predicate: string; object: string }>;
 }
 
@@ -111,10 +125,10 @@ export function parseSnapshot(snapshot: GraphSnapshot): ParsedSnapshot {
     const parsed = JSON.parse(snapshot.data) as Array<{ '@id': string; predicate: string; object: string }>;
     for (const t of parsed) triples.push({ subject: t['@id'], predicate: t.predicate, object: t.object });
   }
-  return { graphDid: snapshot.graphDid, triples };
+  return { graphIri: snapshot.graphIri, triples };
 }
 
-/** Re-export for convenience: parseTripleFromNquad just instantiates Triple. */
+/** Construct a Triple from a parsed triple record. */
 export function tripleFrom(parsed: { subject: string; predicate: string; object: string }): Triple {
   return new Triple(parsed.subject, parsed.predicate, parsed.object);
 }

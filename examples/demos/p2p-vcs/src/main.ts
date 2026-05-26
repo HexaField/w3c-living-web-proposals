@@ -67,7 +67,7 @@ function showSetup(): void {
     try {
       const { did, identity } = await createIdentity(displayName);
       const state = await createRepo(displayName, repoName, identity, did);
-      window.location.hash = state.context.did;
+      window.location.hash = state.context.iri;
       launchApp(state);
     } catch (e) {
       console.error('Failed to create repo:', e);

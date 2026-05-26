@@ -103,7 +103,9 @@ export async function createCanvas(
   displayName: string, canvasName: string, identity: IdentityProvider, did: string,
 ): Promise<AppState> {
   const store = await navigator.graph.create(canvasName);
-  const context = await store.createContext({ displayName: canvasName });
+  // Use createGroup so the canvas gets a stable did:graph — sync requires it.
+  const canvasGroup = await store.createGroup({ displayName: canvasName });
+  const context = canvasGroup.context;
   await context.publish();
   await registerShapes(context);
 
@@ -153,10 +155,11 @@ export async function createCanvas(
 }
 
 export async function joinCanvas(
-  displayName: string, contextDid: string, identity: IdentityProvider, did: string,
+  displayName: string, contextIri: string, identity: IdentityProvider, did: string,
 ): Promise<AppState> {
   const store = await navigator.graph.create(displayName);
-  const placeholderContext = await store.createContext({ displayName: 'pending-join' });
+  const placeholderGroup = await store.createGroup({ displayName: 'pending-join' });
+  const placeholderContext = placeholderGroup.context;
   await placeholderContext.publish();
   await registerShapes(placeholderContext);
 
@@ -180,7 +183,7 @@ export async function joinCanvas(
 
     const handler = (ev: MessageEvent) => {
       const msg = ev.data;
-      if (msg.type !== 'canvas-sync-response' || msg.contextDid !== contextDid) return;
+      if (msg.type !== 'canvas-sync-response' || msg.contextIri !== contextIri) return;
       clearTimeout(timeout);
       bc.removeEventListener('message', handler);
 
@@ -204,7 +207,7 @@ export async function joinCanvas(
       state.collaborators.push({ id: collabId, did, name: displayName, role: 'editor', color: myColor });
       bc.postMessage({
         type: 'canvas-new-collab',
-        contextDid,
+        contextIri,
         collab: state.collaborators[state.collaborators.length - 1],
       });
 
@@ -213,21 +216,21 @@ export async function joinCanvas(
     };
 
     bc.addEventListener('message', handler);
-    bc.postMessage({ type: 'canvas-sync-request', contextDid, did, displayName });
+    bc.postMessage({ type: 'canvas-sync-request', contextIri, did, displayName });
   });
 }
 
 function setupCrossTabSync(state: AppState): void {
   const { bc, context } = state;
-  const contextDid = context.did;
+  const contextIri = context.iri;
 
   bc.addEventListener('message', (ev: MessageEvent) => {
     const msg = ev.data;
 
-    if (msg.type === 'canvas-sync-request' && msg.contextDid === contextDid && state.isOwner) {
+    if (msg.type === 'canvas-sync-request' && msg.contextIri === contextIri && state.isOwner) {
       bc.postMessage({
         type: 'canvas-sync-response',
-        contextDid, ownerDid: state.did,
+        contextIri, ownerDid: state.did,
         canvasId: state.canvasId, canvasName: state.canvasName,
         layers: state.layers, shapes: state.shapes,
         collaborators: state.collaborators,
@@ -235,7 +238,7 @@ function setupCrossTabSync(state: AppState): void {
       });
     }
 
-    if (msg.type === 'canvas-new-collab' && msg.contextDid === contextDid) {
+    if (msg.type === 'canvas-new-collab' && msg.contextIri === contextIri) {
       if (!state.collaborators.find(c => c.did === msg.collab.did)) {
         state.collaborators.push(msg.collab);
         if (state.isOwner) issueEditorZcap(state.governance, msg.collab.did, state.did);
@@ -243,46 +246,46 @@ function setupCrossTabSync(state: AppState): void {
       }
     }
 
-    if (msg.type === 'canvas-shape-add' && msg.contextDid === contextDid && msg.shape.author !== state.did) {
+    if (msg.type === 'canvas-shape-add' && msg.contextIri === contextIri && msg.shape.author !== state.did) {
       state.shapes.push(msg.shape);
       document.dispatchEvent(new CustomEvent('canvas-update', { detail: { type: 'shape' } }));
     }
 
-    if (msg.type === 'canvas-shape-move' && msg.contextDid === contextDid && msg.did !== state.did) {
+    if (msg.type === 'canvas-shape-move' && msg.contextIri === contextIri && msg.did !== state.did) {
       const s = state.shapes.find(s => s.id === msg.shapeId);
       if (s) { s.x = msg.x; s.y = msg.y; }
       document.dispatchEvent(new CustomEvent('canvas-update', { detail: { type: 'shape' } }));
     }
 
-    if (msg.type === 'canvas-shape-delete' && msg.contextDid === contextDid && msg.did !== state.did) {
+    if (msg.type === 'canvas-shape-delete' && msg.contextIri === contextIri && msg.did !== state.did) {
       const idx = state.shapes.findIndex(s => s.id === msg.shapeId);
       if (idx !== -1) state.shapes.splice(idx, 1);
       document.dispatchEvent(new CustomEvent('canvas-update', { detail: { type: 'shape' } }));
     }
 
-    if (msg.type === 'canvas-cursor' && msg.contextDid === contextDid && msg.cursor.did !== state.did) {
+    if (msg.type === 'canvas-cursor' && msg.contextIri === contextIri && msg.cursor.did !== state.did) {
       state.cursors.set(msg.cursor.did, msg.cursor);
       document.dispatchEvent(new CustomEvent('canvas-update', { detail: { type: 'cursor' } }));
     }
 
-    if (msg.type === 'canvas-stroke-progress' && msg.contextDid === contextDid && msg.did !== state.did) {
+    if (msg.type === 'canvas-stroke-progress' && msg.contextIri === contextIri && msg.did !== state.did) {
       document.dispatchEvent(new CustomEvent('canvas-stroke', { detail: msg }));
     }
 
-    if (msg.type === 'canvas-layer-add' && msg.contextDid === contextDid) {
+    if (msg.type === 'canvas-layer-add' && msg.contextIri === contextIri) {
       if (!state.layers.find(l => l.id === msg.layer.id)) {
         state.layers.push(msg.layer);
         document.dispatchEvent(new CustomEvent('canvas-update', { detail: { type: 'layer' } }));
       }
     }
 
-    if (msg.type === 'canvas-layer-toggle' && msg.contextDid === contextDid) {
+    if (msg.type === 'canvas-layer-toggle' && msg.contextIri === contextIri) {
       const l = state.layers.find(l => l.id === msg.layerId);
       if (l) l.visible = msg.visible;
       document.dispatchEvent(new CustomEvent('canvas-update', { detail: { type: 'layer' } }));
     }
 
-    if (msg.type === 'canvas-layer-lock' && msg.contextDid === contextDid) {
+    if (msg.type === 'canvas-layer-lock' && msg.contextIri === contextIri) {
       const l = state.layers.find(l => l.id === msg.layerId);
       if (l) {
         l.locked = msg.locked;
@@ -292,7 +295,7 @@ function setupCrossTabSync(state: AppState): void {
       document.dispatchEvent(new CustomEvent('canvas-update', { detail: { type: 'layer' } }));
     }
 
-    if (msg.type === 'canvas-promote' && msg.contextDid === contextDid && msg.targetDid === state.did) {
+    if (msg.type === 'canvas-promote' && msg.contextIri === contextIri && msg.targetDid === state.did) {
       const me = state.collaborators.find(c => c.did === state.did);
       if (me) me.role = 'editor';
       document.dispatchEvent(new CustomEvent('canvas-update', { detail: { type: 'collaborator' } }));

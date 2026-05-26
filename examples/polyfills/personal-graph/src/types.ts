@@ -100,14 +100,17 @@ export interface MountOptions {
 
 export interface ContextCreationOptions {
   displayName?: string;
-  /** did:graph of a parent context to participate in. */
+  /** Graph IRI (or did:graph alias) of a parent context to participate in. */
   participatesIn?: string;
-  /** Additional DIDs to add as capabilityInvocation delegates. */
-  initialDelegates?: string[];
 }
 
 export interface MountedContextInfo {
-  graphDid: string;
+  /** Stable internal id (storage key). */
+  contextId: string;
+  /** Current snapshot IRI. Changes per mutation. */
+  graphIri: string;
+  /** Sovereign did:graph if groupified, else null. */
+  graphDid: string | null;
   mode: MountMode;
   displayName?: string;
   state: ContextSubscriptionState;

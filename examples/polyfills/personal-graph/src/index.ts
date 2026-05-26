@@ -13,7 +13,7 @@ export type {
   ContextCreationOptions,
 } from './types.js';
 
-export { Context, TripleEvent } from './context.js';
+export { Context, TripleEvent, IriChangedEvent, computeGraphIri } from './context.js';
 export type { TriplePattern } from './context.js';
 export {
   GraphStore,
@@ -21,6 +21,7 @@ export {
   ContextLifecycleEvent,
   credentialAsProvider,
   newUuid,
+  newContextId,
 } from './graph-store.js';
 export { GraphStoreManager } from './manager.js';
 export { GraphStorage } from './storage.js';
@@ -52,12 +53,4 @@ export type {
 } from './snapshot.js';
 
 export { runSparql } from './sparql.js';
-export {
-  registerContextMethodBinding,
-  getContextMethodBinding,
-  requireContextMethodBinding,
-  type ContextMethodBinding,
-  type GraphSeedTriple,
-  type DIDCapabilitySection,
-} from './method-binding.js';
 export { install, getManager } from './polyfill.js';

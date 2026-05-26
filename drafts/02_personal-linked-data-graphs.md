@@ -10,7 +10,7 @@
 
 ## Abstract
 
-This specification defines a client-side API for creating, querying, and managing linked data on the web. The unit of coherence is a **context**: a named graph of RDF triples identified by a `did:graph:...` DID (see [[GROUP-IDENTITY]]; signing keys for any DID method are managed via [[DECENTRALISED-IDENTITY]]). Each context has its own persistent store, its own set of registered shapes, and its own governance configuration. A **GraphStore** (consistent with the term in [[SPARQL12-GRAPH-STORE]]) is the agent-local collection of contexts the user agent currently has open; it consists of a small private graph for agent-local state, plus a mount table referencing zero or more shared contexts. The API is exposed on the `navigator.graph` namespace and supports RDF 1.2 triples with reifier-based per-triple provenance, SPARQL 1.2 queries, SHACL-based shape registration (see [[SHAPE-VALIDATION]]), context-scoped and cross-context queries, and serialisation of any context as a signed, addressable **graph snapshot**.
+This specification defines a client-side API for creating, querying, and managing linked data on the web. The unit of coherence is a **context**: a named graph of RDF triples whose identifier is content-addressed — a `graph://<content-hash>` IRI that is the SHA-256 of the context's current triples. **The IRI encodes a snapshot.** Two graphs with identical triple sets share an IRI; any mutation to a graph produces a new IRI. This is a hard limitation, not an accident — it gives the substrate snapshot-level immutability and invokes a version-control discipline at the protocol layer: the same address cannot ever name two different contents. The corollary is that a graph IRI cannot, by itself, refer to "the same graph over time" — only to one of its states. **Sovereign, content-independent identity for an evolving graph is provided by [[GROUP-IDENTITY]]'s `did:graph` layer.** A `did:graph:...` is an optional layer that wraps a context and gives it a persistent identity that survives content change; any non-trivial mutable application needs one. Capability invocation, sync, and long-lived references in this and related specifications operate on `did:graph` when a context is groupified; raw `graph://<content-hash>` IRIs identify specific snapshots (immutable artifacts, snapshot transfer, content-addressed cache keys). A **GraphStore** (consistent with the term in [[SPARQL12-GRAPH-STORE]]) is the agent-local collection of contexts the user agent currently has open; it consists of a small private graph for agent-local state, plus a mount table referencing zero or more shared contexts. The API is exposed on the `navigator.graph` namespace and supports RDF 1.2 triples with reifier-based per-triple provenance, SPARQL 1.2 queries, SHACL-based shape registration (see [[SHAPE-VALIDATION]]), context-scoped and cross-context queries, and serialisation of any context as a signed, addressable **graph snapshot**.
 
 ---
 
@@ -47,29 +47,27 @@ Feedback and comments on this specification are welcome. Please file issues on t
 
 The web platform provides several client-side storage mechanisms — cookies, Web Storage, IndexedDB, the Origin Private File System — yet none offer semantic structure. Applications store opaque blobs and key-value pairs with no interoperability, no queryability across applications, and no user-meaningful data model. Meanwhile, the web has no way for a unit of structured data — a community's messages, a personal calendar, a shared document — to carry a stable identity, declare its own constraints, or move between user agents without losing its integrity.
 
-This specification addresses that gap by defining contexts: **named graphs of RDF triples, each identified by a `did:graph:...` DID, each with its own store, its own shapes, and its own governance**. A user agent's collection of mounted contexts is its `navigator.graph` GraphStore.
+This specification addresses that gap by defining contexts: **named graphs of RDF triples whose IRI is the content hash of their current state**, each with its own store, its own shapes, and its own governance. The content-hash IRI is a snapshot identifier: it cannot, by construction, refer to two different states of a graph; any mutation produces a new IRI. This forces a clean distinction in the substrate between **snapshots** (immutable, content-addressed) and **evolving graphs** (which require a stable, content-independent identity). The stable-identity layer is `did:graph` from [[GROUP-IDENTITY]] — a context that needs to be referenced across mutations MUST be groupified to gain a `did:graph:...`. A user agent's collection of mounted contexts is its `navigator.graph` GraphStore.
 
 ### 1.2 Use Cases
 
 - **Personal knowledge management.** A user maintains personal contexts of notes, references, and connections. Multiple web applications read and write to the same contexts through `navigator.graph`.
 - **Local-first applications.** Applications that work offline by default, storing data in user-owned contexts.
 - **Cross-application data sharing.** A calendar application writes events into a Calendar context; a task manager reads from it. Both use the same agreed vocabulary.
-- **Cross-agent collaboration.** Two user agents mount the same `did:graph:...` and operate on the same underlying state, synchronised via [[CONTEXT-SYNC]].
+- **Cross-agent collaboration.** Two user agents mount the same `graph://<content-hash>` and operate on the same underlying state, synchronised via [[CONTEXT-SYNC]].
 - **Self-describing portable data.** A context's shapes ([[SHAPE-VALIDATION]]), flows ([[GRAPH-FLOWS]]), and governance ([[CAPABILITY-FRAMEWORK]]) live as triples *inside* the context. Mounting the context gives an application everything it needs to interact with the data.
 
 ### 1.3 Relationship to Other Specifications
 
 - **RDF 1.2** [[RDF12-CONCEPTS]] — triple data model with reifiers for per-triple provenance.
 - **SPARQL 1.2** [[SPARQL12-QUERY]] — query semantics.
-- **DID Core** [[DID-CORE]] — context identity via `did:graph` (defined in [[GROUP-IDENTITY]]; the credential surface lives in [[DECENTRALISED-IDENTITY]]).
 - **Web IDL** [[WEBIDL]] — API surface.
-- [[DECENTRALISED-IDENTITY]] defines the `DIDCredential` surface used to sign triples and snapshots.
-- [[GROUP-IDENTITY]] defines `did:graph` and the DID-document delegate model.
-- [[CAPABILITY-FRAMEWORK]] defines ZCAP-based write authorisation on contexts.
-- [[CONTEXT-SYNC]] defines how contexts are synchronised between agents.
+- [[DECENTRALISED-IDENTITY]] defines the `DIDCredential` surface used to sign triples and snapshots. Triples in this specification are signed by an *agent* DID (any method); contexts themselves are identified by IRI, not by DID.
+- [[GROUP-IDENTITY]] defines `did:graph` and the DID-document delegate model — the layer by which a context becomes addressable independent of its content. The `did:graph` is what resolves the version-control tension this specification's IRI scheme introduces: snapshots are content-addressed; the DID is the *evolving* graph's sovereign identity. Specs 03, 04, and this one reference *mutable* graphs by `did:graph` and *snapshots* by IRI.
+- [[CAPABILITY-FRAMEWORK]] defines ZCAP-based write authorisation on contexts (resource = graph IRI; signer = any DID).
+- [[CONTEXT-SYNC]] defines how contexts are synchronised between agents (keyed by graph IRI).
 - [[SHAPE-VALIDATION]] defines SHACL-based action semantics on contexts.
 - [[GRAPH-FLOWS]] defines state-machine processes over context data.
-- [[GROUP-IDENTITY]] defines collective-identity patterns built on `did:graph`.
 
 ---
 
@@ -131,7 +129,7 @@ _:r1 prov://signature   "z58D..." .
 _:r1 prov://method      <did:key:z6Mk...#z6Mk...> .   # the verification method that signed
 ```
 
-The signature is computed as `Ed25519-Sign(privateKey, SHA-256(canonical(triple) || timestamp))`, where `canonical(triple)` is the triple's canonical N-Triples serialisation. For a triple signed on behalf of a `did:graph:...`, the `prov://author` is the graph DID and `prov://method` is the specific delegate method that produced the signature.
+The signature is computed as `Ed25519-Sign(privateKey, SHA-256(canonical(triple) || timestamp))`, where `canonical(triple)` is the triple's canonical N-Triples serialisation. The `prov://author` is the DID of the signing agent; `prov://method` is the specific verification method that produced the signature. The author is typically the writer's own `did:key:...`. If the context has been groupified with a `did:graph:...` ([[GROUP-IDENTITY]]) AND the writer is signing on behalf of the graph, the `prov://author` is the graph's `did:graph` and `prov://method` is the specific delegate method that produced the signature.
 
 User agents MUST attach a reifier carrying author, timestamp, and signature to every triple they accept via `addTriple()`. User agents SHOULD verify reifier signatures on every triple read from a non-trusted source.
 
@@ -139,13 +137,19 @@ All **provenance-bearing timestamps** in this and related specifications — val
 
 ### 3.3 Context
 
-A **Context** is a named graph of triples identified by a `did:graph:...` DID ([[GROUP-IDENTITY]] §4). The IRI alias `graph://<did-fragment>` resolves to the same context.
+A **Context** is a named graph of triples. Its `iri` is a `graph://<content-hash>` URI — the SHA-256 of the *current* triple set, computed deterministically (lexicographic N-Quad canonicalisation; see [§5.2](#52-content-hash-computation)). This makes the IRI a snapshot identifier:
+
+- **The IRI changes whenever the context's triples change.** Adding, removing, or rewriting a triple advances the context to a new state with a new IRI.
+- **Two contexts with the same triples have the same IRI.** Content-addressing means the address is a function of the content alone — not of which agent assembled it, when, or why.
+- **The same IRI never names two different states.** An IRI is a content commitment; verifying that a received bag of triples matches a given IRI is a single hash check.
+
+Because of this, the IRI alone cannot identify "the same graph over time" — only a specific state. For sovereign, content-independent identity (the kind needed by any application that mutates a graph and wants others to keep referencing *the graph*, not a snapshot), a context MUST be groupified per [[GROUP-IDENTITY]] §6. Groupification attaches a `did:graph:...` to the context — an identifier that persists across all subsequent IRI changes.
 
 Every context has:
 
-- An identity (`did:graph:...`).
-- A DID document (triples inside the context describing the verification methods currently authorised to sign on behalf of the context — see [[GROUP-IDENTITY]] §4.2).
-- A creation timestamp.
+- A *current* IRI (`graph://<content-hash>`) — content-derived; changes per mutation.
+- A *stable* internal handle that the host user agent uses to track the context across IRI changes (an implementation detail; not normatively exposed).
+- Optionally, a `did:graph:...` DID and its supporting DID-document triples ([[GROUP-IDENTITY]]) — REQUIRED for any context that will be referenced externally across mutations (sync, long-lived ZCAPs, durable participation links).
 - Optionally, one or more `context://participates_in` triples declaring participation in a parent context.
 - Zero or more registered shapes ([[SHAPE-VALIDATION]]).
 - Zero or more registered flows ([[GRAPH-FLOWS]]).
@@ -155,8 +159,12 @@ Every context has:
 ```webidl
 [Exposed=(Window,Worker), SecureContext]
 interface Context : EventTarget {
-  readonly attribute USVString did;                    // did:graph:...
-  readonly attribute USVString iri;                    // graph://<did-fragment>
+  /** Current snapshot IRI — graph://<content-hash> of the current triple set.
+   *  Recomputed after every mutation. */
+  readonly attribute USVString iri;
+  /** Optional did:graph:... — sovereign, content-independent identity. Set
+   *  by groupification ([[GROUP-IDENTITY]] §6). Null until groupified. */
+  readonly attribute USVString? did;
   readonly attribute DOMString? displayName;
   readonly attribute MountMode mountMode;
   readonly attribute ContextSubscriptionState state;
@@ -172,6 +180,8 @@ interface Context : EventTarget {
 
   attribute EventHandler ontripleadded;
   attribute EventHandler ontripleremoved;
+  /** Fired whenever the context's IRI changes (i.e., after every mutation). */
+  attribute EventHandler oniriChanged;
 };
 
 enum MountMode { "read", "write", "governance" };
@@ -201,17 +211,17 @@ interface GraphStore : EventTarget {
   readonly attribute USVString uuid;
   readonly attribute DOMString name;
   readonly attribute USVString agentDid;            // owning agent's did:key:...
-  readonly attribute USVString privateGraphDid;     // did:graph:... of the private context
+  readonly attribute USVString privateGraphIri;     // graph://<content-hash> of the private context
   readonly attribute FrozenArray<Context> mounts;
 
   [NewObject] Promise<Context> createContext(optional ContextCreationOptions options);
-  [NewObject] Promise<Context> mount(USVString graphDid, optional MountOptions options);
-  [NewObject] Promise<undefined> unmount(USVString graphDid);
-  [NewObject] Promise<boolean> dissolveContext(USVString graphDid);
-  [NewObject] Promise<Context?> getContext(USVString graphDid);
+  [NewObject] Promise<Context> mount(USVString graphIri, optional MountOptions options);
+  [NewObject] Promise<undefined> unmount(USVString graphIri);
+  [NewObject] Promise<boolean> dissolveContext(USVString graphIri);
+  [NewObject] Promise<Context?> getContext(USVString graphIri);
 
   [NewObject] Promise<SparqlResult> querySparql(USVString sparql, optional SparqlQueryOptions options);
-  ContextQueryBuilder inContext(USVString graphDid);
+  ContextQueryBuilder inContext(USVString graphIri);
 
   attribute EventHandler oncontextmounted;
   attribute EventHandler oncontextunmounted;
@@ -221,8 +231,7 @@ interface GraphStore : EventTarget {
 
 dictionary ContextCreationOptions {
   DOMString displayName;
-  USVString participatesIn;             // did:graph of parent context (optional)
-  sequence<USVString> initialDelegates; // additional DIDs on the new graph's capabilityInvocation
+  USVString participatesIn;             // graph IRI (or did:graph) of parent context (optional)
 };
 
 dictionary MountOptions {
@@ -232,7 +241,7 @@ dictionary MountOptions {
 };
 ```
 
-The **private graph** is a context with its own `did:graph:...` whose DID document lists exactly one `capabilityInvocation` delegate — the agent. It is never offered for sync. Any triple written without specifying a target context lands here.
+The **private graph** is a context with its own `graph://<content-hash>` IRI whose only writer is the owning agent. It is never offered for sync. Any triple written without specifying a target context lands here. The private graph is ungroupified by default — it has no `did:graph` — because there is no collective signing authority to express; the agent IS its single writer.
 
 ### 3.5 GraphStoreManager
 
@@ -249,8 +258,8 @@ interface GraphStoreManager {
   [NewObject] Promise<GraphStore?> get(USVString uuid);
   [NewObject] Promise<boolean> remove(USVString uuid);
 
-  /** Resolve a context across all known stores (for `did:graph` resolver delegation). */
-  [NewObject] Promise<Context?> resolveContext(USVString graphDid);
+  /** Resolve a context across all known stores by IRI or by attached did:graph. */
+  [NewObject] Promise<Context?> resolveContext(USVString iriOrDid);
 };
 ```
 
@@ -314,7 +323,7 @@ interface Reifier {
 The `create()` method MUST:
 
 1. Generate a fresh version 4 UUID [[RFC4122]] for the GraphStore.
-2. Mint a fresh `did:graph:...` for the GraphStore's private graph (per [[GROUP-IDENTITY]] §4). The owning agent becomes the sole `capabilityInvocation` delegate.
+2. Mint a private context for the GraphStore via `createContext()` (with the owning agent as creator). The private context's current IRI is `graph://<content-hash>` of whatever triples are written to it; it tracks state as the agent writes to it. The agent's own DID signs the triples — no DID-document delegate machinery is set up. The private graph stays ungroupified, on the basis that it is local-only and the agent never needs to refer to it externally across mutations.
 3. Persist the GraphStore record with the private graph mounted in `"governance"` mode.
 4. Return the `GraphStore`.
 
@@ -325,13 +334,15 @@ The `create()` method MUST:
 
 The `createContext()` method MUST:
 
-1. Mint a fresh `did:graph:...` for the new context.
-2. Create the per-context store ([§8](#8-storage)).
-3. Write the initial DID-document triples to the context (the calling agent becomes the initial delegate). Add any `initialDelegates` to `capabilityInvocation`.
-4. If `options.participatesIn` is provided, write `<this-context> context://participates_in <parent>` into the new context.
-5. Mount the new context into the GraphStore in `"governance"` mode.
-6. Fire `contextcreated` and `contextmounted` events.
-7. Return the `Context`.
+1. Allocate a fresh per-context store ([§8](#8-storage)), keyed by an internal handle (an implementation-defined UUID, not the IRI — because the IRI will change with content).
+2. Return a `Context` whose initial state has no application triples. Its current `iri` is `graph://<content-hash-of-empty-or-seed-state>`; its `did` is `null`.
+3. If `options.participatesIn` is provided, write `<this-context.iri> context://participates_in <parent>` into the new context as its first application triple. Note that this changes the context's IRI.
+4. Mount the new context into the GraphStore in `"governance"` mode.
+5. Fire `contextcreated` and `contextmounted` events.
+6. Fire `iriChanged` whenever the IRI subsequently changes (i.e., after every `addTriple`, `addTriples`, or `removeTriple`).
+7. Callers that need an identity for this graph that survives mutations MUST invoke `[[GROUP-IDENTITY]] §6` to groupify it; after groupification, `context.did` is a stable `did:graph:...` while `context.iri` continues to track the current snapshot.
+
+Ungroupified contexts are useful for one-shot immutable artifacts (e.g., a snapshot to be published once and never modified) and for agent-private scratchpads. Any other use case — anything that involves another agent later referring back to "the same graph", or anything that synchronises across devices — SHOULD groupify at creation time via `[[GROUP-IDENTITY]] §8.2`'s `createGroup()` (which performs createContext + groupify atomically).
 
 ### 4.2 Mounting and Unmounting
 
@@ -361,7 +372,7 @@ The `dissolveContext()` method MUST:
 4. Fire a `contextdissolved` event with `eventType = "dissolved"`.
 5. Resolve with `true` if storage was removed, `false` if it was already absent.
 
-Dissolution is local to the dissolving agent's GraphStore; it does not propagate to other agents that have mounted the same `did:graph:...`. Other agents continue to hold their own copies.
+Dissolution is local to the dissolving agent's GraphStore; it does not propagate to other agents that have mounted the same `graph://<content-hash>`. Other agents continue to hold their own copies.
 
 ### 4.3 Triple Operations
 
@@ -369,7 +380,7 @@ When called on a `Context`, `addTriple()` MUST:
 
 1. Resolve the active signing identity (an `id` obtained from [[DECENTRALISED-IDENTITY]]).
 2. Validate the triple against any shapes registered on this context ([[SHAPE-VALIDATION]]).
-3. Check governance ([[CAPABILITY-FRAMEWORK]]): the active identity must hold a valid capability authorising `createLink` against this context's `did:graph:...`, satisfying any caveats.
+3. Check governance ([[CAPABILITY-FRAMEWORK]]): the active identity must hold a valid capability authorising `createLink` against this context's resource. For groupified contexts the resource is the `did:graph:...` (stable across writes); for ungroupified contexts it is the current `graph://<content-hash>`. Long-lived ZCAPs therefore SHOULD target a `did:graph`.
 4. Compute the reifier (author, timestamp, signature, method) and persist the triple plus its reifier triples.
 5. Fire a `tripleadded` event with the triple.
 6. Return the `Triple`.
@@ -396,16 +407,28 @@ This section is normative.
 
 ### 5.1 The Principle
 
-A context can be serialised as an addressable, signed **GraphSnapshot**, and a GraphSnapshot can be mounted as a context in another GraphStore. The triple — with its reifier carrying authorship, timestamp, and signature — is the atomic unit of verifiable content. A context is a set of triples with an identity. A GraphSnapshot is a context with an address and a signature.
+A context's `iri` *is* its current snapshot address. A **GraphSnapshot** wraps the IRI with the serialised triples and one or more cryptographic proofs, so the snapshot can be transported and verified by another agent. The triple — with its reifier carrying authorship, timestamp, and signature — is the atomic unit of verifiable content. A GraphSnapshot is the serialised, signed form of a context's current state.
 
-This duality is what makes contexts portable: a context (with its governance, shapes, and flows) can move between user agents without losing its integrity.
+Because the IRI is content-derived ([§3.3](#33-context)), it is also the snapshot's integrity address. There is no separate "content hash" — the IRI *is* the content hash. Verifying a received snapshot is one SHA-256 over the serialised triples + a string compare against `snapshot.graphIri`.
 
-### 5.2 Producing a Snapshot
+This makes contexts portable as immutable artifacts: a snapshot at IRI *G* is, forever, the same triples. To track an *evolving* graph between agents, both sides must agree on the graph's stable `did:graph` ([[GROUP-IDENTITY]]); the DID is then the durable handle and the current IRI is one of its (changing) states.
+
+### 5.2 Content Hash Computation
+
+The content hash of a context (which determines its IRI) is computed as:
+
+1. Canonicalise the context's current triple set as N-Quads, sorting lexicographically.
+2. Append each triple's reifier metadata (`author`, `timestamp`, `method`, `signature`) in the same line as the triple.
+3. Compute SHA-256 over the resulting UTF-8 byte sequence.
+4. Encode the digest as lowercase hex.
+
+The full content hash is `graph://` + the hex digest. A conforming user agent MUST recompute this whenever the triple set changes and MUST update `context.iri` accordingly, firing `iriChanged`.
+
+### 5.3 Producing a Snapshot
 
 ```webidl
 partial interface Context {
   [NewObject] Promise<GraphSnapshot> getAsSnapshot(optional GraphSnapshotOptions options);
-  [NewObject] Promise<USVString> contentHash();
 };
 
 dictionary GraphSnapshotOptions {
@@ -417,8 +440,13 @@ enum GraphSignBy { "agent", "graph", "both" };
 
 [Exposed=(Window,Worker)]
 interface GraphSnapshot {
-  readonly attribute USVString graphDid;
-  readonly attribute USVString contentHash;       // hex SHA-256
+  /** The content-hash IRI of this snapshot. Verifies the snapshot's triples. */
+  readonly attribute USVString graphIri;
+  /** The sovereign DID of the underlying context, if groupified. Identifies the
+   *  *graph* (across versions); use with [[GROUP-IDENTITY]] to look up the
+   *  graph's current state via sync. Null if the source context is ungroupified
+   *  (in which case the snapshot is a standalone immutable artifact). */
+  readonly attribute USVString? graphDid;
   readonly attribute DOMString format;
   readonly attribute DOMString timestamp;
   readonly attribute DOMString data;              // serialised triples
@@ -434,19 +462,17 @@ interface SnapshotProof {
 };
 ```
 
-The `contentHash()` method MUST return a deterministic SHA-256 hex digest computed over the context's triples, sorted in lexicographic N-Quads order. This hash is the integrity address; the graph DID is the logical address.
-
 The `getAsSnapshot()` method MUST:
 
 1. Serialise the context's triples (including reifiers) in the requested `format`.
-2. Compute the content hash.
+2. Compute `graphIri` per [§5.2](#52-content-hash-computation).
 3. Produce proofs:
-   - For `signBy: "agent"` — the active agent identity signs the hash.
-   - For `signBy: "graph"` — a delegate currently listed in the graph's `assertionMethod` signs on behalf of the graph DID. Reject with `"NotAllowedError"` if no such delegate key is held locally.
+   - For `signBy: "agent"` — the active agent identity signs the IRI (= content hash).
+   - For `signBy: "graph"` — REQUIRES the context to be groupified ([[GROUP-IDENTITY]]). A delegate currently listed in the graph's `assertionMethod` signs on behalf of `graphDid`. Reject with `"NotAllowedError"` if no `did:graph` or no such delegate key is held locally.
    - For `signBy: "both"` — both proofs are produced.
 4. Return the `GraphSnapshot`.
 
-### 5.3 Mounting a Snapshot
+### 5.4 Mounting a Snapshot
 
 ```webidl
 partial interface GraphStore {
@@ -454,27 +480,33 @@ partial interface GraphStore {
 };
 
 dictionary MountSnapshotOptions {
-  USVString targetGraphDid;
   DOMString trustLevel = "external";
 };
 ```
 
 The `mountSnapshot()` method MUST:
 
-1. Verify all proofs in `snapshot.proofs` against `snapshot.contentHash`. If any fail, reject with `"DataError"`.
-2. Recompute the content hash from `snapshot.data`; if it mismatches `snapshot.contentHash`, reject with `"DataError"`.
-3. Determine the target graph DID (the embedded `snapshot.graphDid` unless overridden).
-4. Open or create the per-context store for the target DID.
-5. Insert the parsed triples (including reifiers, DID-document triples, shape triples, flow triples, governance triples).
-6. Record provenance metadata: `<graphDid> context://mounted_from <sourceUri>` and `<graphDid> context://trust_level <trustLevel>`.
-7. Mount the context (read mode unless a capability proof is provided separately).
-8. Return the `Context`.
+1. Verify all proofs in `snapshot.proofs` against `snapshot.graphIri`. If any fail, reject with `"DataError"`.
+2. Recompute the content hash from `snapshot.data` per [§5.2](#52-content-hash-computation); if it does not equal `snapshot.graphIri`, reject with `"DataError"`.
+3. Allocate a fresh per-context store, insert the parsed triples (including reifiers, optional DID-document triples, shape triples, flow triples, governance triples), and record provenance metadata: `<graphIri> context://mounted_from <sourceUri>` and `<graphIri> context://trust_level <trustLevel>`.
+4. If the snapshot's triples include a `<graphIri> group://didIdentity <did>` binding, the mounted context's `did` attribute is set to that DID; otherwise `did` is `null`.
+5. Mount the context (read mode unless a capability proof is provided separately).
+6. Return the `Context`. Its `iri` matches `snapshot.graphIri` *at this instant*; any subsequent mutation will change it.
 
 Because governance, shapes, and flows live as triples *inside* the context, this single operation transfers everything needed to participate. No separate governance sync.
 
-### 5.4 Logical Address vs Integrity Address
+### 5.5 Snapshot Address vs Sovereign Identity
 
-The graph DID (`did:graph:...`) is the **logical address** — it identifies a context independent of its current state. The content hash is the **integrity address** — it identifies a specific state of the context. "Has this context changed since I last saw it?" reduces to a hash comparison. "Is this the same context I was talking to before?" reduces to a DID comparison.
+The graph IRI (`graph://<content-hash>`) is the **snapshot address** — it identifies one specific state. Verifying integrity ("are these the triples that produce this hash?") and content equivalence ("do these two graphs have the same triples?") both reduce to comparing IRIs. An IRI cannot, by construction, change while pointing to the same content; conversely, two states of an evolving graph have two different IRIs.
+
+The graph DID (`did:graph:...`, from [[GROUP-IDENTITY]]) is the **sovereign identity** — it identifies the *graph* across all its states. "Is this the same graph I was talking to before?" reduces to a DID comparison. "What is the graph's current state?" requires looking up the current snapshot via sync ([[CONTEXT-SYNC]]).
+
+Both layers serve different purposes and SHOULD be used together where applicable:
+
+- A long-lived ZCAP whose `resource` is a graph SHOULD target the `did:graph` (it then applies across all states); a ZCAP that authorises action against one specific snapshot MAY target the IRI.
+- A sync subscription is keyed by `did:graph` (otherwise it could only follow one state).
+- A snapshot transfer for archival uses the IRI as the verifiable, immutable address.
+- A signed assertion of "I observed this graph at state X" pairs the `did:graph` with the IRI.
 
 ---
 
@@ -488,7 +520,7 @@ Structural scoping (*which context*) is kept explicitly separate from value filt
 
 ```webidl
 partial interface GraphStore {
-  ContextQueryBuilder inContext(USVString graphDid);
+  ContextQueryBuilder inContext(USVString graphIri);
 };
 
 partial interface Context {
@@ -497,7 +529,7 @@ partial interface Context {
 
 [Exposed=Window]
 interface ContextQueryBuilder {
-  ContextQueryBuilder inContext(USVString graphDid);
+  ContextQueryBuilder inContext(USVString graphIri);
   ContextQueryBuilder where(TripleQuery filter);
   ContextQueryBuilder include(sequence<USVString> predicates);  // cross-context hydration
   ContextQueryBuilder page(unsigned long offset, unsigned long size);
@@ -505,13 +537,13 @@ interface ContextQueryBuilder {
 };
 ```
 
-`inContext(graphDid)` scopes the query to one context. `where()` constrains by value. They MUST NOT be conflated.
+`inContext(graphIri)` scopes the query to one context. `where()` constrains by value. They MUST NOT be conflated.
 
 ### 6.2 Cross-Context Include Resolution
 
-When a query result references entities in *other* contexts (for example, a message in `did:graph:channel-general` references its parent channel in `did:graph:community-root`), `include(['channel'])` instructs the runtime to:
+When a query result references entities in *other* contexts (for example, a message in `graph://<channel-general-hash>` references its parent channel in `graph://<community-root-hash>`), `include(['channel'])` instructs the runtime to:
 
-1. For each result whose target is an entity in another context, identify the target's home graph DID via the entity's `context://participates_in` link or shape-declared `graph` property.
+1. For each result whose target is an entity in another context, identify the target's home graph IRI via the entity's `context://participates_in` link or shape-declared `graph` property.
 2. Issue a hydration query against that graph's store.
 3. Attach the hydrated data to the result.
 
@@ -524,7 +556,7 @@ Real-time applications need to know when contexts themselves come into existence
 ```webidl
 [Exposed=Window]
 interface ContextLifecycleEvent : Event {
-  readonly attribute USVString graphDid;
+  readonly attribute USVString graphIri;
   readonly attribute DOMString eventType;     // "created" | "dissolved" | "mounted" | "unmounted"
   readonly attribute DOMString timestamp;
   readonly attribute USVString? creator;
@@ -547,14 +579,14 @@ Shapes are stored as triples inside the context they describe and participate in
 
 ### 8.1 Per-Context Stores
 
-Each context has its own backing store, keyed by `did:graph:...`. The RECOMMENDED layout for a conforming user agent:
+Each context has its own backing store, keyed by `graph://<content-hash>`. The RECOMMENDED layout for a conforming user agent:
 
 ```
-<agent-storage>/graphs/<did:graph:...>/   ← one IndexedDB / OPFS subtree per context
+<agent-storage>/graphs/<content-hash>/    ← one IndexedDB / OPFS subtree per context
 <agent-storage>/graph-stores/<uuid>/      ← GraphStore metadata + mount table
 ```
 
-Two GraphStores within the same agent that mount the same `did:graph:...` MUST share the underlying store. Mounting is by reference.
+Two GraphStores within the same agent that mount the same `graph://<content-hash>` MUST share the underlying store. Mounting is by reference.
 
 ### 8.2 Store Lifecycle
 
@@ -577,15 +609,15 @@ When storage quota is exceeded, the user agent SHOULD prompt the user before evi
 
 ### 8.6 Cross-Origin Access
 
-Origin is not the sole authorisation boundary for context data; the graph DID is. Multiple origins MAY mount the same `did:graph:...` for the same agent, subject to:
+Origin is not the sole authorisation boundary for context data; the graph IRI is. Multiple origins MAY mount the same `graph://<content-hash>` for the same agent, subject to:
 
 1. A user gesture and a user-agent-mediated prompt identifying the requesting origin and the target context.
 2. The origin presenting (or the user supplying) a valid capability proof for the requested mount mode.
 
 ```webidl
 partial interface GraphStore {
-  [NewObject] Promise<undefined> grantOriginAccess(USVString origin, USVString graphDid, MountMode mode);
-  [NewObject] Promise<undefined> revokeOriginAccess(USVString origin, USVString graphDid);
+  [NewObject] Promise<undefined> grantOriginAccess(USVString origin, USVString graphIri, MountMode mode);
+  [NewObject] Promise<undefined> revokeOriginAccess(USVString origin, USVString graphIri);
 };
 ```
 
@@ -621,11 +653,11 @@ A mounted GraphSnapshot inherits its trust from the signatures on the snapshot. 
 
 ### 10.1 Local-First by Default
 
-The GraphStore's private graph and any locally-created contexts are local-first. No data leaves the user's device unless the user explicitly shares a graph DID (via mount, snapshot, or sync space membership).
+The GraphStore's private graph and any locally-created contexts are local-first. No data leaves the user's device unless the user explicitly shares a graph IRI (via mount, snapshot, or sync space membership).
 
 ### 10.2 Per-Context Identity
 
-The recommended privacy posture is per-context identity: an agent may use a different `did:key` (or hold a different delegate key on a `did:graph`) for different contexts. The substrate makes this cheap; the graph DID — not the origin — is the natural correlation boundary.
+The recommended privacy posture is per-context identity: an agent may use a different `did:key` (or, for groupified contexts, hold a different delegate key on a `did:graph`) for different contexts. The substrate makes this cheap; the graph IRI — not the origin — is the natural correlation boundary.
 
 ### 10.3 DID Correlation
 
@@ -633,7 +665,7 @@ If an agent presents the same `did:key` across multiple contexts, those contexts
 
 ### 10.4 Context Metadata
 
-The existence, IRI/DID, and display name of mounted contexts could reveal information. The `list()` and `getContext()` methods MUST only return contexts the calling origin has been granted access to.
+The existence, IRI, optional `did:graph`, and display name of mounted contexts could reveal information. The `list()` and `getContext()` methods MUST only return contexts the calling origin has been granted access to.
 
 ### 10.5 Mount-Table Disclosure
 
@@ -649,14 +681,41 @@ A GraphStore's full mount table is sensitive — it discloses the set of context
 const me = await navigator.graph.create("My Workspace");
 const calendar = await me.createContext({ displayName: "My Calendar" });
 
-console.log(calendar.did);    // "did:graph:z6Mk..."
-console.log(calendar.iri);    // "graph://z6Mk..."
+const iri0 = calendar.iri;    // "graph://<hash-of-empty-or-seed-state>"
+console.log(calendar.did);    // null — ungroupified
 
 await calendar.addTriple(new Triple(
   "urn:event:1",
   "schema://name",
   "Coffee with Alice"
 ));
+
+const iri1 = calendar.iri;
+console.log(iri0 === iri1);   // false — IRI changed because content changed
+// The triple's prov://author is `me`'s did:key (not the graph's identity).
+```
+
+### 11.1a Groupifying for Stable Identity
+
+Without a `did:graph`, the calendar's IRI changes with every write. To give it a sovereign identity that other agents can refer to across mutations, groupify it ([[GROUP-IDENTITY]]):
+
+```javascript
+const calendarGroup = await me.groupify(calendar.iri);
+const sovereignId = calendar.did;   // "did:graph:z6Mk..." — stable
+
+await calendar.addTriple(new Triple("urn:event:2", "schema://name", "Lunch with Bob"));
+console.log(calendar.did === sovereignId);   // true — DID survives content change
+console.log(calendar.iri === iri1);          // false — IRI tracks current snapshot
+```
+
+For applications that mutate a graph and want others to keep referencing the same graph, groupify at creation:
+
+```javascript
+const team = await me.createGroup({
+  displayName: "Engineering",
+  initialDelegates: ["did:key:zAlice...", "did:key:zBob..."],
+});
+console.log(team.did);   // stable from this moment on
 ```
 
 ### 11.2 Reading Triple Provenance
@@ -688,7 +747,7 @@ const results = await me.querySparql(`
 
 ```javascript
 const messages = await me
-  .inContext("did:graph:channel-general")
+  .inContext("graph://<channel-general-hash>")
   .where({ predicate: "msg://body" })
   .include(["channel"])
   .page(0, 20)
@@ -699,21 +758,23 @@ const messages = await me
 
 ```javascript
 // In GraphStore A:
-const snapshot = await calendar.getAsSnapshot({ signBy: "both" });
+const snapshot = await calendar.getAsSnapshot({ signBy: "agent" });
 
 // Transport `snapshot` to GraphStore B (file, IPFS, etc.).
 
 // In GraphStore B:
 const mounted = await otherStore.mountSnapshot(snapshot);
-// `mounted.did` === `snapshot.graphDid`. Both stores now reference the same
+// `mounted.iri` === `snapshot.graphIri`. Both stores now reference the same
 // context. With sync ([[CONTEXT-SYNC]]), writes propagate between them.
+// Note: `signBy: "graph"` is only available when the context has been
+// groupified via [[GROUP-IDENTITY]]; until then, only "agent" works.
 ```
 
 ### 11.6 Subscribing to Context Lifecycle
 
 ```javascript
-me.oncontextmounted = (e) => console.log(`Mounted ${e.graphDid}`);
-me.oncontextcreated = (e) => console.log(`New context ${e.graphDid} created by ${e.creator}`);
+me.oncontextmounted = (e) => console.log(`Mounted ${e.graphIri}`);
+me.oncontextcreated = (e) => console.log(`New context ${e.graphIri} created by ${e.creator}`);
 ```
 
 ---

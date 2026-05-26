@@ -3,19 +3,19 @@
  *
  * Re-exports the package surface AND, as side effects:
  *   - patches DIDCredential.prototype with `addDelegate` / `removeDelegate` /
- *     `grantSection` / `revokeSection` / `signGraph` ([§5.4](https://w3.org/TR/group-identity/#54)).
+ *     `grantSection` / `revokeSection` / `signGraph` ([§5.4]).
  *   - registers the `did:graph` credential creator on identity's polyfill.
  *   - registers the `did:graph` resolver on identity.
- *   - registers a `ContextMethodBinding` on personal-graph so `createContext`
- *     can mint did:graph contexts.
  *   - registers a `GraphDIDWriter` so addDelegate / removeDelegate write
  *     through to the underlying graph store.
  *   - installs the Group convenience methods on `GraphStore`.
  *
  * Import order MUST be:
  *   1. `@living-web/identity/polyfill`
- *   2. `@living-web/group-identity/polyfill`
- *   3. `@living-web/personal-graph/polyfill`
+ *   2. `@living-web/personal-graph/polyfill` (creates navigator.graph)
+ *   3. `@living-web/group-identity/polyfill`
+ *
+ * (group-identity needs personal-graph's manager to exist before binding.)
  */
 
 export * from './index.js';
@@ -28,18 +28,14 @@ import { installGroupExtension } from './extension.js';
 installCredentialAugmentation();
 installGroupExtension();
 
-// The personal-graph polyfill creates its GraphStoreManager lazily on first
-// `install()` call. We need a manager reference for the resolver + writer
-// hooks. Use a thin shim that proxies to whatever manager is current.
+// Wire the did:graph binding. The full GraphStoreManager may not exist yet
+// (personal-graph's install() is what creates it); we use a thin shim that
+// proxies to whatever the manager is *now*.
 installDIDGraphBinding({
   *knownStores() {
     const m = getPersonalGraphManager();
     if (!m) return;
     yield* m.knownStores();
   },
-  async resolveContext(did: string) {
-    const m = getPersonalGraphManager();
-    if (!m) return null;
-    return m.resolveContext(did);
-  },
+  fullManager: () => getPersonalGraphManager(),
 });

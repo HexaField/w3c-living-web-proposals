@@ -109,7 +109,8 @@ export async function createDoc(
   displayName: string, docTitle: string, identity: IdentityProvider, did: string,
 ): Promise<AppState> {
   const store = await navigator.graph.create(docTitle);
-  const context = await store.createContext({ displayName: docTitle });
+  const docGroup = await store.createGroup({ displayName: docTitle });
+  const context = docGroup.context;
   await context.publish();
 
   await ensureShapes(context);
@@ -144,13 +145,14 @@ export async function createDoc(
 }
 
 export async function joinDoc(
-  displayName: string, contextDid: string, identity: IdentityProvider, did: string,
+  displayName: string, contextIri: string, identity: IdentityProvider, did: string,
 ): Promise<AppState> {
   // Cross-tab join: a sibling tab on the same origin will reply via BroadcastChannel
   // with the document state. We create a local placeholder context that mirrors the
   // received state for display purposes.
   const store = await navigator.graph.create(displayName);
-  const placeholderContext = await store.createContext({ displayName: 'pending-join' });
+  const placeholderGroup = await store.createGroup({ displayName: 'pending-join' });
+  const placeholderContext = placeholderGroup.context;
   await placeholderContext.publish();
   const bc = new BroadcastChannel(SYNC_CHANNEL);
 
@@ -171,7 +173,7 @@ export async function joinDoc(
 
     const handler = (ev: MessageEvent) => {
       const msg = ev.data;
-      if (msg.type !== 'doc-sync-response' || msg.contextDid !== contextDid) return;
+      if (msg.type !== 'doc-sync-response' || msg.contextIri !== contextIri) return;
       clearTimeout(timeout);
       bc.removeEventListener('message', handler);
 
@@ -194,7 +196,7 @@ export async function joinDoc(
 
       bc.postMessage({
         type: 'doc-new-collaborator',
-        contextDid,
+        contextIri,
         collaborator: { id: collabId, did, name: displayName, role: myRole, color },
       });
 
@@ -203,21 +205,21 @@ export async function joinDoc(
     };
 
     bc.addEventListener('message', handler);
-    bc.postMessage({ type: 'doc-sync-request', contextDid, did, displayName });
+    bc.postMessage({ type: 'doc-sync-request', contextIri, did, displayName });
   });
 }
 
 function setupCrossTabSync(state: AppState): void {
   const { bc, context } = state;
-  const contextDid = context.did;
+  const contextIri = context.iri;
 
   bc.addEventListener('message', (ev: MessageEvent) => {
     const msg = ev.data;
 
-    if (msg.type === 'doc-sync-request' && msg.contextDid === contextDid && state.isOwner) {
+    if (msg.type === 'doc-sync-request' && msg.contextIri === contextIri && state.isOwner) {
       bc.postMessage({
         type: 'doc-sync-response',
-        contextDid,
+        contextIri,
         ownerDid: state.did,
         docId: state.docId,
         docTitle: state.docTitle,
@@ -227,7 +229,7 @@ function setupCrossTabSync(state: AppState): void {
       });
     }
 
-    if (msg.type === 'doc-block-update' && msg.contextDid === contextDid && msg.did !== state.did) {
+    if (msg.type === 'doc-block-update' && msg.contextIri === contextIri && msg.did !== state.did) {
       const block = state.blocks.find(b => b.id === msg.blockId);
       if (block) {
         block.content = msg.content;
@@ -236,7 +238,7 @@ function setupCrossTabSync(state: AppState): void {
       }
     }
 
-    if (msg.type === 'doc-new-block' && msg.contextDid === contextDid && msg.did !== state.did) {
+    if (msg.type === 'doc-new-block' && msg.contextIri === contextIri && msg.did !== state.did) {
       const idx = state.blocks.findIndex(b => b.id === msg.afterBlockId);
       const block: Block = msg.block;
       if (idx >= 0) state.blocks.splice(idx + 1, 0, block);
@@ -244,7 +246,7 @@ function setupCrossTabSync(state: AppState): void {
       document.dispatchEvent(new CustomEvent('doc-update', { detail: { type: 'new-block' } }));
     }
 
-    if (msg.type === 'doc-delete-block' && msg.contextDid === contextDid && msg.did !== state.did) {
+    if (msg.type === 'doc-delete-block' && msg.contextIri === contextIri && msg.did !== state.did) {
       const idx = state.blocks.findIndex(b => b.id === msg.blockId);
       if (idx >= 0 && state.blocks.length > 1) {
         state.blocks.splice(idx, 1);
@@ -252,14 +254,14 @@ function setupCrossTabSync(state: AppState): void {
       }
     }
 
-    if (msg.type === 'doc-new-collaborator' && msg.contextDid === contextDid) {
+    if (msg.type === 'doc-new-collaborator' && msg.contextIri === contextIri) {
       if (!state.collaborators.find(c => c.did === msg.collaborator.did)) {
         state.collaborators.push(msg.collaborator);
         document.dispatchEvent(new CustomEvent('doc-update', { detail: { type: 'collaborator' } }));
       }
     }
 
-    if (msg.type === 'doc-role-change' && msg.contextDid === contextDid) {
+    if (msg.type === 'doc-role-change' && msg.contextIri === contextIri) {
       const collab = state.collaborators.find(c => c.did === msg.targetDid);
       if (collab) {
         collab.role = msg.newRole;
@@ -271,19 +273,19 @@ function setupCrossTabSync(state: AppState): void {
       }
     }
 
-    if (msg.type === 'doc-cursor' && msg.contextDid === contextDid && msg.did !== state.did) {
+    if (msg.type === 'doc-cursor' && msg.contextIri === contextIri && msg.did !== state.did) {
       state.remoteCursors.set(msg.did, {
         did: msg.did, name: msg.name, color: msg.color, blockId: msg.blockId,
       });
       document.dispatchEvent(new CustomEvent('doc-update', { detail: { type: 'cursor' } }));
     }
 
-    if (msg.type === 'doc-new-comment' && msg.contextDid === contextDid && msg.did !== state.did) {
+    if (msg.type === 'doc-new-comment' && msg.contextIri === contextIri && msg.did !== state.did) {
       state.comments.push(msg.comment);
       document.dispatchEvent(new CustomEvent('doc-update', { detail: { type: 'comment' } }));
     }
 
-    if (msg.type === 'doc-new-reply' && msg.contextDid === contextDid && msg.did !== state.did) {
+    if (msg.type === 'doc-new-reply' && msg.contextIri === contextIri && msg.did !== state.did) {
       const comment = state.comments.find(c => c.id === msg.commentId);
       if (comment) {
         comment.replies.push(msg.reply);
@@ -291,7 +293,7 @@ function setupCrossTabSync(state: AppState): void {
       }
     }
 
-    if (msg.type === 'doc-resolve-comment' && msg.contextDid === contextDid) {
+    if (msg.type === 'doc-resolve-comment' && msg.contextIri === contextIri) {
       const comment = state.comments.find(c => c.id === msg.commentId);
       if (comment) {
         comment.resolved = true;
@@ -299,7 +301,7 @@ function setupCrossTabSync(state: AppState): void {
       }
     }
 
-    if (msg.type === 'doc-title-change' && msg.contextDid === contextDid && msg.did !== state.did) {
+    if (msg.type === 'doc-title-change' && msg.contextIri === contextIri && msg.did !== state.did) {
       state.docTitle = msg.title;
       document.dispatchEvent(new CustomEvent('doc-update', { detail: { type: 'title' } }));
     }
@@ -310,7 +312,7 @@ function setupCrossTabSync(state: AppState): void {
       const myCollab = state.collaborators.find(c => c.did === state.did);
       bc.postMessage({
         type: 'doc-cursor',
-        contextDid,
+        contextIri,
         did: state.did,
         name: state.displayName,
         color: myCollab?.color || '#5865f2',
@@ -323,7 +325,7 @@ function setupCrossTabSync(state: AppState): void {
 export function broadcastBlockUpdate(state: AppState, blockId: string, content: string, blockType?: string): void {
   state.bc.postMessage({
     type: 'doc-block-update',
-    contextDid: state.context.did,
+    contextIri: state.context.iri,
     did: state.did,
     blockId, content, blockType,
   });
@@ -332,7 +334,7 @@ export function broadcastBlockUpdate(state: AppState, blockId: string, content: 
 export function broadcastNewBlock(state: AppState, afterBlockId: string, block: Block): void {
   state.bc.postMessage({
     type: 'doc-new-block',
-    contextDid: state.context.did,
+    contextIri: state.context.iri,
     did: state.did,
     afterBlockId, block,
   });
@@ -341,7 +343,7 @@ export function broadcastNewBlock(state: AppState, afterBlockId: string, block: 
 export function broadcastDeleteBlock(state: AppState, blockId: string): void {
   state.bc.postMessage({
     type: 'doc-delete-block',
-    contextDid: state.context.did,
+    contextIri: state.context.iri,
     did: state.did,
     blockId,
   });
@@ -354,7 +356,7 @@ export function promoteCollaborator(state: AppState, targetDid: string, newRole:
     issueRoleZcap(state.governance, targetDid, newRole, state.did);
     state.bc.postMessage({
       type: 'doc-role-change',
-      contextDid: state.context.did,
+      contextIri: state.context.iri,
       targetDid, newRole, ownerDid: state.did,
     });
     document.dispatchEvent(new CustomEvent('doc-update', { detail: { type: 'role-change' } }));

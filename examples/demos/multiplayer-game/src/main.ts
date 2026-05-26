@@ -50,7 +50,7 @@ function showSetup(): void {
     try {
       const { did, identity } = await createIdentity(displayName);
       const state = await createWorld(displayName, worldName, identity, did);
-      window.location.hash = state.context.did;
+      window.location.hash = state.context.iri;
       startGame(state);
     } catch (e) { alert('Failed: ' + (e as Error).message); }
   });

@@ -34,6 +34,7 @@ interface CredentialsWithResolver {
 }
 
 export class Group {
+  /** The group's `did:graph:...` signing identity — stable across mutations. */
   readonly did: string;
   readonly context: Context;
   readonly name: string;
@@ -44,12 +45,23 @@ export class Group {
   private readonly registry: GroupRegistry;
 
   constructor(context: Context, registry: GroupRegistry, options: GroupOptions = {}) {
+    if (!context.did) {
+      throw new DOMException(
+        `Group requires a groupified context; ${context.id} has no did:graph yet. Call store.groupify() first.`,
+        'InvalidStateError',
+      );
+    }
     this.context = context;
     this.did = context.did;
     this.name = options.displayName || options.name || context.displayName || '';
     this.description = options.description || '';
     this.created = new Date().toISOString();
     this.registry = registry;
+  }
+
+  /** The host context's *current* snapshot IRI. Changes per mutation. */
+  get iri(): string {
+    return this.context.iri;
   }
 
   // ── Participation (NOT signing authority) ─────────────────────────────────

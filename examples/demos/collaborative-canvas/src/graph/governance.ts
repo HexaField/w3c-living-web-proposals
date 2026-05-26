@@ -44,7 +44,7 @@ export function setupGovernance(graph: SharedGraph, ownerDid: string): Governanc
   const rootZcap = createCapability(
     ownerDid,
     ['createLink', 'removeLink', 'updateProperty', 'updateSHACL', 'updateGovernance'],
-    graph.did,
+    graph.iri,
     ownerDid,
     { caveats: [{ type: 'predicate', value: { allowed: OWNER_PREDICATES } }] },
   );

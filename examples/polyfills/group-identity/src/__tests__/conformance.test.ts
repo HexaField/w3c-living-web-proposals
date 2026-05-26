@@ -149,7 +149,9 @@ describe('§5.5 Nested groups (participation chains)', () => {
     const parent = await gs.createGroup({ name: 'Parent' });
     const child = await gs.createGroup({ name: 'Child', participatesIn: parent.did });
 
-    // child.createContext should have written participates_in.
+    // child.createContext writes participates_in with the child's STABLE
+    // identifier (its did:graph, since groupified) as subject — the link
+    // must outlive snapshots, so the volatile IRI can't be the subject.
     const t = await child.context.queryTriples({
       subject: child.did,
       predicate: CONTEXT.PARTICIPATES_IN,

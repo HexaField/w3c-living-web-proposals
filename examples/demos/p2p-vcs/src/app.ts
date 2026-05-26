@@ -158,7 +158,7 @@ export function renderApp(root: HTMLElement, state: AppState): void {
     invite.className = 'invite-section';
     invite.innerHTML = '<label>Fork Link</label>';
     const invInput = document.createElement('input');
-    invInput.value = state.context.did;
+    invInput.value = state.context.iri;
     invInput.readOnly = true;
     invInput.addEventListener('click', () => { invInput.select(); navigator.clipboard?.writeText(invInput.value); });
     invite.appendChild(invInput);

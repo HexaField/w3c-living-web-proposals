@@ -59,7 +59,7 @@ function showSetup(): void {
     try {
       const { did, identity } = await createIdentity(displayName);
       const state = await createCanvas(displayName, canvasName, identity, did);
-      window.location.hash = state.context.did;
+      window.location.hash = state.context.iri;
       launchApp(state);
     } catch (e) { alert('Failed: ' + (e as Error).message); }
   });

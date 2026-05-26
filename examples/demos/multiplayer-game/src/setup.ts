@@ -127,7 +127,8 @@ export async function createWorld(
   displayName: string, worldName: string, identity: IdentityProvider, did: string,
 ): Promise<AppState> {
   const store = await navigator.graph.create(worldName);
-  const context = await store.createContext({ displayName: worldName });
+  const worldGroup = await store.createGroup({ displayName: worldName });
+  const context = worldGroup.context;
   await context.publish();
   await registerShapes(context);
 
@@ -158,10 +159,11 @@ export async function createWorld(
 }
 
 export async function joinWorld(
-  displayName: string, contextDid: string, identity: IdentityProvider, did: string,
+  displayName: string, contextIri: string, identity: IdentityProvider, did: string,
 ): Promise<AppState> {
   const store = await navigator.graph.create(displayName);
-  const placeholderContext = await store.createContext({ displayName: 'pending-join' });
+  const placeholderGroup = await store.createGroup({ displayName: 'pending-join' });
+  const placeholderContext = placeholderGroup.context;
   await placeholderContext.publish();
   await registerShapes(placeholderContext);
 
@@ -182,7 +184,7 @@ export async function joinWorld(
 
     const handler = (ev: MessageEvent) => {
       const data = ev.data;
-      if (data.type !== 'game-sync-response' || data.contextDid !== contextDid) return;
+      if (data.type !== 'game-sync-response' || data.contextIri !== contextIri) return;
       clearTimeout(timeout);
       bc.removeEventListener('message', handler);
 
@@ -209,26 +211,26 @@ export async function joinWorld(
         governance, isOwner: false, bc, identity, governanceLogs: [],
       };
 
-      bc.postMessage({ type: 'game-player-joined', contextDid, player: myPlayer });
+      bc.postMessage({ type: 'game-player-joined', contextIri, player: myPlayer });
       setupCrossTabSync(state);
       resolve(state);
     };
 
     bc.addEventListener('message', handler);
-    bc.postMessage({ type: 'game-sync-request', contextDid, did, displayName });
+    bc.postMessage({ type: 'game-sync-request', contextIri, did, displayName });
   });
 }
 
 function setupCrossTabSync(state: AppState): void {
   const { bc, context } = state;
-  const contextDid = context.did;
+  const contextIri = context.iri;
 
   bc.addEventListener('message', (ev: MessageEvent) => {
     const msg = ev.data;
 
-    if (msg.type === 'game-sync-request' && msg.contextDid === contextDid && state.isOwner) {
+    if (msg.type === 'game-sync-request' && msg.contextIri === contextIri && state.isOwner) {
       bc.postMessage({
-        type: 'game-sync-response', contextDid, ownerDid: state.did,
+        type: 'game-sync-response', contextIri, ownerDid: state.did,
         worldId: state.worldId, worldName: state.worldName,
         players: Array.from(state.players.values()),
         objects: state.objects, collectibles: state.collectibles,
@@ -237,7 +239,7 @@ function setupCrossTabSync(state: AppState): void {
       });
     }
 
-    if (msg.type === 'game-player-joined' && msg.contextDid === contextDid) {
+    if (msg.type === 'game-player-joined' && msg.contextIri === contextIri) {
       if (!state.players.has(msg.player.did)) {
         state.players.set(msg.player.did, msg.player);
         if (state.isOwner) issuePlayerZcap(state.governance, msg.player.did, state.did);
@@ -246,7 +248,7 @@ function setupCrossTabSync(state: AppState): void {
       }
     }
 
-    if (msg.type === 'game-position' && msg.contextDid === contextDid && msg.did !== state.did) {
+    if (msg.type === 'game-position' && msg.contextIri === contextIri && msg.did !== state.did) {
       const p = state.players.get(msg.did);
       if (p) {
         p.x = msg.x; p.y = msg.y; p.z = msg.z; p.rotation = msg.rotation;
@@ -254,7 +256,7 @@ function setupCrossTabSync(state: AppState): void {
       document.dispatchEvent(new CustomEvent('game-update', { detail: { type: 'position' } }));
     }
 
-    if (msg.type === 'game-collect' && msg.contextDid === contextDid) {
+    if (msg.type === 'game-collect' && msg.contextIri === contextIri) {
       const c = state.collectibles.find(c => c.id === msg.collectibleId);
       if (c && !c.collectedBy) {
         c.collectedBy = msg.did;
@@ -270,7 +272,7 @@ function setupCrossTabSync(state: AppState): void {
       }
     }
 
-    if (msg.type === 'game-chat' && msg.contextDid === contextDid && msg.msg.authorDid !== state.did) {
+    if (msg.type === 'game-chat' && msg.contextIri === contextIri && msg.msg.authorDid !== state.did) {
       state.chatMessages.push(msg.msg);
       document.dispatchEvent(new CustomEvent('game-update', { detail: { type: 'chat' } }));
     }

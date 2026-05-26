@@ -48,7 +48,7 @@ export function createGovernanceLayer(context: Context, opts: GovernanceOptions 
   const expressionStore = new Map<string, unknown>();
 
   const ctx: ValidationContext = {
-    graphDid: context.did,
+    graphDid: (context.did ?? context.iri),
     rootCapabilityId: opts.rootCapabilityId ?? null,
     enforcementMode: opts.enforcementMode ?? 'open',
     queryTriples: async (q) => {
@@ -78,7 +78,7 @@ export function createGovernanceLayer(context: Context, opts: GovernanceOptions 
   (async () => {
     if (!ctx.rootCapabilityId) {
       const triples = await ctx.queryTriples({
-        subject: context.did,
+        subject: (context.did ?? context.iri),
         predicate: GOV.ROOT_CAPABILITY,
       });
       if (triples.length > 0) ctx.rootCapabilityId = triples[0].data.object;
@@ -106,7 +106,7 @@ export function createGovernanceLayer(context: Context, opts: GovernanceOptions 
     },
 
     async constraintsFor(contextDid) {
-      return engine.constraintsFor(contextDid ?? context.did);
+      return engine.constraintsFor(contextDid ?? (context.did ?? context.iri));
     },
 
     async myCapabilities(myDid) {
@@ -119,7 +119,7 @@ export function createGovernanceLayer(context: Context, opts: GovernanceOptions 
 
     async setEnforcementMode(mode) {
       await context.addTriple({
-        subject: context.did,
+        subject: (context.did ?? context.iri),
         predicate: GOV.ENFORCEMENT_MODE,
         object: `"${mode}"`,
       });

@@ -26,6 +26,23 @@ import {
 
 const DEFAULT_MODULE_HASH = 'sha256-default-or-set-crdt-v1';
 
+/**
+ * Sync requires the context to have a stable, content-independent identity —
+ * a `did:graph` ([[GROUP-IDENTITY]]). Ungroupified contexts have only a
+ * content-hash IRI that changes per mutation; they cannot be subscribed to
+ * across edits. Throw `NotSupportedError` if the context isn't groupified.
+ */
+function requireDid(context: Context): string {
+  if (!context.did) {
+    throw new DOMException(
+      `Context ${context.iri} is not groupified — sync requires a did:graph (per [[GROUP-IDENTITY]]). ` +
+      `Call store.groupify() or store.createGroup() before publish().`,
+      'NotSupportedError',
+    );
+  }
+  return context.did;
+}
+
 interface PublishedState {
   spaceUri: string;
   moduleHash: string;
@@ -71,7 +88,7 @@ function emitDiff(context: Context, additions: SignedTriple[], removals: SignedT
   if (!state) return;
   const author = context.getIdentity().getDID();
   const diff = createContextDiff({
-    graphDid: context.did,
+    graphDid: requireDid(context),
     additions,
     removals,
     dependencies: state.revisionChain.length === 0 ? [] : [state.revisionChain[state.revisionChain.length - 1]],
@@ -91,7 +108,7 @@ export const defaultSyncModule: ContextSyncRuntime = {
     const existing = published.get(context);
     if (existing) {
       return {
-        graphDid: context.did,
+        graphDid: requireDid(context),
         spaceUri: existing.spaceUri,
         moduleHash: existing.moduleHash,
         relays: existing.relays,
@@ -100,7 +117,7 @@ export const defaultSyncModule: ContextSyncRuntime = {
 
     const moduleHash = options.moduleHash ?? DEFAULT_MODULE_HASH;
     const topology = options.spaceTopology ?? 'unified';
-    const spaceUri = deriveSpaceUri(topology, context.did, { customName: options.customSpace });
+    const spaceUri = deriveSpaceUri(topology, requireDid(context), { customName: options.customSpace });
     const sessionId = getSessionId();
 
     let channel: BroadcastChannel | null = null;
@@ -111,7 +128,7 @@ export const defaultSyncModule: ContextSyncRuntime = {
         if (msg.origin === sessionId) return;
         const state = published.get(context);
         if (!state) return;
-        if (msg.type === 'DIFF' && msg.diff.graphDid === context.did) {
+        if (msg.type === 'DIFF' && msg.diff.graphDid === requireDid(context)) {
           const diff = new ContextDiff({
             graphDid: msg.diff.graphDid,
             revision: msg.diff.revision,
@@ -191,7 +208,7 @@ export const defaultSyncModule: ContextSyncRuntime = {
     state.syncState = 'synced';
     context.dispatchEvent(new SyncStateChangeEvent('synced'));
 
-    return { graphDid: context.did, spaceUri, moduleHash, relays: [...state.relays] };
+    return { graphDid: requireDid(context), spaceUri, moduleHash, relays: [...state.relays] };
   },
 
   async unpublish(context: Context): Promise<void> {
@@ -228,7 +245,7 @@ export const defaultSyncModule: ContextSyncRuntime = {
       return state.revisionChain[state.revisionChain.length - 1];
     }
     const snap = await context.snapshot();
-    return computeRevision(context.did, snap, [], []);
+    return computeRevision(requireDid(context), snap, [], []);
   },
 
   async sendSignal(context: Context, remoteDid: string, payload: BufferSource): Promise<void> {

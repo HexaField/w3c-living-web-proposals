@@ -97,7 +97,8 @@ export async function createRepo(
   displayName: string, repoName: string, identity: IdentityProvider, did: string,
 ): Promise<AppState> {
   const store = await navigator.graph.create(repoName);
-  const context = await store.createContext({ displayName: repoName });
+  const repoGroup = await store.createGroup({ displayName: repoName });
+  const context = repoGroup.context;
   await context.publish();
   await registerShapes(context);
 
@@ -160,10 +161,11 @@ export async function createRepo(
 }
 
 export async function forkRepo(
-  displayName: string, contextDid: string, identity: IdentityProvider, did: string,
+  displayName: string, contextIri: string, identity: IdentityProvider, did: string,
 ): Promise<AppState> {
   const store = await navigator.graph.create(displayName);
-  const placeholderContext = await store.createContext({ displayName: 'pending-fork' });
+  const placeholderGroup = await store.createGroup({ displayName: 'pending-fork' });
+  const placeholderContext = placeholderGroup.context;
   await placeholderContext.publish();
   await registerShapes(placeholderContext);
 
@@ -186,7 +188,7 @@ export async function forkRepo(
 
     const handler = (ev: MessageEvent) => {
       const data = ev.data;
-      if (data.type !== 'vcs-sync-response' || data.contextDid !== contextDid) return;
+      if (data.type !== 'vcs-sync-response' || data.contextIri !== contextIri) return;
       clearTimeout(timeout);
       bc.removeEventListener('message', handler);
 
@@ -212,7 +214,7 @@ export async function forkRepo(
 
       bc.postMessage({
         type: 'vcs-new-contributor',
-        contextDid,
+        contextIri,
         contributor: { id: contribId, did, name: displayName, role: 'contributor' },
       });
 
@@ -221,21 +223,21 @@ export async function forkRepo(
     };
 
     bc.addEventListener('message', handler);
-    bc.postMessage({ type: 'vcs-sync-request', contextDid, did, displayName });
+    bc.postMessage({ type: 'vcs-sync-request', contextIri, did, displayName });
   });
 }
 
 function setupCrossTabSync(state: AppState): void {
   const { bc, context } = state;
-  const contextDid = context.did;
+  const contextIri = context.iri;
 
   bc.addEventListener('message', (ev: MessageEvent) => {
     const msg = ev.data;
 
-    if (msg.type === 'vcs-sync-request' && msg.contextDid === contextDid && state.isOwner) {
+    if (msg.type === 'vcs-sync-request' && msg.contextIri === contextIri && state.isOwner) {
       bc.postMessage({
         type: 'vcs-sync-response',
-        contextDid,
+        contextIri,
         ownerDid: state.did,
         repoId: state.repoId,
         repoName: state.repoName,
@@ -246,7 +248,7 @@ function setupCrossTabSync(state: AppState): void {
       });
     }
 
-    if (msg.type === 'vcs-new-commit' && msg.contextDid === contextDid && msg.commit.authorDid !== state.did) {
+    if (msg.type === 'vcs-new-commit' && msg.contextIri === contextIri && msg.commit.authorDid !== state.did) {
       state.commits.push(msg.commit);
       const branch = state.branches.find(b => b.id === msg.branchId);
       if (branch) branch.headCommitId = msg.commit.id;
@@ -256,14 +258,14 @@ function setupCrossTabSync(state: AppState): void {
       document.dispatchEvent(new CustomEvent('vcs-update', { detail: { type: 'commit' } }));
     }
 
-    if (msg.type === 'vcs-new-branch' && msg.contextDid === contextDid) {
+    if (msg.type === 'vcs-new-branch' && msg.contextIri === contextIri) {
       if (!state.branches.find(b => b.id === msg.branch.id)) {
         state.branches.push(msg.branch);
         document.dispatchEvent(new CustomEvent('vcs-update', { detail: { type: 'branch' } }));
       }
     }
 
-    if (msg.type === 'vcs-new-contributor' && msg.contextDid === contextDid) {
+    if (msg.type === 'vcs-new-contributor' && msg.contextIri === contextIri) {
       if (!state.contributors.find(c => c.did === msg.contributor.did)) {
         state.contributors.push(msg.contributor);
         if (state.isOwner) issueContributorZcap(state.governance, msg.contributor.did, state.did);
@@ -271,7 +273,7 @@ function setupCrossTabSync(state: AppState): void {
       }
     }
 
-    if (msg.type === 'vcs-editing' && msg.contextDid === contextDid && msg.did !== state.did) {
+    if (msg.type === 'vcs-editing' && msg.contextIri === contextIri && msg.did !== state.did) {
       if (msg.filePath) {
         state.editingIndicators.set(msg.filePath, msg.displayName);
       } else {
@@ -342,7 +344,7 @@ export async function createCommit(
 
   state.bc.postMessage({
     type: 'vcs-new-commit',
-    contextDid: state.context.did,
+    contextIri: state.context.iri,
     branchId: state.currentBranchId,
     commit,
   });
@@ -365,7 +367,7 @@ export function createBranch(state: AppState, name: string): Branch {
   };
 
   state.branches.push(branch);
-  state.bc.postMessage({ type: 'vcs-new-branch', contextDid: state.context.did, branch });
+  state.bc.postMessage({ type: 'vcs-new-branch', contextIri: state.context.iri, branch });
   document.dispatchEvent(new CustomEvent('vcs-update', { detail: { type: 'branch' } }));
   return branch;
 }
@@ -388,7 +390,7 @@ export function switchBranch(state: AppState, branchId: string): void {
 export function broadcastEditing(state: AppState, filePath: string | null): void {
   state.bc.postMessage({
     type: 'vcs-editing',
-    contextDid: state.context.did,
+    contextIri: state.context.iri,
     did: state.did,
     displayName: state.displayName,
     filePath,

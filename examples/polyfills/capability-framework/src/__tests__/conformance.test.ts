@@ -39,7 +39,11 @@ beforeEach(async () => {
   const eph = new EphemeralIdentity();
   await eph.ensureReady();
   identity = eph;
+  // Construct with the did:graph as the internal id (it doubles as the
+  // groupified identity, since these tests pre-suppose the context is
+  // "the graph identified by GRAPH_DID"). setDid pins the sovereign id.
   context = new Context(GRAPH_DID, 'Test', identity, store);
+  context.setDid(GRAPH_DID);
 });
 
 function makeContext(): ValidationContext {

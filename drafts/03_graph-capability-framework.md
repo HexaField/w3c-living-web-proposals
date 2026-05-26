@@ -9,7 +9,7 @@
 
 ## Abstract
 
-This specification defines a capability-based authorisation framework for linked data **contexts** (named graphs identified by `did:graph:...` DIDs, as defined in [[PERSONAL-LINKED-DATA-GRAPHS]]). It defines a **root capability** minted at context creation, a delegation algebra for [[ZCAP-LD]] capabilities targeting context DIDs, a **caveat type system** for fine-grained attenuation, three explicit **enforcement modes** (Open / Announced / Enforced), and a scope-inheritance mechanism via mutual `context://participates_in` / `context://accepts_participation` declarations. The framework is *vocabulary-neutral*: it defines the structure of capability chains and caveats, and an extension point through which specific constraint kinds (temporal, content, credential, shape — supplied by [[CONSTRAINT-VOCABULARY]]) plug in. Authority is constituted, not granted — no principal sits above the structure; capability chains trace to each context's own root capability. This specification builds on the DID-document delegate model in [[GROUP-IDENTITY]].
+This specification defines a capability-based authorisation framework for linked data **contexts** (named graphs identified by `graph://<content-hash>` IRIs, as defined in [[PERSONAL-LINKED-DATA-GRAPHS]]). It defines a **root capability** minted at context creation, a delegation algebra for [[ZCAP-LD]] capabilities targeting context IRIs, a **caveat type system** for fine-grained attenuation, three explicit **enforcement modes** (Open / Announced / Enforced), and a scope-inheritance mechanism via mutual `context://participates_in` / `context://accepts_participation` declarations. The framework is *vocabulary-neutral*: it defines the structure of capability chains and caveats, and an extension point through which specific constraint kinds (temporal, content, credential, shape — supplied by [[CONSTRAINT-VOCABULARY]]) plug in. Authority is constituted, not granted — no principal sits above the structure; capability chains trace to each context's own root capability. A ZCAP's `invoker` is a DID — typically an individual's `did:key` — and the framework treats a context's optional `did:graph` (from [[GROUP-IDENTITY]]) as an additional invoker form: when a capability is invoked by a delegate of a context's DID, the framework consults that context's DID document via [[GROUP-IDENTITY]] §5 to verify the signer.
 
 ---
 
@@ -53,13 +53,17 @@ This specification places authorisation at the data layer: every triple write ma
 
 ### 1.2 Authority Is Constituted, Not Granted
 
-When a context comes into existence, a single **root capability** is minted as a ZCAP, signed by the creator using their `did:key` (or, for a context created within a parent context, signed by a `capabilityDelegation` delegate of the parent's `did:graph`).
+When a context comes into existence, a single **root capability** is minted as a ZCAP, signed by the creator using their `did:key` (or, for a context created within a *groupified* parent context, signed by a `capabilityDelegation` delegate of the parent's `did:graph`).
 
 From that moment, the structure of who-can-do-what is the accumulated history of delegations made by participants according to the governance rules they themselves defined. No principal sits above the structure. The creator initially holds the root capability and MAY delegate or rotate it — but as soon as they delegate it, others have equal standing under the new rules. Authority is **constituted**, not granted.
 
 ### 1.3 ZCAPs Target Graph DIDs
 
-The critical architectural decision: **a `did:graph:...` is the canonical resource of a ZCAP**. A capability that grants "createLink in `did:graph:abc...`" is portable across every GraphStore and every agent that mounts that context — because the context itself is canonically identified.
+The critical architectural decision: **a graph's *sovereign* identifier is the canonical resource of a ZCAP that governs its evolution**. A graph IRI (`graph://<content-hash>`) is a snapshot address — it changes whenever the graph's triples change (see [[PERSONAL-LINKED-DATA-GRAPHS]] §3.3) — and so cannot serve as the resource of a ZCAP that is meant to outlive even a single write. A `did:graph:...` ([[GROUP-IDENTITY]]) does not change with content, so it can. Therefore:
+
+- For a context that has been **groupified**, ZCAP `resource` SHOULD be the `did:graph:...`. Capabilities then survive every mutation to the graph's content.
+- A ZCAP MAY target a `graph://<content-hash>` IRI when authority is *deliberately* scoped to one snapshot — for example, "may sign a republication of *this specific* state". Such capabilities expire (in the sense that they no longer match the context's current resource) as soon as the graph mutates; this is the intended semantics.
+- For an **ungroupified** context the only identifier available is its current IRI. ZCAPs against ungroupified contexts therefore only make sense for one-shot, immutable artifacts. Long-lived governance against a mutable graph REQUIRES groupification.
 
 ### 1.4 Enforcement Modes
 
@@ -114,7 +118,7 @@ A conforming **application** MAY call the governance engine's query methods to d
 <dl>
 
 <dt>Context</dt>
-<dd>A named graph identified by a <code>did:graph:...</code> DID. The unit of governance. See [[PERSONAL-LINKED-DATA-GRAPHS]] §3.3.</dd>
+<dd>A named graph identified by a <code>graph://&lt;content-hash&gt;</code> IRI, optionally also addressable by a <code>did:graph:...</code> DID when groupified. The unit of governance. See [[PERSONAL-LINKED-DATA-GRAPHS]] §3.3.</dd>
 
 <dt>Triple</dt>
 <dd>A directed, labelled relationship (subject, predicate, object). See [[PERSONAL-LINKED-DATA-GRAPHS]] §3.1.</dd>
@@ -200,7 +204,7 @@ A parent cannot reach into a child's graph to modify the child's constraints. On
 When a context is created, a **root capability** is minted as a ZCAP. The capability is signed:
 
 - By the creator's `did:key` if the context is created standalone.
-- By a `capabilityDelegation` delegate of the creating context's `did:graph` if the context is created as a participant of a parent.
+- By a `capabilityDelegation` delegate of the creating context's `did:graph` if the context is created as a participant of a *groupified* parent (per [[GROUP-IDENTITY]]).
 
 The root capability is recorded in the new context as:
 
@@ -285,7 +289,7 @@ Authorisation capabilities are stored as JSON-LD documents conforming to [[ZCAP-
 | `invoker` | DID | REQUIRED | The agent (or graph DID) authorised to exercise this capability |
 | `parentCapability` | URN UUID or `null` | REQUIRED | Identifier of the parent capability. `null` for the root capability. |
 | `actions` | Array of strings | REQUIRED | Actions this capability authorises ([§4.5.3](#453-actions)). |
-| `resource` | URI | REQUIRED | The context's `did:graph:...`. |
+| `resource` | URI | REQUIRED | The context's `did:graph:...` for long-lived governance (RECOMMENDED for any groupified context). A `graph://<content-hash>` IRI MAY be used when authority is deliberately scoped to a specific snapshot — see [§3](#3-zcap-shape). |
 | `caveats` | Array of caveat objects | OPTIONAL | Fine-grained constraints ([§9](#9-caveat-type-system)). |
 | `proof` | Object | REQUIRED | Cryptographic proof signed by the delegator. The delegator MUST be the `invoker` of the parent capability (or the holder of a `capabilityDelegation` delegate key on the parent invoker's DID document if the parent invoker is a graph DID). |
 
@@ -452,7 +456,7 @@ Implementations SHOULD cache ancestry chains and invalidate when participation l
 
 5. **Evaluate each capability.**
    1. **Action match.** *action* MUST be in `cap.actions`.
-   2. **Resource match.** `cap.resource` MUST equal the context's `did:graph:...` or be an ancestor in the scope chain.
+   2. **Resource match.** `cap.resource` MUST equal the context's `did:graph:...` (for a groupified context — the stable, content-independent identifier) OR the context's current IRI (when the capability is deliberately scoped to this specific snapshot), or be an ancestor in the scope chain. Capabilities whose `resource` is an IRI that no longer matches the current state do not apply.
    3. **Expiry check.** If `caveats[].expiry.expiresAt` is set and exceeded, skip.
    4. **Revocation check.** If a valid revocation targets this `cap.id`, skip.
    5. **Caveat check.** Evaluate each caveat ([§9](#9-caveat-type-system)) against the operation. If any fails, skip.
@@ -621,7 +625,7 @@ dictionary GraphConstraint {
 dictionary CapabilityInfo {
   required USVString id;
   required sequence<USVString> actions;
-  required USVString resource;     // context did:graph:...
+  required USVString resource;     // did:graph:... (RECOMMENDED) or specific-snapshot graph IRI
   sequence<object> caveats;
   DOMString? expires;
 };
@@ -798,7 +802,7 @@ const general = await me.createContext({
   participatesIn: community.did
 });
 // The runtime:
-//   1. Mints a fresh did:graph for #general.
+//   1. Mints a fresh graph IRI for #general (optionally groupified per Spec 10).
 //   2. Issues a bootstrap ZCAP from community.did (signed by an authorised
 //      capabilityDelegation delegate of community).
 //   3. Constitutionalises it as <#general.did> -[governance://root_capability]→ ...

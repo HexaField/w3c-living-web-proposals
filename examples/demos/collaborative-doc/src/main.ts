@@ -67,7 +67,7 @@ function showSetup(): void {
     try {
       const { did, identity } = await createIdentity(displayName);
       const state = await createDoc(displayName, docTitle, identity, did);
-      window.location.hash = state.context.did;
+      window.location.hash = state.context.iri;
       launchApp(state);
     } catch (e) {
       console.error('Failed to create document:', e);
@@ -77,13 +77,13 @@ function showSetup(): void {
 
   document.getElementById('btn-join')?.addEventListener('click', async () => {
     const displayName = (document.getElementById('display-name') as HTMLInputElement).value.trim();
-    const contextDid = (document.getElementById('graph-uri') as HTMLInputElement).value.trim();
+    const contextIri = (document.getElementById('graph-uri') as HTMLInputElement).value.trim();
     if (!displayName) { alert('Please enter a display name'); return; }
-    if (!contextDid) { alert('Please enter a context DID'); return; }
+    if (!contextIri) { alert('Please enter a context DID'); return; }
     try {
       const { did, identity } = await createIdentity(displayName);
-      const state = await joinDoc(displayName, contextDid, identity, did);
-      window.location.hash = contextDid;
+      const state = await joinDoc(displayName, contextIri, identity, did);
+      window.location.hash = contextIri;
       launchApp(state);
     } catch (e) {
       console.error('Failed to join document:', e);

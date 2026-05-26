@@ -30,5 +30,10 @@ export {
   type GraphDIDWriter,
 } from './credential.js';
 
-// Binding installer
-export { installDIDGraphBinding } from './binding.js';
+// Binding installer + groupify operation
+export {
+  installDIDGraphBinding,
+  groupifyContext,
+  type GroupifyOptions,
+  type GroupifyResult,
+} from './binding.js';

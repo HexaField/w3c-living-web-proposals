@@ -215,7 +215,7 @@ export async function joinCommunity(
       bc.removeEventListener('message', handler);
 
       const governance = setupGovernance(context, data.ownerDid);
-      issueMemberZcap(governance, did, context.did, data.ownerDid);
+      issueMemberZcap(governance, did, context.iri, data.ownerDid);
 
       if (data.slowModeChannels) for (const [k, v] of Object.entries(data.slowModeChannels)) governance.slowModeChannels.set(k, v as number);
       if (data.readOnlyChannels) for (const ch of data.readOnlyChannels) governance.readOnlyChannels.add(ch as string);
@@ -281,10 +281,10 @@ function setupCrossTabSync(state: AppState): void {
   const { bc, context } = state;
   bc.addEventListener('message', (ev: MessageEvent) => {
     const msg = ev.data;
-    if (msg.type === 'sync-request' && msg.groupDid === context.did && state.isOwner) {
+    if (msg.type === 'sync-request' && msg.groupDid === context.iri && state.isOwner) {
       bc.postMessage({
         type: 'sync-response',
-        groupDid: context.did,
+        groupDid: context.iri,
         ownerDid: state.did,
         communityId: state.communityId,
         communityName: state.communityName,
@@ -297,7 +297,7 @@ function setupCrossTabSync(state: AppState): void {
         bannedDids: [...state.governance.bannedDids],
       });
     }
-    if (msg.type === 'new-message' && msg.groupDid === context.did && msg.message.authorDid !== state.did) {
+    if (msg.type === 'new-message' && msg.groupDid === context.iri && msg.message.authorDid !== state.did) {
       const chMsgs = state.messages.get(msg.message.channelId) ?? [];
       const m = msg.message;
       chMsgs.push({
@@ -307,21 +307,21 @@ function setupCrossTabSync(state: AppState): void {
       state.messages.set(msg.message.channelId, chMsgs);
       document.dispatchEvent(new CustomEvent('chat-update', { detail: { type: 'message' } }));
     }
-    if (msg.type === 'new-member' && msg.groupDid === context.did) {
+    if (msg.type === 'new-member' && msg.groupDid === context.iri) {
       if (!state.members.find(m => m.did === msg.member.did)) {
         state.members.push(msg.member);
-        if (state.isOwner) issueMemberZcap(state.governance, msg.member.did, context.did, state.did);
+        if (state.isOwner) issueMemberZcap(state.governance, msg.member.did, context.iri, state.did);
         document.dispatchEvent(new CustomEvent('chat-update', { detail: { type: 'member' } }));
       }
     }
-    if (msg.type === 'new-channel' && msg.groupDid === context.did) {
+    if (msg.type === 'new-channel' && msg.groupDid === context.iri) {
       if (!state.channels.find(c => c.id === msg.channel.id)) {
         state.channels.push(msg.channel);
         state.messages.set(msg.channel.id, []);
         document.dispatchEvent(new CustomEvent('chat-update', { detail: { type: 'channel' } }));
       }
     }
-    if (msg.type === 'governance-update' && msg.groupDid === context.did) {
+    if (msg.type === 'governance-update' && msg.groupDid === context.iri) {
       if (msg.action === 'slow-mode') {
         if (msg.interval > 0) state.governance.slowModeChannels.set(msg.channelId, msg.interval);
         else state.governance.slowModeChannels.delete(msg.channelId);
@@ -335,7 +335,7 @@ function setupCrossTabSync(state: AppState): void {
       }
       document.dispatchEvent(new CustomEvent('chat-update', { detail: { type: 'governance' } }));
     }
-    if (msg.type === 'reaction' && msg.groupDid === context.did) {
+    if (msg.type === 'reaction' && msg.groupDid === context.iri) {
       const chMsgs = state.messages.get(msg.channelId) ?? [];
       const chatMsg = chMsgs.find(m => m.id === msg.messageId);
       if (chatMsg) {
@@ -344,7 +344,7 @@ function setupCrossTabSync(state: AppState): void {
         document.dispatchEvent(new CustomEvent('chat-update', { detail: { type: 'reaction' } }));
       }
     }
-    if (msg.type === 'delete-message' && msg.groupDid === context.did) {
+    if (msg.type === 'delete-message' && msg.groupDid === context.iri) {
       const chMsgs = state.messages.get(msg.channelId) ?? [];
       const idx = chMsgs.findIndex(m => m.id === msg.messageId);
       if (idx !== -1) {

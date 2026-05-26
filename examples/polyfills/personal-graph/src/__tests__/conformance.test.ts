@@ -2,7 +2,7 @@
  * Conformance tests for @living-web/personal-graph.
  */
 
-import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import 'fake-indexeddb/auto';
 
 import {
@@ -18,64 +18,9 @@ import {
   computeContentHash,
   getAsSnapshot,
   parseSnapshot,
-  registerContextMethodBinding,
   type SignedTriple,
   type IdentityProvider,
 } from '../index.js';
-import {
-  DIDCredential,
-  encodeEd25519Multibase,
-  ed25519,
-  randomPrivateKey,
-  storeCredential,
-} from '@living-web/identity';
-
-// Register a minimal did:graph binding so GraphStoreManager.create / Context
-// creation tests can run without the full group-identity polyfill installed.
-// (group-identity provides the production binding; tests stub it to avoid a
-// workspace cycle.)
-beforeAll(() => {
-  registerContextMethodBinding({
-    async mintContextCredential(displayName, passphrase) {
-      const privateKey = randomPrivateKey();
-      const publicKey = await ed25519.getPublicKeyAsync(privateKey);
-      const id = encodeEd25519Multibase(publicKey);
-      const did = `did:graph:${id}`;
-      const methodId = `${did}#${id}`;
-      const createdAt = new Date().toISOString();
-      await storeCredential(methodId, 'Ed25519', displayName, createdAt, publicKey, privateKey, passphrase);
-      const credential = new DIDCredential(did, methodId, 'Ed25519', displayName, createdAt, publicKey, privateKey);
-      return { credential, publicKey, privateKey };
-    },
-    *seedTriples(graphDid) {
-      const id = graphDid.slice('did:graph:'.length);
-      const methodId = `${graphDid}#${id}`;
-      yield { subject: graphDid, predicate: 'did://hasMethod', object: methodId };
-      yield { subject: methodId, predicate: 'did://verificationMethod/type', object: '"Ed25519VerificationKey2020"' };
-      yield { subject: methodId, predicate: 'did://verificationMethod/controller', object: graphDid };
-      yield { subject: methodId, predicate: 'did://verificationMethod/publicKeyMultibase', object: `"${id}"` };
-      for (const sec of ['capabilityInvocation', 'capabilityDelegation', 'assertionMethod', 'authentication']) {
-        yield { subject: graphDid, predicate: `did://${sec}`, object: methodId };
-      }
-    },
-    *addDelegateTriples(graphDid, delegateDid, sections) {
-      const id = delegateDid.split(':').pop()?.slice(0, 16) ?? 'delegate';
-      const methodId = `${graphDid}#${id}`;
-      yield { subject: graphDid, predicate: 'did://hasMethod', object: methodId };
-      for (const sec of sections) {
-        yield { subject: graphDid, predicate: `did://${sec}`, object: methodId };
-      }
-    },
-    publicKeyFromDid(did) {
-      // The tests don't actually use this in the cases that matter — return zero bytes.
-      if (did.startsWith('did:key:') || did.startsWith('did:graph:')) {
-        const tail = did.split(':').pop() ?? '';
-        return new Uint8Array(32); // stub
-      }
-      throw new Error(`Unsupported DID: ${did}`);
-    },
-  });
-});
 
 let store: GraphStorage;
 
@@ -226,8 +171,8 @@ describe('Graph snapshots', () => {
   it('round-trips through snapshot serialise → parse', async () => {
     const id = new EphemeralIdentity();
     await id.ensureReady();
-    const t = await signTripleWithReifier(new Triple('urn:a', 'pred://x', 'value'), id, 'did:graph:g');
-    const snap = await getAsSnapshot('did:graph:g', [reifierToSigned(t)], id, null, { signBy: 'agent' });
+    const t = await signTripleWithReifier(new Triple('urn:a', 'pred://x', 'value'), id, 'graph://test');
+    const snap = await getAsSnapshot('graph://test', null, [reifierToSigned(t)], id, null, { signBy: 'agent' });
     const parsed = parseSnapshot(snap);
     expect(parsed.triples).toHaveLength(1);
     expect(parsed.triples[0].subject).toBe('urn:a');
@@ -238,7 +183,7 @@ describe('Graph snapshots', () => {
   it('snapshot proofs include the requested role', async () => {
     const id = new EphemeralIdentity();
     await id.ensureReady();
-    const snap = await getAsSnapshot('did:graph:g', [], id, null, { signBy: 'agent' });
+    const snap = await getAsSnapshot('graph://test', null, [], id, null, { signBy: 'agent' });
     expect(snap.proofs).toHaveLength(1);
     expect(snap.proofs[0].role).toBe('agent');
   });
@@ -250,21 +195,29 @@ describe('GraphStoreManager', () => {
     await eph.ensureReady();
     const manager = new GraphStoreManager(store, async () => eph);
     const gs = await manager.create('Test Workspace');
-    expect(gs.privateGraphDid.startsWith('did:graph:')).toBe(true);
+    expect(typeof gs.privateContextId).toBe('string');
+    expect(gs.privateContextId.length).toBeGreaterThan(0);
     const priv = gs.privateGraph();
     expect(priv).toBeDefined();
     expect(priv?.mountMode).toBe('governance');
+    expect(priv?.iri.startsWith('graph://')).toBe(true);   // content-hash form
+    expect(priv?.did).toBeNull();   // private graph is ungroupified
   });
 
-  it('createContext mints a fresh did:graph and writes seed DID-document triples', async () => {
+  it('createContext returns an ungroupified context whose IRI advances with each write', async () => {
     const eph = new EphemeralIdentity();
     await eph.ensureReady();
     const manager = new GraphStoreManager(store, async () => eph);
     const gs = await manager.create('Workspace');
     const ctx = await gs.createContext({ displayName: 'Calendar' });
-    expect(ctx.did.startsWith('did:graph:')).toBe(true);
-    const docTriples = await ctx.queryTriples({ subject: ctx.did });
-    expect(docTriples.length).toBeGreaterThan(0);
+    const iri0 = ctx.iri;
+    expect(iri0.startsWith('graph://')).toBe(true);
+    expect(ctx.did).toBeNull();   // ungroupified by default
+
+    await ctx.addTriple(new Triple('urn:event:1', 'pred://x', 'value'));
+    const iri1 = ctx.iri;
+    expect(iri1).not.toBe(iri0);   // mutation produced a new IRI
+    expect(iri1.startsWith('graph://')).toBe(true);
   });
 
   it('participatesIn writes the context://participates_in triple', async () => {
@@ -273,23 +226,23 @@ describe('GraphStoreManager', () => {
     const manager = new GraphStoreManager(store, async () => eph);
     const gs = await manager.create('Workspace');
     const parent = await gs.createContext({ displayName: 'Parent' });
-    const child = await gs.createContext({ displayName: 'Child', participatesIn: parent.did });
+    const parentIriAtCreate = parent.iri;
+    const child = await gs.createContext({ displayName: 'Child', participatesIn: parentIriAtCreate });
     const participation = await child.queryTriples({
-      subject: child.did,
       predicate: 'context://participates_in',
     });
     expect(participation).toHaveLength(1);
-    expect(participation[0].data.object).toBe(parent.did);
+    expect(participation[0].data.object).toBe(parentIriAtCreate);
   });
 
-  it('resolveContext finds a mounted context by DID', async () => {
+  it('resolveContext finds a mounted context by id', async () => {
     const eph = new EphemeralIdentity();
     await eph.ensureReady();
     const manager = new GraphStoreManager(store, async () => eph);
     const gs = await manager.create('Workspace');
     const ctx = await gs.createContext();
-    const found = await manager.resolveContext(ctx.did);
-    expect(found?.did).toBe(ctx.did);
+    const found = await manager.resolveContext(ctx.id);
+    expect(found?.id).toBe(ctx.id);
   });
 });
 

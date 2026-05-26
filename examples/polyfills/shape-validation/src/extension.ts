@@ -114,7 +114,7 @@ async function addShape(this: Context, name: string, shapeJson: string): Promise
   const definition = validateShapeDefinition(shapeJson);
   const address = contentAddress(shapeJson);
 
-  await this.addTriple({ subject: this.did, predicate: SHAPE_PREDICATE, object: address });
+  await this.addTriple({ subject: (this.did ?? this.id), predicate: SHAPE_PREDICATE, object: address });
   await this.addTriple({ subject: address, predicate: 'rdf://type', object: SHAPE_TYPE });
   await this.addTriple({ subject: address, predicate: SHAPE_NAME_PREDICATE, object: `"${name}"` });
   await this.addTriple({ subject: address, predicate: SHAPE_TARGET_CLASS_PREDICATE, object: definition.targetClass });
@@ -124,7 +124,7 @@ async function addShape(this: Context, name: string, shapeJson: string): Promise
     object: `"${shapeJson.replace(/"/g, '\\"')}"`,
   });
 
-  registry.set(name, { name, definition, address, contextDid: this.did });
+  registry.set(name, { name, definition, address, contextDid: (this.did ?? this.id) });
 }
 
 async function removeShape(this: Context, name: string): Promise<void> {
@@ -132,7 +132,7 @@ async function removeShape(this: Context, name: string): Promise<void> {
   const shape = registry.get(name);
   if (!shape) return;
   const triples = await this.queryTriples({
-    subject: this.did,
+    subject: (this.did ?? this.id),
     predicate: SHAPE_PREDICATE,
     object: shape.address,
   });

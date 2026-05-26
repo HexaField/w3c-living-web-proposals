@@ -2,13 +2,10 @@
  * GraphStoreManager — top-level `navigator.graph` API.
  */
 
-import { requireContextMethodBinding } from './method-binding.js';
-import { GraphStore, credentialAsProvider, newUuid } from './graph-store.js';
+import { GraphStore, newUuid, newContextId } from './graph-store.js';
 import { Context } from './context.js';
 import { GraphStorage } from './storage.js';
 import type { IdentityProvider } from './signing.js';
-
-const POLYFILL_PASSPHRASE = '__living-web-polyfill__';
 
 export class GraphStoreManager {
   private readonly stores = new Map<string, GraphStore>();
@@ -30,7 +27,7 @@ export class GraphStoreManager {
     const agentIdentity = await this.agentIdentityProvider();
     for (const r of records) {
       if (this.stores.has(r.uuid)) continue;
-      const store = new GraphStore(r.uuid, r.name, r.agentDid, r.privateGraphDid, agentIdentity, this.storage);
+      const store = new GraphStore(r.uuid, r.name, r.agentDid, r.privateContextId, agentIdentity, this.storage);
       this.stores.set(r.uuid, store);
     }
     this.initialised = true;
@@ -41,26 +38,13 @@ export class GraphStoreManager {
     const uuid = newUuid();
     const agentIdentity = await this.agentIdentityProvider();
 
-    const binding = requireContextMethodBinding();
-    const { credential } = await binding.mintContextCredential(
-      `${name} (private)`,
-      POLYFILL_PASSPHRASE,
-    );
-    const privateGraphDid = credential.did;
-    const graphIdentity = credentialAsProvider(credential);
-
-    const store = new GraphStore(uuid, name, agentIdentity.getDID(), privateGraphDid, agentIdentity, this.storage);
-    await this.storage.saveContext(privateGraphDid, `${name} (private)`, uuid);
-    const privateContext = new Context(privateGraphDid, `${name} (private)`, graphIdentity, this.storage);
+    const privateContextId = newContextId();
+    const store = new GraphStore(uuid, name, agentIdentity.getDID(), privateContextId, agentIdentity, this.storage);
+    await this.storage.saveContext(privateContextId, `${name} (private)`, uuid);
+    const privateContext = new Context(privateContextId, `${name} (private)`, agentIdentity, this.storage);
     privateContext.mountMode = 'governance';
-    store.mounts.set(privateGraphDid, privateContext);
-    store.setGraphIdentity(privateGraphDid, graphIdentity);
+    store.mounts.set(privateContextId, privateContext);
     await store.persist();
-
-    // Seed the private graph's DID-document triples (so resolving its did:graph works).
-    for (const triple of binding.seedTriples(privateGraphDid)) {
-      await privateContext.addTriple(triple);
-    }
 
     this.stores.set(uuid, store);
     return store;
@@ -83,10 +67,10 @@ export class GraphStoreManager {
     return removed;
   }
 
-  /** Resolve a context by DID across all known GraphStores. */
-  async resolveContext(graphDid: string): Promise<Context | null> {
+  /** Resolve a context by id, current IRI, or did:graph across all known GraphStores. */
+  async resolveContext(idOrIriOrDid: string): Promise<Context | null> {
     for (const store of this.stores.values()) {
-      const ctx = store.getContext(graphDid);
+      const ctx = store.getContext(idOrIriOrDid);
       if (ctx) return ctx;
     }
     return null;

@@ -9,7 +9,7 @@
 
 ## Abstract
 
-This specification defines a protocol for synchronising **contexts** (named graphs identified by `did:graph:...` DIDs, as defined in [[PERSONAL-LINKED-DATA-GRAPHS]]) between multiple agents in a peer-to-peer manner. It defines:
+This specification defines a protocol for synchronising **contexts** (named graphs, per [[PERSONAL-LINKED-DATA-GRAPHS]]) between multiple agents in a peer-to-peer manner. Synchronisation is keyed by a context's `did:graph:...` (defined in [[GROUP-IDENTITY]]). A `did:graph` is REQUIRED for sync: a context's `graph://<content-hash>` IRI changes whenever its triples change, so it cannot serve as the durable subscription handle that sync needs. Ungroupified contexts can still be transported between agents as immutable snapshots ([[PERSONAL-LINKED-DATA-GRAPHS]] §5), but they cannot be *synced* — sync presupposes an evolving graph with a stable identity, which is exactly what `did:graph` provides. This specification defines:
 
 - The **ContextDiff** format — additions and removals scoped to a specific graph DID, accompanied by a capability proof per [[CAPABILITY-FRAMEWORK]].
 - The **mount-and-subscribe** lifecycle — a graduated, per-context subscription model.
@@ -78,7 +78,7 @@ This specification defines:
 ### 1.4 Relationship to Other Specifications
 
 - [[DECENTRALISED-IDENTITY]] defines `did:key` and the `DIDCredential` signing surface.
-- [[GROUP-IDENTITY]] defines `did:graph` and its resolution algorithm — used to look up a context's DID document when subscribing.
+- [[GROUP-IDENTITY]] defines `did:graph` and its resolution algorithm — the durable identifier on which sync subscriptions are keyed. Subscribing to a graph that has not been groupified is not possible; see [[PERSONAL-LINKED-DATA-GRAPHS]] §5 for the immutable-snapshot transport path that ungroupified contexts use instead.
 - [[PERSONAL-LINKED-DATA-GRAPHS]] defines the Context interface and GraphStore that this protocol synchronises.
 - [[CAPABILITY-FRAMEWORK]] defines the ZCAP rules that the protocol's governance integration enforces.
 - [[SYNC-MODULE]] defines the pluggable module interface that handles transport, merge, peer discovery, and `validate()` for the protocol.
@@ -106,7 +106,7 @@ A **conforming user agent** MUST implement:
 
 <dl>
 <dt><dfn>Context</dfn></dt>
-<dd>A named graph identified by a <code>did:graph:...</code> DID. See [[PERSONAL-LINKED-DATA-GRAPHS]] §3.3.</dd>
+<dd>A named graph identified by a <code>graph://&lt;content-hash&gt;</code> IRI (optionally also by a <code>did:graph:...</code> DID when groupified). See [[PERSONAL-LINKED-DATA-GRAPHS]] §3.3.</dd>
 
 <dt><dfn>ContextDiff</dfn></dt>
 <dd>A unit of change to a specific context: additions, removals, a revision identifier, causal dependencies, and a CapabilityProof. The unit of gossip.</dd>
@@ -154,7 +154,7 @@ Context identity, sync topology, and module choice are kept separate:
 │  Logical Layer (per-context)                         │
 │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌──────────┐   │
 │  │#general │ │#random  │ │#private │ │Thread-42 │   │
-│  │did:graph│ │did:graph│ │did:graph│ │did:graph │   │
+│  │ graph:// │ │ graph:// │ │ graph:// │ │ graph:// │   │
 │  │governance│ │governance│ │governance│ │governance│  │
 │  │shapes   │ │shapes   │ │shapes   │ │shapes    │   │
 │  │flows    │ │flows    │ │flows    │ │flows     │   │
@@ -172,7 +172,7 @@ Context identity, sync topology, and module choice are kept separate:
 └─────────────────────────────────────────────────────┘
 ```
 
-**Logical layer**: Each context is identified by a `did:graph:...` and has its own governance, shapes, flows, and data. **Authorization** lives here, per-context.
+**Logical layer**: Each context is identified by a `did:graph:...` (its sovereign identity — required for sync) and has its own governance, shapes, flows, and data. Its current state has a `graph://<content-hash>` IRI which changes with every diff. **Authorization** lives here, per-context.
 
 **Sync layer**: Sync spaces determine what gossips with what. **Membership in a space** carries diffs to your peer; **a valid capability** lets you process them. The two are orthogonal.
 
@@ -200,7 +200,7 @@ A receiving peer in a shared space:
 ```webidl
 [Exposed=Window,Worker]
 interface ContextDiff {
-  readonly attribute USVString graphDid;          // did:graph:...
+  readonly attribute USVString graphDid;          // did:graph:... — the sovereign id of the graph
   readonly attribute USVString revision;           // sha256 hex
   readonly attribute FrozenArray<Triple> additions;
   readonly attribute FrozenArray<Triple> removals;
@@ -269,7 +269,7 @@ When a user opens a context in a new tab or on a new device, the user agent MUST
 ```webidl
 enum ContextSyncState {
   "idle",
-  "resolving",   // resolving did:graph + space + module
+  "resolving",   // resolving graph IRI + space + module
   "connecting",  // establishing connections in the space
   "syncing",     // active diff exchange
   "synced",      // converged with all known peers
@@ -345,7 +345,7 @@ partial dictionary MountOptions {
 When a `Context` is mounted with any of these hints present, the user agent MUST in addition to the steps of [[PERSONAL-LINKED-DATA-GRAPHS]] §4.2:
 
 1. Subscribe to `spaceUri` using `moduleHash` (downloading the module if needed, with user consent — see [[SYNC-MODULE]] §6.2).
-2. Begin emitting and accepting `ContextDiff`s scoped to the mounted `did:graph:...`.
+2. Begin emitting and accepting `ContextDiff`s scoped to the mounted graph IRI.
 
 ### 6.3 Sync Operations
 
@@ -514,8 +514,8 @@ This section is normative.
 
 The full handshake for an agent to subscribe to a context they have not previously mounted:
 
-1. **Discover.** The agent obtains `did:graph:<key>` plus addressing hints (space URI, module hash, relay endpoints, snapshot URI) — typically out of band (invitation link, paper, side-channel).
-2. **Resolve.** The runtime resolves the DID per [[GROUP-IDENTITY]] §4.4 (`did:graph` resolution). If no snapshot is locally available, fetch one via the snapshot URI hint.
+1. **Discover.** The agent obtains the context's `did:graph:...` plus addressing hints (space URI, module hash, relay endpoints, snapshot URI) — typically out of band (invitation link, paper, side-channel).
+2. **Resolve.** The runtime resolves the DID per [[GROUP-IDENTITY]] §4.4. If no snapshot is locally available, fetch one via the snapshot URI hint and verify it (the snapshot's `graphIri` is its content hash; the snapshot's `group://wrapsGraph` triple confirms the binding to the `did:graph`).
 3. **Verify snapshot.** Verify the snapshot's signatures.
 4. **Verify capability.** If the mount mode requires authorisation, verify the agent's `capabilityProof` against the (now-resolved) context governance.
 5. **Mount.** Open the per-context store and write the snapshot triples ([[PERSONAL-LINKED-DATA-GRAPHS]] §5.3).
@@ -649,7 +649,7 @@ Receiving peers MUST independently verify `CapabilityProof.chain` against the co
 
 ### 12.2 DID Resolution Trust
 
-Resolving `did:graph:...` from snapshots is subject to the trust level of the snapshot source ([[DECENTRALISED-IDENTITY]] §7.2). Security-sensitive operations SHOULD require `"local"` or `"mounted-read"` trust.
+Resolving a `did:graph:...` from snapshots is subject to the trust level of the snapshot source ([[DECENTRALISED-IDENTITY]] §7.2). Security-sensitive operations SHOULD require `"local"` or `"mounted-read"` trust. Verifying a snapshot's `graphIri` is intrinsically a single hash check (the IRI is the SHA-256 of the snapshot's triples; either it matches or it does not); the snapshot's signature establishes the trust level for the surrounding data.
 
 ### 12.3 Sync Space Membership Privacy
 
@@ -691,7 +691,7 @@ A peer's mount table is a sensitive artefact. The runtime MUST NOT disclose the 
 
 ### 13.4 DID Resolution Side Effects
 
-Resolving `did:graph:...` via snapshot fetch can reveal interest in a context. Implementations SHOULD batch resolution requests and SHOULD avoid resolving DIDs based on untrusted input.
+Resolving a `did:graph:...` can reveal interest in a context. Implementations SHOULD batch resolution requests and SHOULD avoid resolving identifiers based on untrusted input.
 
 ### 13.5 Per-Context Identity
 

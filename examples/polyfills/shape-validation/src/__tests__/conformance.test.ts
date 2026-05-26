@@ -62,7 +62,6 @@ describe('Shape registration', () => {
     await context.addShape('Task', JSON.stringify(TASK_SHAPE));
     await context.removeShape('Task');
     const links = await context.queryTriples({
-      subject: context.did,
       predicate: SHAPE_PREDICATE,
     });
     expect(links).toHaveLength(0);

@@ -40,7 +40,7 @@ async function addFlow(this: Context, name: string, flowJson: string): Promise<v
   if (reg.has(name)) throw new DOMException(`Flow "${name}" already exists`, 'ConstraintError');
 
   const flowUri = def.namespace + def.name;
-  await this.addTriple({ subject: this.did, predicate: FLOW.HAS_FLOW, object: flowUri });
+  await this.addTriple({ subject: (this.did ?? this.id), predicate: FLOW.HAS_FLOW, object: flowUri });
   await this.addTriple({ subject: flowUri, predicate: 'rdf://type', object: FLOW.TYPE });
   await this.addTriple({ subject: flowUri, predicate: FLOW.NAME, object: `"${def.name}"` });
   await this.addTriple({ subject: flowUri, predicate: FLOW.APPLIES_TO, object: def.appliesTo });
@@ -87,7 +87,7 @@ async function removeFlow(this: Context, name: string): Promise<void> {
   const def = reg.get(name);
   if (!def) return;
   const flowUri = def.namespace + def.name;
-  const link = await this.queryTriples({ subject: this.did, predicate: FLOW.HAS_FLOW, object: flowUri });
+  const link = await this.queryTriples({ subject: (this.did ?? this.id), predicate: FLOW.HAS_FLOW, object: flowUri });
   for (const t of link) await this.removeTriple(t);
   reg.delete(name);
 }
