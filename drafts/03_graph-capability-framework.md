@@ -97,7 +97,7 @@ Communities crystallise authorisation over time, not all at once. This specifica
 - **Community moderation.** Role-based permissions defined as graph data, enforced identically by all peers.
 - **Collaborative workspaces.** Multiple agents collaborate on a document context with section-level capabilities.
 - **Peer-to-peer social.** Spam prevention via temporal caveats, content restrictions via content caveats — no central server.
-- **Multi-agent systems.** Contexts where both human and AI agents participate enforce authorisation over AI behaviour.
+- **Multi-identity systems.** Contexts where many independent identities participate enforce authorisation over each one's writes.
 
 ---
 

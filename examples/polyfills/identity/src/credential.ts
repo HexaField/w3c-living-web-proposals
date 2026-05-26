@@ -144,7 +144,7 @@ export class DIDCredential {
     return this.method === 'key' ? this.did : this.methodId;
   }
 
-  /** Create a new did:key credential (individual identity). */
+  /** Create a new did:key credential — an individual identity. */
   static async createIndividual(
     displayName: string,
     passphrase: string,

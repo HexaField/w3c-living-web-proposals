@@ -476,7 +476,7 @@ An individual who participates in `engineering-team` is NOT automatically a part
 
 An individual's identity IS structurally a group with exactly one delegate (themselves). When `navigator.credentials.create({ did: { method: "key", ... } })` runs, the resulting `did:key` is a one-delegate DID and the single agent who controls the key is the sole signer.
 
-A context can be groupified with zero `initialDelegates`, in which case the creator is the sole delegate — structurally identical to a `did:key`-holding individual, just backed by a graph that other delegates can later be added to. If the user wants their personal identity to support adding delegates later (e.g., to designate a software agent to sign on their behalf), they MAY groupify their personal context instead of relying on a `did:key`. The application API is the same.
+A context can be groupified with zero `initialDelegates`, in which case the creator is the sole delegate — structurally identical to an identity holding a single `did:key`, just backed by a graph so additional delegates can later be added. If the holder of a personal identity wants the ability to add delegates later (e.g., to designate a secondary identity to sign on its behalf), they MAY groupify their personal context instead of relying on a `did:key`. The application API is the same.
 
 This means there is no separate "create a group" flow that conjures something new. Inviting a collaborator is delegate addition (and optionally participation acceptance) on an already-groupified context. Promoting an ungroupified context to a group is a single `groupify()` call.
 
@@ -532,7 +532,7 @@ The two overlap by convention (a participant who is also a `capabilityInvocation
 | Org with execs | Everyone is a participant | Only execs are `capabilityInvocation` delegates |
 | Council-led community | Everyone is a participant | Only council members are delegates |
 | Federation | Member orgs are participants | Only nominated representatives are delegates |
-| Bot-augmented team | Humans are participants | Humans + an AI agent are `capabilityInvocation` delegates |
+| Augmented team | The base identities are participants | The base identities plus an additional delegated identity are `capabilityInvocation` delegates |
 
 ### 7.5 Non-Goal: Multisig
 

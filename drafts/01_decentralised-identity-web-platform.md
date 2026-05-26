@@ -10,7 +10,7 @@
 
 ## Abstract
 
-This specification extends the Credential Management API to support **decentralised identifiers (DIDs)** as a first-class web platform primitive. One DID method is REQUIRED: `did:key` for individual agents (humans, software, AI agents). The API is exposed on `navigator.credentials` and builds on the precedent of passkeys (WebAuthn): private keys live in platform secure storage, signing is user-agent-mediated, and the credential surface is method-agnostic so that additional DID methods can be plugged in by other specifications. The specification also defines a uniform signing surface (`sign` / `verify` / `signCapability`) and a resolution dispatcher that delegates to method-specific resolvers. A separate specification ([[GROUP-IDENTITY]]) defines `did:graph` for graph-backed collective identity and the DID-document delegate model that gives a graph shared signing authority; this specification's surface is the entry point such methods plug into.
+This specification extends the Credential Management API to support **decentralised identifiers (DIDs)** as a first-class web platform primitive. One DID method is REQUIRED: `did:key` for individual identities. The API is exposed on `navigator.credentials` and builds on the precedent of passkeys (WebAuthn): private keys live in platform secure storage, signing is user-agent-mediated, and the credential surface is method-agnostic so that additional DID methods can be plugged in by other specifications. The specification also defines a uniform signing surface (`sign` / `verify` / `signCapability`) and a resolution dispatcher that delegates to method-specific resolvers. A separate specification ([[GROUP-IDENTITY]]) defines `did:graph` for graph-backed collective identity and the DID-document delegate model that gives a graph shared signing authority; this specification's surface is the entry point such methods plug into.
 
 ---
 
@@ -69,11 +69,10 @@ Out of scope (defined by other specifications):
 
 ### 1.3 Use Cases
 
-- **User-controlled identity.** A user creates a DID through the user agent, stored in the OS keychain alongside their passkeys.
-- **Content signing.** A user signs a document. Any party can verify the signature without contacting a server.
-- **Cross-application identity.** A user uses the same DID across multiple applications.
+- **User-controlled identity.** An identity is created through the user agent, stored in the OS keychain alongside passkeys.
+- **Content signing.** An identity signs a document. Any party can verify the signature without contacting a server.
+- **Cross-application identity.** The same DID is used across multiple applications.
 - **Offline verification.** `did:key` resolution is purely algorithmic; no network round-trip is required.
-- **AI agents.** An AI agent holds a `did:key`; the same signing API serves it as serves a human.
 - **Plug-in methods.** Other specifications register additional DID methods (e.g., `did:graph` via [[GROUP-IDENTITY]], or `did:web`, `did:peer`) through the resolver-registry extension point.
 
 ### 1.4 Relationship to Other Specifications
@@ -182,7 +181,7 @@ User agents MAY support additional algorithms:
 
 ### 4.1 `did:key` Method
 
-For individual agents. The DID encodes the public key directly per [[DID-KEY]]:
+For individual identities. The DID encodes the public key directly per [[DID-KEY]]:
 
 1. Generate an Ed25519 keypair.
 2. Let *publicKeyBytes* = the 32-byte Ed25519 public key.
