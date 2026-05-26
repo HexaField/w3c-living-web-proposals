@@ -2,7 +2,7 @@
  * GraphStoreManager — top-level `navigator.graph` API.
  */
 
-import { IdentityManager } from '@living-web/identity';
+import { requireContextMethodBinding } from './method-binding.js';
 import { GraphStore, credentialAsProvider, newUuid } from './graph-store.js';
 import { Context } from './context.js';
 import { GraphStorage } from './storage.js';
@@ -41,8 +41,8 @@ export class GraphStoreManager {
     const uuid = newUuid();
     const agentIdentity = await this.agentIdentityProvider();
 
-    const im = new IdentityManager();
-    const { credential } = await im.createGraph(
+    const binding = requireContextMethodBinding();
+    const { credential } = await binding.mintContextCredential(
       `${name} (private)`,
       POLYFILL_PASSPHRASE,
     );
@@ -56,6 +56,11 @@ export class GraphStoreManager {
     store.mounts.set(privateGraphDid, privateContext);
     store.setGraphIdentity(privateGraphDid, graphIdentity);
     await store.persist();
+
+    // Seed the private graph's DID-document triples (so resolving its did:graph works).
+    for (const triple of binding.seedTriples(privateGraphDid)) {
+      await privateContext.addTriple(triple);
+    }
 
     this.stores.set(uuid, store);
     return store;

@@ -1,14 +1,15 @@
 /**
- * did:graph method — graph identity with DID-document delegates.
+ * The `did:graph` DID method ([[GROUP-IDENTITY]] §4).
  *
- * The DID identifier is single-key (the same multibase Ed25519 encoding as did:key).
- * Shared signing authority lives in the DID document's capability sections, NOT
- * in the identifier. No multisig, no threshold cryptography.
+ * The DID identifier is single-key (the same multibase Ed25519 encoding as
+ * did:key). Shared signing authority lives in the DID document's capability
+ * sections, NOT in the identifier. No multisig, no threshold cryptography.
  *
- * The DID document for a did:graph DID is composed from triples stored INSIDE the
- * graph it identifies. This module exposes a resolver interface that takes a
- * triple subject as input; @living-web/personal-graph registers itself as that
- * subject.
+ * The DID document for a did:graph DID is composed from triples stored
+ * INSIDE the graph it identifies. This module exposes a resolver interface
+ * that takes a triple subject as input; the group-identity polyfill at
+ * install time provides the implementation (drawing triples from locally
+ * mounted contexts in personal-graph's GraphStores).
  */
 
 import {
@@ -17,7 +18,7 @@ import {
   type DIDDocument,
   type DIDDocumentMethod,
   type DIDDocumentTrustLevel,
-} from './did-key.js';
+} from '@living-web/identity';
 
 export function publicKeyToGraphDID(publicKey: Uint8Array): string {
   return `did:graph:${encodeEd25519Multibase(publicKey)}`;
@@ -30,10 +31,6 @@ export function graphDIDToPublicKey(did: string): Uint8Array {
 
 export function isGraphDID(did: string): boolean {
   return typeof did === 'string' && did.startsWith('did:graph:');
-}
-
-export function isKeyDID(did: string): boolean {
-  return typeof did === 'string' && did.startsWith('did:key:');
 }
 
 /** Predicates the resolver reads from a graph's context. */
@@ -55,7 +52,7 @@ export interface GraphTriple {
   object: string;
 }
 
-/** Source of triples for resolving a did:graph DID. Provided by personal-graph. */
+/** Source of triples for resolving a did:graph DID. */
 export interface GraphTripleSource {
   /** Return all triples in the graph identified by `graphDid`. */
   readGraph(graphDid: string): Iterable<GraphTriple>;
@@ -179,8 +176,8 @@ function stripLiteral(value: string): string {
 
 /**
  * Produce the seed triples that should be written into a freshly created context.
- * The caller (the personal-graph polyfill's createContext) writes these as the
- * first triples in the new context.
+ * The caller (personal-graph's createContext) writes these as the first triples
+ * in the new context.
  */
 export function seedDIDDocumentTriples(graphDid: string): GraphTriple[] {
   const identifier = graphDid.slice('did:graph:'.length);
@@ -228,9 +225,7 @@ export function addMethodTriples(
 }
 
 /**
- * Produce the triples to remove for `removeMethodFromGraph`.
- * Returns the (subject, predicate, object) tuples whose matching triples should
- * be deleted to retract the method from all capability sections.
+ * Produce the triples to remove to retract a method from all capability sections.
  */
 export function removeMethodTriples(graphDid: string, methodId: string): GraphTriple[] {
   return [

@@ -12,6 +12,7 @@
     "@living-web/capability-framework": "workspace:*",
     "@living-web/context-sync": "workspace:*",
     "@living-web/default-sync-module": "workspace:*",
+    "@living-web/group-identity": "workspace:*",
     "@living-web/identity": "workspace:*",
     "@living-web/personal-graph": "workspace:*",
     "@living-web/shape-validation": "workspace:*",

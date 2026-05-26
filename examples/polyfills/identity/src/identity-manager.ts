@@ -1,15 +1,17 @@
 /**
  * IdentityManager — tracks DIDCredentials in this user agent session.
  *
- * Holds both individual (did:key) credentials AND graph-DID delegate credentials
- * (the local keys that allow this agent to sign on behalf of various did:graph DIDs).
+ * Holds did:key credentials AND any delegate credentials registered for other
+ * DID methods (e.g. did:graph credentials registered by
+ * `@living-web/group-identity`). Creation of method-specific credentials goes
+ * through the credential method registry ([§4.2 method registry] of
+ * [[DECENTRALISED-IDENTITY]]).
  */
 
-import { DIDCredential, type DIDCredentialKind } from './credential.js';
+import { DIDCredential } from './credential.js';
 import { loadAllCredentials } from './keystore.js';
 
 export interface CredentialFilter {
-  kind?: DIDCredentialKind;
   method?: string;
   did?: string;
 }
@@ -27,6 +29,12 @@ export class IdentityManager {
     return [...this.credentials.values()];
   }
 
+  /** Add a credential to the in-memory set (used by method-specific creators). */
+  register(cred: DIDCredential): void {
+    this.credentials.set(this.indexKey(cred), cred);
+    if (!this.activeDID && cred.method === 'key') this.activeDID = cred.did;
+  }
+
   async loadAll(): Promise<void> {
     const stored = await loadAllCredentials();
     for (const record of stored) {
@@ -37,7 +45,7 @@ export class IdentityManager {
       }
     }
     if (!this.activeDID) {
-      const firstIndividual = this.all.find(c => c.kind === 'individual');
+      const firstIndividual = this.all.find(c => c.method === 'key');
       if (firstIndividual) this.activeDID = firstIndividual.did;
     }
   }
@@ -48,19 +56,8 @@ export class IdentityManager {
     algorithm?: string,
   ): Promise<DIDCredential> {
     const cred = await DIDCredential.createIndividual(displayName, passphrase, algorithm);
-    this.credentials.set(this.indexKey(cred), cred);
-    if (!this.activeDID) this.activeDID = cred.did;
+    this.register(cred);
     return cred;
-  }
-
-  async createGraph(
-    displayName: string,
-    passphrase: string,
-    algorithm?: string,
-  ): Promise<{ credential: DIDCredential; publicKey: Uint8Array; privateKey: Uint8Array }> {
-    const result = await DIDCredential.createGraph(displayName, passphrase, algorithm);
-    this.credentials.set(this.indexKey(result.credential), result.credential);
-    return result;
   }
 
   setActive(did: string): void {
@@ -79,7 +76,6 @@ export class IdentityManager {
 
   find(filter: CredentialFilter): DIDCredential[] {
     return this.all.filter(c => {
-      if (filter.kind && c.kind !== filter.kind) return false;
       if (filter.method && c.method !== filter.method) return false;
       if (filter.did && c.did !== filter.did) return false;
       return true;
@@ -92,7 +88,7 @@ export class IdentityManager {
     await cred.delete();
     this.credentials.delete(this.indexKey(cred));
     if (this.activeDID === cred.did) {
-      const next = this.all.find(c => c.kind === 'individual');
+      const next = this.all.find(c => c.method === 'key');
       this.activeDID = next?.did ?? null;
     }
   }

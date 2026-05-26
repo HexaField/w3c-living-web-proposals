@@ -1,11 +1,16 @@
 // Test harness setup — loads all polyfills and exposes them on window/navigator
 
-// 02 — Personal Graph polyfill (auto-installs navigator.graph)
-import '@living-web/personal-graph/polyfill';
-
 // 01 — Identity polyfill (patches navigator.credentials for DID)
 import { install as installIdentity } from '@living-web/identity';
 installIdentity();
+
+// 10 — Group Identity polyfill MUST come before personal-graph: it registers
+// the did:graph credential creator, resolver, and ContextMethodBinding.
+import '@living-web/group-identity/polyfill';
+
+// 02 — Personal Graph polyfill (auto-installs navigator.graph; depends on
+// the did:graph binding above for createContext to work).
+import '@living-web/personal-graph/polyfill';
 
 // 06 — Shape validation extension (adds shape methods to PersonalGraph.prototype)
 import { installShapeExtension } from '@living-web/shape-validation';

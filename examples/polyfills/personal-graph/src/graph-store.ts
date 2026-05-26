@@ -7,14 +7,8 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import {
-  IdentityManager,
-  seedDIDDocumentTriples,
-  addMethodTriples,
-  didToPublicKey,
-  graphDIDToPublicKey,
-  type DIDCredential,
-} from '@living-web/identity';
+import { type DIDCredential } from '@living-web/identity';
+import { requireContextMethodBinding } from './method-binding.js';
 import {
   type ContextCreationOptions,
   type MountOptions,
@@ -134,8 +128,8 @@ export class GraphStore extends EventTarget {
    * mode, writes the seed DID-document triples + optional participation link.
    */
   async createContext(options: ContextCreationOptions = {}): Promise<Context> {
-    const im = new IdentityManager();
-    const { credential, publicKey } = await im.createGraph(
+    const binding = requireContextMethodBinding();
+    const { credential } = await binding.mintContextCredential(
       options.displayName ?? 'Untitled Context',
       POLYFILL_PASSPHRASE,
     );
@@ -150,18 +144,14 @@ export class GraphStore extends EventTarget {
     await this.persist();
 
     // Seed DID-document triples (signed by the graph itself).
-    for (const triple of seedDIDDocumentTriples(graphDid)) {
+    for (const triple of binding.seedTriples(graphDid)) {
       await context.addTriple(triple);
     }
 
     // Add initial delegates if requested.
     if (options.initialDelegates) {
       for (const delegateDid of options.initialDelegates) {
-        const pk = delegateDid.startsWith('did:key:')
-          ? didToPublicKey(delegateDid)
-          : graphDIDToPublicKey(delegateDid);
-        const methodId = `${graphDid}#${delegateDid.split(':').pop()?.slice(0, 16) ?? 'delegate'}`;
-        const triples = addMethodTriples(graphDid, methodId, pk, ['capabilityInvocation', 'assertionMethod']);
+        const triples = binding.addDelegateTriples(graphDid, delegateDid, ['capabilityInvocation', 'assertionMethod']);
         for (const t of triples) await context.addTriple(t);
       }
     }

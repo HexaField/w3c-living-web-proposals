@@ -1,5 +1,4 @@
-export { DIDCredential, registerGraphDIDWriter } from './credential.js';
-export type { DIDCredentialKind, DelegateAddOptions, GraphDIDWriter } from './credential.js';
+export { DIDCredential, randomPrivateKey } from './credential.js';
 export { IdentityManager } from './identity-manager.js';
 export type { CredentialFilter } from './identity-manager.js';
 export { DIDIdentityProvider } from './provider.js';
@@ -14,24 +13,7 @@ export {
 } from './did-key.js';
 export type { DIDDocument, DIDDocumentMethod, DIDDocumentTrustLevel } from './did-key.js';
 export {
-  publicKeyToGraphDID,
-  graphDIDToPublicKey,
-  isGraphDID,
-  isKeyDID,
-  resolveDIDGraph,
-  seedDIDDocumentTriples,
-  addMethodTriples,
-  removeMethodTriples,
-  DID_DOC_PREDICATES,
-} from './did-graph.js';
-export type {
-  GraphTriple,
-  GraphTripleSource,
-  DIDCapabilitySection,
-} from './did-graph.js';
-export {
   resolve,
-  registerGraphSource,
   registerResolver,
   supportedMethods,
 } from './resolver.js';
@@ -53,4 +35,4 @@ export {
   importEncrypted,
 } from './keystore.js';
 export type { StoredCredential } from './keystore.js';
-export { install } from './polyfill.js';
+export { install, registerCredentialMethod, type CredentialCreator } from './polyfill.js';

@@ -77,7 +77,8 @@ This specification defines:
 
 ### 1.4 Relationship to Other Specifications
 
-- [[DECENTRALISED-IDENTITY]] defines `did:graph` and `did:key`.
+- [[DECENTRALISED-IDENTITY]] defines `did:key` and the `DIDCredential` signing surface.
+- [[GROUP-IDENTITY]] defines `did:graph` and its resolution algorithm — used to look up a context's DID document when subscribing.
 - [[PERSONAL-LINKED-DATA-GRAPHS]] defines the Context interface and GraphStore that this protocol synchronises.
 - [[CAPABILITY-FRAMEWORK]] defines the ZCAP rules that the protocol's governance integration enforces.
 - [[SYNC-MODULE]] defines the pluggable module interface that handles transport, merge, peer discovery, and `validate()` for the protocol.
@@ -514,7 +515,7 @@ This section is normative.
 The full handshake for an agent to subscribe to a context they have not previously mounted:
 
 1. **Discover.** The agent obtains `did:graph:<key>` plus addressing hints (space URI, module hash, relay endpoints, snapshot URI) — typically out of band (invitation link, paper, side-channel).
-2. **Resolve.** The runtime resolves the DID per [[DECENTRALISED-IDENTITY]] §8.2. If no snapshot is locally available, fetch one via the snapshot URI hint.
+2. **Resolve.** The runtime resolves the DID per [[GROUP-IDENTITY]] §4.4 (`did:graph` resolution). If no snapshot is locally available, fetch one via the snapshot URI hint.
 3. **Verify snapshot.** Verify the snapshot's signatures.
 4. **Verify capability.** If the mount mode requires authorisation, verify the agent's `capabilityProof` against the (now-resolved) context governance.
 5. **Mount.** Open the per-context store and write the snapshot triples ([[PERSONAL-LINKED-DATA-GRAPHS]] §5.3).
@@ -648,7 +649,7 @@ Receiving peers MUST independently verify `CapabilityProof.chain` against the co
 
 ### 12.2 DID Resolution Trust
 
-Resolving `did:graph:...` from snapshots is subject to the trust level of the snapshot source ([[DECENTRALISED-IDENTITY]] §8.3). Security-sensitive operations SHOULD require `"local"` or `"mounted-read"` trust.
+Resolving `did:graph:...` from snapshots is subject to the trust level of the snapshot source ([[DECENTRALISED-IDENTITY]] §7.2). Security-sensitive operations SHOULD require `"local"` or `"mounted-read"` trust.
 
 ### 12.3 Sync Space Membership Privacy
 

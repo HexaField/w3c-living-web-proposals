@@ -20,9 +20,28 @@ import {
 import { Group } from '../group.js';
 import { installGroupExtension, DefaultGroupRegistry } from '../extension.js';
 import { GROUP, CONTEXT, RDF } from '../types.js';
+import { installCredentialAugmentation } from '../credential.js';
+import { installDIDGraphBinding } from '../binding.js';
+
+// Install the did:graph credential creator + ContextMethodBinding so
+// personal-graph can mint contexts. The binding's resolver/writer hooks read
+// the active store via a closure; the test suite uses one manager at a time,
+// so we install a binding that proxies to a mutable "current store" cell.
+let currentManager: GraphStoreManager | null = null;
 
 beforeAll(() => {
   installGroupExtension();
+  installCredentialAugmentation();
+  installDIDGraphBinding({
+    *knownStores() {
+      if (!currentManager) return;
+      yield* currentManager.knownStores();
+    },
+    async resolveContext(did: string) {
+      if (!currentManager) return null;
+      return currentManager.resolveContext(did);
+    },
+  });
 });
 
 async function newGraphStore(): Promise<GraphStore> {
@@ -30,6 +49,7 @@ async function newGraphStore(): Promise<GraphStore> {
   await eph.ensureReady();
   const storage = new GraphStorage(`gi-${crypto.randomUUID()}`);
   const manager = new GraphStoreManager(storage, async () => eph);
+  currentManager = manager;
   return manager.create('ws');
 }
 

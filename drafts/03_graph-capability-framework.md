@@ -9,7 +9,7 @@
 
 ## Abstract
 
-This specification defines a capability-based authorisation framework for linked data **contexts** (named graphs identified by `did:graph:...` DIDs, as defined in [[PERSONAL-LINKED-DATA-GRAPHS]]). It defines a **root capability** minted at context creation, a delegation algebra for [[ZCAP-LD]] capabilities targeting context DIDs, a **caveat type system** for fine-grained attenuation, three explicit **enforcement modes** (Open / Announced / Enforced), and a scope-inheritance mechanism via mutual `context://participates_in` / `context://accepts_participation` declarations. The framework is *vocabulary-neutral*: it defines the structure of capability chains and caveats, and an extension point through which specific constraint kinds (temporal, content, credential, shape — supplied by [[CONSTRAINT-VOCABULARY]]) plug in. Authority is constituted, not granted — no principal sits above the structure; capability chains trace to each context's own root capability. This specification builds on the DID-document delegate model in [[DECENTRALISED-IDENTITY]].
+This specification defines a capability-based authorisation framework for linked data **contexts** (named graphs identified by `did:graph:...` DIDs, as defined in [[PERSONAL-LINKED-DATA-GRAPHS]]). It defines a **root capability** minted at context creation, a delegation algebra for [[ZCAP-LD]] capabilities targeting context DIDs, a **caveat type system** for fine-grained attenuation, three explicit **enforcement modes** (Open / Announced / Enforced), and a scope-inheritance mechanism via mutual `context://participates_in` / `context://accepts_participation` declarations. The framework is *vocabulary-neutral*: it defines the structure of capability chains and caveats, and an extension point through which specific constraint kinds (temporal, content, credential, shape — supplied by [[CONSTRAINT-VOCABULARY]]) plug in. Authority is constituted, not granted — no principal sits above the structure; capability chains trace to each context's own root capability. This specification builds on the DID-document delegate model in [[GROUP-IDENTITY]].
 
 ---
 
@@ -82,7 +82,8 @@ Communities crystallise authorisation over time, not all at once. This specifica
 
 ### 1.6 Relationship to Other Specifications
 
-- [[DECENTRALISED-IDENTITY]] defines `did:key`, `did:graph`, and the DID-document delegate model.
+- [[DECENTRALISED-IDENTITY]] defines `did:key` and the `DIDCredential` signing surface.
+- [[GROUP-IDENTITY]] defines `did:graph` and the DID-document delegate model that this framework's `updateDIDDocument` ZCAP governs.
 - [[PERSONAL-LINKED-DATA-GRAPHS]] defines the Context that this framework governs.
 - [[ZCAP-LD]] defines the underlying capability data model.
 - [[CONSTRAINT-VOCABULARY]] supplies specific constraint kinds (temporal, content, credential, shape) that plug into the framework defined here.
@@ -447,7 +448,7 @@ Implementations SHOULD cache ancestry chains and invalidate when participation l
 
 3. **Collect capability constraints.** From [§6.2](#62-constraint-collection), select constraints with `constraint_kind = "capability"` and `capability_enforcement = "required"`. If none, return ACCEPT.
 
-4. **Find author's capabilities.** Query for `<author> -[governance://has_zcap]→ ?cap`, resolving each ZCAP. Include capabilities whose `invoker` is a graph DID *if* the author currently holds a `capabilityInvocation` delegate on that graph (per [[DECENTRALISED-IDENTITY]] §5).
+4. **Find author's capabilities.** Query for `<author> -[governance://has_zcap]→ ?cap`, resolving each ZCAP. Include capabilities whose `invoker` is a graph DID *if* the author currently holds a `capabilityInvocation` delegate on that graph (per [[GROUP-IDENTITY]] §5).
 
 5. **Evaluate each capability.**
    1. **Action match.** *action* MUST be in `cap.actions`.
@@ -553,7 +554,7 @@ Caveat evaluation is designed for negligible overhead:
 
 This section is normative.
 
-The DID-document delegate model ([[DECENTRALISED-IDENTITY]] §5) gives a context shared signing authority through multiple keys listed in capability sections of its DID document. Modifying these is a write to the context's own triples and is therefore governed by this specification.
+The DID-document delegate model ([[GROUP-IDENTITY]] §5) gives a context shared signing authority through multiple keys listed in capability sections of its DID document. Modifying these is a write to the context's own triples and is therefore governed by this specification.
 
 ### 10.1 Governed Predicates
 
@@ -583,7 +584,7 @@ A delegate MAY rotate their own key by issuing a `did-document://remove-method` 
 
 ### 10.5 Non-Goal: Multisig
 
-This specification does NOT define multisig, threshold signing, or aggregate-key schemes for the graph DID itself. Shared authority is achieved through the delegate set in the DID document; "this graph said it" is satisfied by any current delegate's signature. See [[DECENTRALISED-IDENTITY]] §5.2.
+This specification does NOT define multisig, threshold signing, or aggregate-key schemes for the graph DID itself. Shared authority is achieved through the delegate set in the DID document; "this graph said it" is satisfied by any current delegate's signature. See [[GROUP-IDENTITY]] §5.2.
 
 ---
 
@@ -680,7 +681,7 @@ Governance rules are interpreted at runtime.
 
 ### 13.1 Cryptographic Verification
 
-ZCAP chain verification MUST validate all signatures. For graph-DID-signed delegations, the runtime MUST resolve the graph's DID document and verify that the signing method is currently listed in `capabilityDelegation` ([[DECENTRALISED-IDENTITY]] §5).
+ZCAP chain verification MUST validate all signatures. For graph-DID-signed delegations, the runtime MUST resolve the graph's DID document and verify that the signing method is currently listed in `capabilityDelegation` ([[GROUP-IDENTITY]] §5).
 
 ### 13.2 Revocation Freshness
 

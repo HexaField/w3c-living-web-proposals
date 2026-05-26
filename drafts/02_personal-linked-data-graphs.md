@@ -10,7 +10,7 @@
 
 ## Abstract
 
-This specification defines a client-side API for creating, querying, and managing linked data on the web. The unit of coherence is a **context**: a named graph of RDF triples identified by a `did:graph:...` DID (see [[DECENTRALISED-IDENTITY]]). Each context has its own persistent store, its own set of registered shapes, and its own governance configuration. A **GraphStore** (consistent with the term in [[SPARQL12-GRAPH-STORE]]) is the agent-local collection of contexts the user agent currently has open; it consists of a small private graph for agent-local state, plus a mount table referencing zero or more shared contexts. The API is exposed on the `navigator.graph` namespace and supports RDF 1.2 triples with reifier-based per-triple provenance, SPARQL 1.2 queries, SHACL-based shape registration (see [[SHAPE-VALIDATION]]), context-scoped and cross-context queries, and serialisation of any context as a signed, addressable **graph snapshot**.
+This specification defines a client-side API for creating, querying, and managing linked data on the web. The unit of coherence is a **context**: a named graph of RDF triples identified by a `did:graph:...` DID (see [[GROUP-IDENTITY]]; signing keys for any DID method are managed via [[DECENTRALISED-IDENTITY]]). Each context has its own persistent store, its own set of registered shapes, and its own governance configuration. A **GraphStore** (consistent with the term in [[SPARQL12-GRAPH-STORE]]) is the agent-local collection of contexts the user agent currently has open; it consists of a small private graph for agent-local state, plus a mount table referencing zero or more shared contexts. The API is exposed on the `navigator.graph` namespace and supports RDF 1.2 triples with reifier-based per-triple provenance, SPARQL 1.2 queries, SHACL-based shape registration (see [[SHAPE-VALIDATION]]), context-scoped and cross-context queries, and serialisation of any context as a signed, addressable **graph snapshot**.
 
 ---
 
@@ -61,9 +61,10 @@ This specification addresses that gap by defining contexts: **named graphs of RD
 
 - **RDF 1.2** [[RDF12-CONCEPTS]] — triple data model with reifiers for per-triple provenance.
 - **SPARQL 1.2** [[SPARQL12-QUERY]] — query semantics.
-- **DID Core** [[DID-CORE]] — context identity via `did:graph` (see [[DECENTRALISED-IDENTITY]]).
+- **DID Core** [[DID-CORE]] — context identity via `did:graph` (defined in [[GROUP-IDENTITY]]; the credential surface lives in [[DECENTRALISED-IDENTITY]]).
 - **Web IDL** [[WEBIDL]] — API surface.
-- [[DECENTRALISED-IDENTITY]] defines `did:graph` and the DID-document delegate model.
+- [[DECENTRALISED-IDENTITY]] defines the `DIDCredential` surface used to sign triples and snapshots.
+- [[GROUP-IDENTITY]] defines `did:graph` and the DID-document delegate model.
 - [[CAPABILITY-FRAMEWORK]] defines ZCAP-based write authorisation on contexts.
 - [[CONTEXT-SYNC]] defines how contexts are synchronised between agents.
 - [[SHAPE-VALIDATION]] defines SHACL-based action semantics on contexts.
@@ -138,12 +139,12 @@ All **provenance-bearing timestamps** in this and related specifications — val
 
 ### 3.3 Context
 
-A **Context** is a named graph of triples identified by a `did:graph:...` DID ([[DECENTRALISED-IDENTITY]]). The IRI alias `graph://<did-fragment>` resolves to the same context.
+A **Context** is a named graph of triples identified by a `did:graph:...` DID ([[GROUP-IDENTITY]] §4). The IRI alias `graph://<did-fragment>` resolves to the same context.
 
 Every context has:
 
 - An identity (`did:graph:...`).
-- A DID document (triples inside the context describing the verification methods currently authorised to sign on behalf of the context — see [[DECENTRALISED-IDENTITY]] §4).
+- A DID document (triples inside the context describing the verification methods currently authorised to sign on behalf of the context — see [[GROUP-IDENTITY]] §4.2).
 - A creation timestamp.
 - Optionally, one or more `context://participates_in` triples declaring participation in a parent context.
 - Zero or more registered shapes ([[SHAPE-VALIDATION]]).
@@ -313,7 +314,7 @@ interface Reifier {
 The `create()` method MUST:
 
 1. Generate a fresh version 4 UUID [[RFC4122]] for the GraphStore.
-2. Mint a fresh `did:graph:...` for the GraphStore's private graph (per [[DECENTRALISED-IDENTITY]] §4). The owning agent becomes the sole `capabilityInvocation` delegate.
+2. Mint a fresh `did:graph:...` for the GraphStore's private graph (per [[GROUP-IDENTITY]] §4). The owning agent becomes the sole `capabilityInvocation` delegate.
 3. Persist the GraphStore record with the private graph mounted in `"governance"` mode.
 4. Return the `GraphStore`.
 
@@ -730,6 +731,7 @@ me.oncontextcreated = (e) => console.log(`New context ${e.graphDid} created by $
 - **[WEBIDL]** Chen, E., "Web IDL Standard". https://webidl.spec.whatwg.org/
 - **[DID-CORE]** Sporny, M., Guy, A., Sabadello, M., and D. Reed, "Decentralized Identifiers (DIDs) v1.0", W3C Recommendation, 19 July 2022. https://www.w3.org/TR/did-core/
 - **[DECENTRALISED-IDENTITY]** [Decentralised Identity Integration for the Web Platform](./01_decentralised-identity-web-platform.md).
+- **[GROUP-IDENTITY]** [Decentralised Group Identity](./10_decentralised-group-identity.md) — defines `did:graph` and the DID-document delegate model.
 
 ### 12.2 Informative References
 

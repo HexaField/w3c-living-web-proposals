@@ -15,9 +15,17 @@ import {
   GraphStorage,
   GraphStoreManager,
   EphemeralIdentity,
+  registerContextMethodBinding,
   type SignedTriple,
   type IdentityProvider,
 } from '@living-web/personal-graph';
+import {
+  DIDCredential,
+  encodeEd25519Multibase,
+  ed25519,
+  randomPrivateKey,
+  storeCredential,
+} from '@living-web/identity';
 
 import {
   DiffEvent,
@@ -29,10 +37,39 @@ import {
 import { installSyncModule } from '@living-web/sync-module';
 import { defaultSyncModule } from '../index.js';
 
-// Install the extension + register the default module for the suite.
+// Install the extension + register the default module for the suite + a
+// minimal did:graph binding so personal-graph can mint contexts (these tests
+// focus on sync, not did:graph semantics — group-identity provides the
+// production binding).
 beforeAll(() => {
   installContextSyncExtension();
   installSyncModule(defaultSyncModule);
+  registerContextMethodBinding({
+    async mintContextCredential(displayName, passphrase) {
+      const privateKey = randomPrivateKey();
+      const publicKey = await ed25519.getPublicKeyAsync(privateKey);
+      const id = encodeEd25519Multibase(publicKey);
+      const did = `did:graph:${id}`;
+      const methodId = `${did}#${id}`;
+      const createdAt = new Date().toISOString();
+      await storeCredential(methodId, 'Ed25519', displayName, createdAt, publicKey, privateKey, passphrase);
+      const credential = new DIDCredential(did, methodId, 'Ed25519', displayName, createdAt, publicKey, privateKey);
+      return { credential, publicKey, privateKey };
+    },
+    *seedTriples(graphDid) {
+      const id = graphDid.slice('did:graph:'.length);
+      const methodId = `${graphDid}#${id}`;
+      yield { subject: graphDid, predicate: 'did://hasMethod', object: methodId };
+      yield { subject: methodId, predicate: 'did://verificationMethod/type', object: '"Ed25519VerificationKey2020"' };
+      yield { subject: methodId, predicate: 'did://verificationMethod/controller', object: graphDid };
+      yield { subject: methodId, predicate: 'did://verificationMethod/publicKeyMultibase', object: `"${id}"` };
+      for (const sec of ['capabilityInvocation', 'capabilityDelegation', 'assertionMethod', 'authentication']) {
+        yield { subject: graphDid, predicate: `did://${sec}`, object: methodId };
+      }
+    },
+    *addDelegateTriples() { /* unused in these tests */ },
+    publicKeyFromDid() { return new Uint8Array(32); },
+  });
 });
 
 async function newManager(): Promise<GraphStoreManager> {

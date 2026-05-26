@@ -7,10 +7,13 @@
  */
 
 import { install as installIdentity, IdentityManager, DIDIdentityProvider } from '@living-web/identity';
+// group-identity/polyfill MUST come before personal-graph: it registers the
+// did:graph credential creator, resolver, and ContextMethodBinding that
+// personal-graph's createContext depends on.
+import '@living-web/group-identity/polyfill';
 import { install as installPersonalGraph, Triple, Context, GraphStore, type IdentityProvider } from '@living-web/personal-graph';
 import '@living-web/shape-validation/polyfill';
 import '@living-web/default-sync-module/polyfill';
-import '@living-web/group-identity/polyfill';
 import '@living-web/flows/polyfill';
 
 import type { Group } from '@living-web/group-identity';

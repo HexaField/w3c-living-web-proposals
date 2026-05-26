@@ -1,15 +1,15 @@
 /**
  * navigator.graph polyfill entry.
  *
- * Wires up:
- *   - navigator.graph → GraphStoreManager
- *   - did:graph resolution bridge into @living-web/identity
+ * Wires up `navigator.graph` → GraphStoreManager. Context creation requires a
+ * ContextMethodBinding to have been installed (see ./method-binding) — the
+ * `did:graph` binding is provided by `@living-web/group-identity/polyfill`,
+ * which MUST be imported before any code calls `navigator.graph.create()`.
  */
 
 import { manager as identityManager } from '@living-web/identity/polyfill';
 import { GraphStorage } from './storage.js';
 import { GraphStoreManager } from './manager.js';
-import { installDIDBridge } from './did-bridge.js';
 import type { IdentityProvider } from './signing.js';
 
 declare global {
@@ -48,8 +48,6 @@ export async function install(dbName?: string): Promise<GraphStoreManager> {
 
   manager = new GraphStoreManager(storage, agentIdentityProvider);
   (globalThis.navigator as Navigator).graph = manager;
-
-  installDIDBridge(manager);
 
   installed = true;
   return manager;

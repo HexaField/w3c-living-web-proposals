@@ -52,5 +52,12 @@ export type {
 } from './snapshot.js';
 
 export { runSparql } from './sparql.js';
-export { installDIDBridge } from './did-bridge.js';
+export {
+  registerContextMethodBinding,
+  getContextMethodBinding,
+  requireContextMethodBinding,
+  type ContextMethodBinding,
+  type GraphSeedTriple,
+  type DIDCapabilitySection,
+} from './method-binding.js';
 export { install, getManager } from './polyfill.js';

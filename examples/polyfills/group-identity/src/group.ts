@@ -8,10 +8,12 @@
 import { Context } from '@living-web/personal-graph';
 import {
   decodeEd25519Multibase,
-  addMethodTriples,
-  removeMethodTriples,
   type DIDDocument,
 } from '@living-web/identity';
+import {
+  addMethodTriples,
+  removeMethodTriples,
+} from './did-graph.js';
 import { createCapability } from '@living-web/capability-framework';
 import {
   GROUP,

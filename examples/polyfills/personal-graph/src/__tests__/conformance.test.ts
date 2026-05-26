@@ -2,7 +2,7 @@
  * Conformance tests for @living-web/personal-graph.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import 'fake-indexeddb/auto';
 
 import {
@@ -18,9 +18,64 @@ import {
   computeContentHash,
   getAsSnapshot,
   parseSnapshot,
+  registerContextMethodBinding,
   type SignedTriple,
   type IdentityProvider,
 } from '../index.js';
+import {
+  DIDCredential,
+  encodeEd25519Multibase,
+  ed25519,
+  randomPrivateKey,
+  storeCredential,
+} from '@living-web/identity';
+
+// Register a minimal did:graph binding so GraphStoreManager.create / Context
+// creation tests can run without the full group-identity polyfill installed.
+// (group-identity provides the production binding; tests stub it to avoid a
+// workspace cycle.)
+beforeAll(() => {
+  registerContextMethodBinding({
+    async mintContextCredential(displayName, passphrase) {
+      const privateKey = randomPrivateKey();
+      const publicKey = await ed25519.getPublicKeyAsync(privateKey);
+      const id = encodeEd25519Multibase(publicKey);
+      const did = `did:graph:${id}`;
+      const methodId = `${did}#${id}`;
+      const createdAt = new Date().toISOString();
+      await storeCredential(methodId, 'Ed25519', displayName, createdAt, publicKey, privateKey, passphrase);
+      const credential = new DIDCredential(did, methodId, 'Ed25519', displayName, createdAt, publicKey, privateKey);
+      return { credential, publicKey, privateKey };
+    },
+    *seedTriples(graphDid) {
+      const id = graphDid.slice('did:graph:'.length);
+      const methodId = `${graphDid}#${id}`;
+      yield { subject: graphDid, predicate: 'did://hasMethod', object: methodId };
+      yield { subject: methodId, predicate: 'did://verificationMethod/type', object: '"Ed25519VerificationKey2020"' };
+      yield { subject: methodId, predicate: 'did://verificationMethod/controller', object: graphDid };
+      yield { subject: methodId, predicate: 'did://verificationMethod/publicKeyMultibase', object: `"${id}"` };
+      for (const sec of ['capabilityInvocation', 'capabilityDelegation', 'assertionMethod', 'authentication']) {
+        yield { subject: graphDid, predicate: `did://${sec}`, object: methodId };
+      }
+    },
+    *addDelegateTriples(graphDid, delegateDid, sections) {
+      const id = delegateDid.split(':').pop()?.slice(0, 16) ?? 'delegate';
+      const methodId = `${graphDid}#${id}`;
+      yield { subject: graphDid, predicate: 'did://hasMethod', object: methodId };
+      for (const sec of sections) {
+        yield { subject: graphDid, predicate: `did://${sec}`, object: methodId };
+      }
+    },
+    publicKeyFromDid(did) {
+      // The tests don't actually use this in the cases that matter — return zero bytes.
+      if (did.startsWith('did:key:') || did.startsWith('did:graph:')) {
+        const tail = did.split(':').pop() ?? '';
+        return new Uint8Array(32); // stub
+      }
+      throw new Error(`Unsupported DID: ${did}`);
+    },
+  });
+});
 
 let store: GraphStorage;
 

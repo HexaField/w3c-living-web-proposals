@@ -1,32 +1,31 @@
 /**
  * navigator.credentials extension for DID-based identity.
  *
- * Adds:
- *   - navigator.credentials.create({ did: { method: "key" | "graph", ... } })
- *   - navigator.credentials.get({ did: { kind, method, filter, challenge } })
+ * Adds, per [[DECENTRALISED-IDENTITY]] §3:
+ *   - navigator.credentials.create({ did: { method, displayName, ... } })
+ *   - navigator.credentials.get({ did: { method, filter, challenge } })
  *   - navigator.credentials.resolve(did)
  *   - navigator.credentials.supportedMethods()
+ *
+ * `method: "key"` is built in. Other methods (e.g. `"graph"`) are dispatched
+ * via the credential method registry — see `registerCredentialMethod()`.
+ * `@living-web/group-identity` registers the `"graph"` method.
  */
 
 import { DIDCredential } from './credential.js';
 import { IdentityManager, type CredentialFilter } from './identity-manager.js';
 import { resolve, supportedMethods } from './resolver.js';
 import type { DIDDocument } from './did-key.js';
-import { didToPublicKey } from './did-key.js';
-import { graphDIDToPublicKey } from './did-graph.js';
 
 interface DIDCredentialCreationOptions {
   displayName: string;
-  method?: 'key' | 'graph';
+  method?: string;
   algorithm?: string;
-  graphOptions?: {
-    initialDelegates?: string[];
-  };
+  [k: string]: unknown;
 }
 
 interface DIDCredentialRequestOptions {
   challenge?: BufferSource;
-  kind?: 'individual' | 'graph';
   method?: string;
   filter?: { did?: string };
 }
@@ -45,6 +44,27 @@ declare global {
 const POLYFILL_PASSPHRASE = '__living-web-polyfill__';
 const manager = new IdentityManager();
 
+/**
+ * Creator for a method-specific credential. Other specifications (e.g.
+ * `@living-web/group-identity`) register one of these so that
+ * `navigator.credentials.create({ did: { method: "<their-method>", ... } })`
+ * dispatches into their implementation.
+ */
+export type CredentialCreator = (
+  options: DIDCredentialCreationOptions,
+  passphrase: string,
+  identityManager: IdentityManager,
+) => Promise<DIDCredential>;
+
+const creators = new Map<string, CredentialCreator>();
+
+export function registerCredentialMethod(method: string, creator: CredentialCreator): void {
+  if (method === 'key') {
+    throw new Error('did:key is built in and cannot be overridden');
+  }
+  creators.set(method, creator);
+}
+
 export function install(): void {
   if (typeof globalThis.navigator === 'undefined') return;
   if (!globalThis.navigator.credentials) return;
@@ -55,29 +75,19 @@ export function install(): void {
 
   creds.create = async function (options?: CredentialCreationOptions & { did?: DIDCredentialCreationOptions }) {
     if (options?.did) {
-      const { displayName, algorithm, method = 'key', graphOptions } = options.did;
-      if (method === 'graph') {
-        const { credential } = await manager.createGraph(
-          displayName || 'Unnamed Graph',
-          POLYFILL_PASSPHRASE,
-          algorithm,
-        );
-        if (graphOptions?.initialDelegates && graphOptions.initialDelegates.length > 0) {
-          for (const delegateDid of graphOptions.initialDelegates) {
-            await credential.addDelegate({
-              id: `${credential.did}#${delegateDid.split(':').pop() ?? 'method'}`,
-              publicKey: derivePublicKey(delegateDid),
-              sections: ['capabilityInvocation', 'assertionMethod'],
-            });
-          }
-        }
-        return credential;
+      const opts = options.did;
+      const method = opts.method ?? 'key';
+      if (method === 'key') {
+        return manager.createIndividual(opts.displayName || 'Unnamed', POLYFILL_PASSPHRASE, opts.algorithm);
       }
-      return manager.createIndividual(
-        displayName || 'Unnamed',
-        POLYFILL_PASSPHRASE,
-        algorithm,
-      );
+      const creator = creators.get(method);
+      if (!creator) {
+        throw new DOMException(
+          `No creator registered for did:${method}. Install the polyfill that defines it (e.g. "@living-web/group-identity/polyfill" for did:graph).`,
+          'NotSupportedError',
+        );
+      }
+      return creator(opts, POLYFILL_PASSPHRASE, manager);
     }
     return originalCreate?.(options) ?? null;
   };
@@ -86,7 +96,6 @@ export function install(): void {
     if (options?.did !== undefined) {
       await manager.loadAll();
       const filter: CredentialFilter = {
-        kind: options.did.kind,
         method: options.did.method,
         did: options.did.filter?.did,
       };
@@ -119,12 +128,6 @@ function toUint8Array(buf: BufferSource): Uint8Array {
     return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
   }
   return new Uint8Array(buf);
-}
-
-function derivePublicKey(did: string): Uint8Array {
-  if (did.startsWith('did:key:')) return didToPublicKey(did);
-  if (did.startsWith('did:graph:')) return graphDIDToPublicKey(did);
-  throw new Error(`Cannot derive public key from ${did}`);
 }
 
 export { manager };
