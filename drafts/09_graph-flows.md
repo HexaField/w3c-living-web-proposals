@@ -54,7 +54,7 @@ This is what flows are for. They complement the three existing primitives:
 | Primitive | Governs | Example |
 |---|---|---|
 | SHACL Shapes [[SHAPE-VALIDATION]] | What data must look like | "A message must have a body and an author" |
-| Contexts [[PERSONAL-LINKED-DATA-GRAPHS]] | Where data lives | "Messages in #general live in `did:graph:channel-general`" |
+| Contexts [[PERSONAL-LINKED-DATA-GRAPHS]] | Where data lives | "Messages in #general live in the `#general` context" |
 | ZCAPs [[CAPABILITY-FRAMEWORK]] | Who can act | "Only moderators can delete messages" |
 | **Flows** | **How data evolves** | "A proposal must be open for 48h before it can be ratified" |
 
@@ -217,8 +217,8 @@ Actions are triple operations executed atomically with the state change:
 A flow is stored as triples inside the context it governs:
 
 ```turtle
-# In context did:graph:community-root
-<context-did>  flow://has_flow  <flow://Proposal> .
+# In the community-root context
+<context-id>  flow://has_flow  <flow://Proposal> .
 
 <flow://Proposal>  rdf://type           flow://Flow ;
                    flow://name           "Proposal" ;
@@ -401,7 +401,7 @@ LIMIT 1
 
 ### 8.4 Auto-Transition Authorship
 
-Auto-transitions fired by the runtime SHOULD be authored under a designated "system" identity (a `did:graph` delegate dedicated to runtime operations). Implementations MAY support per-flow system identities so different contexts isolate their automation.
+Auto-transitions fired by the runtime SHOULD be authored under a designated "system" identity (a delegate of the context's sovereign DID dedicated to runtime operations). Implementations MAY support per-flow system identities so different contexts isolate their automation.
 
 ---
 
@@ -820,7 +820,4 @@ await community.addFlow("VotingPeriod", JSON.stringify({
 
 <dt>[DECENTRALISED-IDENTITY]</dt>
 <dd><a href="./01_decentralised-identity-web-platform.md">Decentralised Identity Integration for the Web Platform</a>.</dd>
-
-<dt>[GROUP-IDENTITY]</dt>
-<dd><a href="./10_decentralised-group-identity.md">Decentralised Group Identity</a>.</dd>
 </dl>

@@ -10,7 +10,7 @@
 
 ## Abstract
 
-This specification extends the Credential Management API to support **decentralised identifiers (DIDs)** as a first-class web platform primitive. One DID method is REQUIRED: `did:key` for individual identities. The API is exposed on `navigator.credentials` and builds on the precedent of passkeys (WebAuthn): private keys live in platform secure storage, signing is user-agent-mediated, and the credential surface is method-agnostic so that additional DID methods can be plugged in by other specifications. The specification also defines a uniform signing surface (`sign` / `verify` / `signCapability`) and a resolution dispatcher that delegates to method-specific resolvers. A separate specification ([[GROUP-IDENTITY]]) defines `did:graph` for graph-backed collective identity and the DID-document delegate model that gives a graph shared signing authority; this specification's surface is the entry point such methods plug into.
+This specification extends the Credential Management API to support **decentralised identifiers (DIDs)** as a first-class web platform primitive. One DID method is REQUIRED: `did:key` for individual identities. The API is exposed on `navigator.credentials` and builds on the precedent of passkeys (WebAuthn): private keys live in platform secure storage, signing is user-agent-mediated, and the credential surface is method-agnostic so that additional DID methods can be plugged in by other specifications. The specification also defines a uniform signing surface (`sign` / `verify` / `signCapability`) and a resolution dispatcher that delegates to method-specific resolvers.
 
 ---
 
@@ -49,7 +49,7 @@ Identity on the web is fundamentally server-dependent. Users authenticate to ser
 
 User agents have demonstrated that they can manage cryptographic keys on behalf of users. Passkeys (built on WebAuthn) store asymmetric key pairs in the OS keychain, protect them with biometrics, sync them across devices, and present user-friendly permission prompts. Over 13 billion accounts support passkeys as of 2025.
 
-This specification applies the same architectural pattern to **decentralised identifiers (DIDs)**. The substrate is intentionally narrow: a credential type for DIDs, one REQUIRED method (`did:key`), uniform signing and resolution surfaces, and an extension point for other DID methods. Collective identity, shared signing authority, and graph-backed DIDs are layered on top by [[GROUP-IDENTITY]].
+This specification applies the same architectural pattern to **decentralised identifiers (DIDs)**. The substrate is intentionally narrow: a credential type for DIDs, one REQUIRED method (`did:key`), uniform signing and resolution surfaces, and an extension point for other DID methods. Anything beyond a single-key individual identity — shared signing authority, collective identity, identifiers bound to mutable external state — is out of scope here and is the responsibility of additional DID methods that register through the extension point.
 
 ### 1.2 Scope
 
@@ -61,10 +61,10 @@ In scope:
 - A `resolve(did)` dispatcher with a pluggable method-resolver registry.
 - Permission, key management, security, and privacy requirements applicable to any DID-backed credential.
 
-Out of scope (defined by other specifications):
+Out of scope:
 
-- The `did:graph` method and DID-document delegate semantics — defined in [[GROUP-IDENTITY]].
-- Collective identity, participation, and group conventions — defined in [[GROUP-IDENTITY]].
+- Any DID method beyond `did:key`. Additional methods (whether for shared signing authority, mutable identifiers, web-of-trust, etc.) plug in through the resolver-registry extension point ([§4.2](#42-method-registry)); this specification does not define them.
+- Collective or group identity. The substrate here treats every credential as an individual signer; any notion of "many parties sign as one" belongs to a layered DID method.
 - Verifiable Credentials — defined in [[VC-DATA-MODEL-2.0]].
 
 ### 1.3 Use Cases
@@ -73,7 +73,7 @@ Out of scope (defined by other specifications):
 - **Content signing.** An identity signs a document. Any party can verify the signature without contacting a server.
 - **Cross-application identity.** The same DID is used across multiple applications.
 - **Offline verification.** `did:key` resolution is purely algorithmic; no network round-trip is required.
-- **Plug-in methods.** Other specifications register additional DID methods (e.g., `did:graph` via [[GROUP-IDENTITY]], or `did:web`, `did:peer`) through the resolver-registry extension point.
+- **Plug-in methods.** Other specifications register additional DID methods (e.g., `did:web`, `did:peer`) through the resolver-registry extension point.
 
 ### 1.4 Relationship to Other Specifications
 
@@ -81,7 +81,6 @@ Out of scope (defined by other specifications):
 - **DID Core** [[DID-CORE]] — DID data model and document structure.
 - **Web Crypto API** [[WEBCRYPTO]] — cryptographic primitives.
 - **Ed25519** [[RFC8032]] — REQUIRED signing algorithm.
-- [[GROUP-IDENTITY]] defines `did:graph`, DID-document delegates, and the collective-identity layer that plugs into this specification's resolver registry and `DIDCredential` surface.
 
 ---
 
@@ -97,7 +96,7 @@ A conforming user agent MUST:
 4. Implement the resolution dispatcher ([§7](#7-did-resolution)) including algorithmic `did:key` resolution.
 5. Expose the resolver-registry extension point ([§4.2](#42-method-registry)) so that other specifications MAY register additional DID methods.
 
-A conforming user agent MAY implement additional DID methods either natively or by accepting registrations into the resolver registry. Implementations of `did:graph` and the DID-document delegate model SHOULD follow [[GROUP-IDENTITY]].
+A conforming user agent MAY implement additional DID methods either natively or by accepting registrations into the resolver registry.
 
 ---
 
@@ -117,7 +116,7 @@ interface DIDCredential : Credential {
 
 The `type` attribute inherited from `Credential` MUST return `"did"`.
 
-`DIDCredential` is the substrate type. Specifications that define additional DID methods MAY extend it via WebIDL `partial interface DIDCredential { ... }` to add method-specific attributes (for example, [[GROUP-IDENTITY]] adds the `methodId` of the verification method whose key the credential holds for a `did:graph` DID).
+`DIDCredential` is the substrate type. Specifications that define additional DID methods MAY extend it via WebIDL `partial interface DIDCredential { ... }` to add method-specific attributes — for instance, a method whose DID document carries multiple verification methods needs a way to identify which one a given credential holds.
 
 ### 3.1 Creating a DID Credential
 
@@ -195,7 +194,7 @@ Resolution is algorithmic and produces the canonical DID document defined in [[D
 
 ### 4.2 Method Registry
 
-Conforming user agents MUST support `did:key`. User agents MUST expose a pluggable resolver mechanism through which other specifications and applications can register additional DID methods (for example, `did:graph` via [[GROUP-IDENTITY]], or `did:web`, `did:peer`).
+Conforming user agents MUST support `did:key`. User agents MUST expose a pluggable resolver mechanism through which other specifications and applications can register additional DID methods (for example, `did:web` or `did:peer`).
 
 ```webidl
 [Exposed=Window, SecureContext]
@@ -260,7 +259,7 @@ partial interface DIDCredential {
 
 The user MAY delete a `DIDCredential`. Deletion MUST remove the private key from storage. Deletion does not retroactively invalidate previously created signatures.
 
-Methods that bind a credential to externally-stored DID state (for example, `did:graph` credentials, whose DID document lives in a graph — see [[GROUP-IDENTITY]]) MAY define additional revocation semantics in their respective specifications.
+Methods that bind a credential to externally-stored DID state — DID documents that live somewhere other than the credential's own key material — MAY define additional revocation semantics in their respective specifications.
 
 ---
 
@@ -283,7 +282,7 @@ The `sign(data)` method MUST:
 
 1. Verify the call is triggered by a user gesture.
 2. Reject with `"InvalidStateError"` if the credential is locked.
-3. Display a user-agent-mediated prompt indicating the requesting origin and the action. Method-specific specifications MAY require additional prompt content (for example, [[GROUP-IDENTITY]] requires that signing prompts for a `did:graph` credential indicate the signature is *on behalf of the graph*).
+3. Display a user-agent-mediated prompt indicating the requesting origin and the action. Method-specific specifications MAY require additional prompt content (for example, prompts that make clear when a signature is being produced on behalf of a shared identity rather than a personal one).
 4. Canonicalise `data` using JSON Canonicalization Scheme [[RFC8785]].
 5. Compute the timestamp as the current time in RFC 3339 [[RFC3339]] format.
 6. Compute `SHA-256(canonical(data) || timestamp)`.
@@ -316,7 +315,7 @@ The `verify()` method MUST:
 3. Canonicalise `signedContent.data` using [[RFC8785]].
 4. Compute `SHA-256(canonical(data) || timestamp)`.
 5. Verify the signature against the method's public key.
-6. Return `true` if the signature is valid AND the method is currently authorised by the DID document for the signature's intended use. Method-specific authorisation rules (e.g., DID-document capability-section membership for `did:graph`) are defined by the method's specification.
+6. Return `true` if the signature is valid AND the method is currently authorised by the DID document for the signature's intended use. Method-specific authorisation rules — for instance, mapping a [[DID-CORE]] capability section onto a signature's intent — are defined by the method's specification.
 
 `verify()` MUST NOT require a user gesture and MUST NOT display a prompt.
 
@@ -325,7 +324,7 @@ The `verify()` method MUST:
 A convenience method that produces a signed ZCAP delegation. The method MUST:
 
 1. Validate that `zcap` is a structurally valid [[ZCAP-LD]] document.
-2. Confirm that the credential is authorised to act as the ZCAP's `delegator`. For a `did:key` credential, this means the credential's DID equals the `delegator`. For DIDs defined by other specifications, the method's specification MUST define the authorisation rule (for example, [[GROUP-IDENTITY]] requires the credential to hold a current `capabilityDelegation` delegate on the `delegator` graph DID).
+2. Confirm that the credential is authorised to act as the ZCAP's `delegator`. For a `did:key` credential, this means the credential's DID equals the `delegator`. For DIDs defined by other specifications, the method's specification MUST define the authorisation rule.
 3. Sign the canonical form of the ZCAP.
 4. Embed the proof and return the signed ZCAP as a `SignedContent`.
 
@@ -411,7 +410,7 @@ Applications that use signed challenges MUST generate unique, unpredictable chal
 
 ### 9.5 Method-Specific Considerations
 
-Methods registered through [§4.2](#42-method-registry) MAY introduce additional attack surface (network reachability, document tampering, delegate compromise). Their respective specifications MUST address those considerations. In particular, [[GROUP-IDENTITY]] addresses the integrity of DID documents stored in graphs and the lifecycle of compromised DID-document delegates.
+Methods registered through [§4.2](#42-method-registry) MAY introduce additional attack surface (network reachability, document tampering, delegate compromise, etc.). Their respective specifications MUST address those considerations.
 
 ---
 
@@ -435,7 +434,7 @@ User agents MUST NOT reveal to a requesting origin which other origins the user 
 
 ### 10.5 Method-Specific Considerations
 
-Methods that bind a DID to externally-visible state (for example, `did:graph` DID documents being readable from a graph) introduce additional privacy considerations defined by their respective specifications. See [[GROUP-IDENTITY]] for `did:graph`.
+Methods that bind a DID to externally-visible state (for example, DID documents that are publicly readable from some shared store) introduce additional privacy considerations defined by their respective specifications.
 
 ---
 
@@ -476,7 +475,7 @@ const zcap = await me.signCapability({
   parentCapability: rootCap.id,
   delegatee: "did:key:z6MkContractor...",
   actions: ["createLink"],
-  resource: "did:graph:z6MkChannel...",
+  resource: "<some resource URI defined by another spec>",
   caveats: [
     { type: "expiry", expiresAt: "2027-01-01T00:00:00Z" }
   ]
@@ -503,7 +502,6 @@ const zcap = await me.signCapability({
 
 ### 12.2 Informative References
 
-- **[GROUP-IDENTITY]** [Decentralised Group Identity](./10_decentralised-group-identity.md) — defines `did:graph`, DID-document delegates, and the collective-identity layer.
 - **[VC-DATA-MODEL-2.0]** "Verifiable Credentials Data Model v2.0", W3C Recommendation. https://www.w3.org/TR/vc-data-model-2.0/
 - **[RFC5480]** Turner, S. et al., "Elliptic Curve Cryptography Subject Public Key Information", RFC 5480, March 2009.
 - **[SEC2]** Certicom Research, "SEC 2: Recommended Elliptic Curve Domain Parameters", 2010.

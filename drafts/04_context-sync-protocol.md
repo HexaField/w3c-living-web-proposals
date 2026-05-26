@@ -9,14 +9,14 @@
 
 ## Abstract
 
-This specification defines a protocol for synchronising **contexts** (named graphs, per [[PERSONAL-LINKED-DATA-GRAPHS]]) between multiple agents in a peer-to-peer manner. Synchronisation is keyed by a context's `did:graph:...` (defined in [[GROUP-IDENTITY]]). A `did:graph` is REQUIRED for sync: a context's `graph://<content-hash>` IRI changes whenever its triples change, so it cannot serve as the durable subscription handle that sync needs. Ungroupified contexts can still be transported between agents as immutable snapshots ([[PERSONAL-LINKED-DATA-GRAPHS]] §5), but they cannot be *synced* — sync presupposes an evolving graph with a stable identity, which is exactly what `did:graph` provides. This specification defines:
+This specification defines a protocol for synchronising **contexts** (named graphs, per [[PERSONAL-LINKED-DATA-GRAPHS]]) between multiple agents in a peer-to-peer manner. Synchronisation is keyed by a context's sovereign DID (the `Context.did` attribute defined in [[PERSONAL-LINKED-DATA-GRAPHS]] §3.3). A sovereign DID is REQUIRED for sync: a context's `graph://<content-hash>` IRI changes whenever its triples change, so it cannot serve as the durable subscription handle that sync needs. Contexts without a sovereign DID can still be transported between agents as immutable snapshots ([[PERSONAL-LINKED-DATA-GRAPHS]] §5), but they cannot be *synced* — sync presupposes an evolving graph with a stable, content-independent identity. How a sovereign DID is attached to a context is out of scope for this specification. This specification defines:
 
-- The **ContextDiff** format — additions and removals scoped to a specific graph DID, accompanied by a capability proof per [[CAPABILITY-FRAMEWORK]].
+- The **ContextDiff** format — additions and removals scoped to a specific sovereign DID, accompanied by a capability proof per [[CAPABILITY-FRAMEWORK]].
 - The **mount-and-subscribe** lifecycle — a graduated, per-context subscription model.
 - The separation of **logical contexts** (with self-contained governance) from **sync spaces** (gossip topologies that may carry one or many contexts).
 - The Context-API additions that user agents expose for publish, subscribe, and signal.
 
-The protocol is *transport-neutral* and *module-neutral*: it is realised over a pluggable module architecture ([[SYNC-MODULE]]) in which each module supplies transport, merge logic, peer discovery, and governance validation. Conforming user agents ship a built-in default module ([[DEFAULT-SYNC-MODULE]]).
+The protocol is *transport-neutral* and *module-neutral*: it is realised over a pluggable module mechanism in which each module supplies transport, merge logic, peer discovery, and governance validation. The interface, sandbox, and built-in default module are out of scope for this specification.
 
 ---
 
@@ -54,7 +54,7 @@ The web's data model is fundamentally client–server. Local-first software addr
 
 This specification defines a **synchronisation protocol for linked data contexts** — a standard interface and diff format that enables multiple agents to maintain a shared, eventually-consistent named graph without a central server.
 
-This specification *does not* prescribe a specific transport, merge algorithm, or peer-discovery mechanism. Those choices are encapsulated in **sync modules** ([[SYNC-MODULE]]). Conforming user agents ship a default module ([[DEFAULT-SYNC-MODULE]]), and communities may install additional modules that implement different strategies.
+This specification *does not* prescribe a specific transport, merge algorithm, or peer-discovery mechanism. Those choices are encapsulated in **sync modules** — pluggable components referenced by content-hash but whose interface, sandboxing, and built-in default are out of scope for this specification.
 
 ### 1.2 Use Cases
 
@@ -62,7 +62,7 @@ This specification *does not* prescribe a specific transport, merge algorithm, o
 - **Peer-to-peer social.** Per-context feeds, profiles, interactions; no platform intermediary.
 - **Distributed knowledge bases.** Research groups maintain shared contexts across institutional boundaries.
 - **Offline-first.** Users on intermittent connections make local edits that reconcile when connectivity resumes.
-- **Governance-enforced collaboration.** Contexts enforce membership, rate limits, and content rules at the sync layer via [[CAPABILITY-FRAMEWORK]] and [[CONSTRAINT-VOCABULARY]].
+- **Governance-enforced collaboration.** Contexts enforce membership, rate limits, and content rules at the sync layer via [[CAPABILITY-FRAMEWORK]].
 
 ### 1.3 Scope
 
@@ -78,11 +78,10 @@ This specification defines:
 ### 1.4 Relationship to Other Specifications
 
 - [[DECENTRALISED-IDENTITY]] defines `did:key` and the `DIDCredential` signing surface.
-- [[GROUP-IDENTITY]] defines `did:graph` and its resolution algorithm — the durable identifier on which sync subscriptions are keyed. Subscribing to a graph that has not been groupified is not possible; see [[PERSONAL-LINKED-DATA-GRAPHS]] §5 for the immutable-snapshot transport path that ungroupified contexts use instead.
-- [[PERSONAL-LINKED-DATA-GRAPHS]] defines the Context interface and GraphStore that this protocol synchronises.
+- [[PERSONAL-LINKED-DATA-GRAPHS]] defines the Context interface, GraphStore, and the optional sovereign DID (`Context.did`) on which sync subscriptions are keyed. Subscribing to a context with no sovereign DID is not possible; the immutable-snapshot transport path ([[PERSONAL-LINKED-DATA-GRAPHS]] §5) applies instead.
 - [[CAPABILITY-FRAMEWORK]] defines the ZCAP rules that the protocol's governance integration enforces.
-- [[SYNC-MODULE]] defines the pluggable module interface that handles transport, merge, peer discovery, and `validate()` for the protocol.
-- [[DEFAULT-SYNC-MODULE]] defines the built-in module that conforming user agents MUST ship.
+
+The pluggable sync-module interface, sandboxing model, and built-in default module are defined by extension specifications and are out of scope here.
 
 ---
 
@@ -97,8 +96,7 @@ A **conforming user agent** MUST implement:
 3. The subscription lifecycle ([§8](#8-subscription-lifecycle)).
 4. Governance integration ([§9](#9-governance-integration)).
 5. Background operation ([§10](#10-background-operation)).
-6. The pluggable module sandbox defined in [[SYNC-MODULE]].
-7. The default sync module defined in [[DEFAULT-SYNC-MODULE]].
+6. The pluggable module mechanism by which transport, merge logic, peer discovery, and validation are supplied; the module interface, sandbox, and any built-in default module are out of scope here and are defined by extension specifications.
 
 ---
 
@@ -106,7 +104,7 @@ A **conforming user agent** MUST implement:
 
 <dl>
 <dt><dfn>Context</dfn></dt>
-<dd>A named graph identified by a <code>graph://&lt;content-hash&gt;</code> IRI (optionally also by a <code>did:graph:...</code> DID when groupified). See [[PERSONAL-LINKED-DATA-GRAPHS]] §3.3.</dd>
+<dd>A named graph identified by a <code>graph://&lt;content-hash&gt;</code> IRI (optionally also by a sovereign DID). See [[PERSONAL-LINKED-DATA-GRAPHS]] §3.3.</dd>
 
 <dt><dfn>ContextDiff</dfn></dt>
 <dd>A unit of change to a specific context: additions, removals, a revision identifier, causal dependencies, and a CapabilityProof. The unit of gossip.</dd>
@@ -127,7 +125,7 @@ A **conforming user agent** MUST implement:
 <dd>A policy that maps contexts to sync spaces. See [§7.2](#72-topology-policy).</dd>
 
 <dt><dfn>Sync Module</dfn></dt>
-<dd>A content-addressed WebAssembly bundle implementing the <code>GraphSyncModule</code> interface defined by [[SYNC-MODULE]]. The module handles transport, merge, peer discovery, and validation for a sync space.</dd>
+<dd>A content-addressed pluggable component that handles transport, merge, peer discovery, and validation for a sync space. Its interface, sandbox, and any built-in default module are out of scope for this specification.</dd>
 
 <dt><dfn>Peer</dfn></dt>
 <dd>An agent participating in synchronisation of a context. Identified by (DID, sessionId).</dd>
@@ -172,7 +170,7 @@ Context identity, sync topology, and module choice are kept separate:
 └─────────────────────────────────────────────────────┘
 ```
 
-**Logical layer**: Each context is identified by a `did:graph:...` (its sovereign identity — required for sync) and has its own governance, shapes, flows, and data. Its current state has a `graph://<content-hash>` IRI which changes with every diff. **Authorization** lives here, per-context.
+**Logical layer**: Each context is identified by its sovereign DID (required for sync) and has its own governance, shapes, flows, and data. Its current state has a `graph://<content-hash>` IRI which changes with every diff. **Authorization** lives here, per-context.
 
 **Sync layer**: Sync spaces determine what gossips with what. **Membership in a space** carries diffs to your peer; **a valid capability** lets you process them. The two are orthogonal.
 
@@ -200,7 +198,7 @@ A receiving peer in a shared space:
 ```webidl
 [Exposed=Window,Worker]
 interface ContextDiff {
-  readonly attribute USVString graphDid;          // did:graph:... — the sovereign id of the graph
+  readonly attribute USVString graphDid;          // the context's sovereign DID
   readonly attribute USVString revision;           // sha256 hex
   readonly attribute FrozenArray<Triple> additions;
   readonly attribute FrozenArray<Triple> removals;
@@ -245,7 +243,7 @@ The chain is the ordered list of ZCAPs from the committing agent's leaf capabili
 
 `caveatsSatisfied` records which caveats the committing agent's executor evaluated and accepted before commit. The receiving peer re-evaluates independently; this field is an audit trail, not a trust shortcut.
 
-`hasContentCaveats` is `true` if any delegation in the chain has caveats whose evaluation depends on the link's content (Predicate, Shape, Property, Content, Subject, Object — see [[CAPABILITY-FRAMEWORK]] §9 and [[CONSTRAINT-VOCABULARY]]). When `false`, the receiving peer MAY skip per-link caveat re-evaluation as an optimisation.
+`hasContentCaveats` is `true` if any delegation in the chain has caveats whose evaluation depends on the link's content (Predicate, Shape, Property, Content, Subject, Object — see [[CAPABILITY-FRAMEWORK]] §9). When `false`, the receiving peer MAY skip per-link caveat re-evaluation as an optimisation.
 
 ### 5.4 Peer
 
@@ -323,8 +321,8 @@ interface PublishedContext {
 
 The `publish()` method MUST:
 
-1. If `options.moduleHash` is specified and not installed, initiate module installation ([[SYNC-MODULE]] §6.1). If the user denies, reject with `"NotAllowedError"`.
-2. If `options.moduleHash` is not specified, use the user agent's default sync module ([[DEFAULT-SYNC-MODULE]]).
+1. If `options.moduleHash` is specified and not installed, initiate module installation per the module mechanism in use. If the user denies, reject with `"NotAllowedError"`.
+2. If `options.moduleHash` is not specified, use the user agent's default sync module (the default module itself is out of scope here).
 3. Determine the space URI ([§7](#7-sync-spaces)).
 4. Initialise the sync module if not already running for this space.
 5. Subscribe to the space.
@@ -344,7 +342,7 @@ partial dictionary MountOptions {
 
 When a `Context` is mounted with any of these hints present, the user agent MUST in addition to the steps of [[PERSONAL-LINKED-DATA-GRAPHS]] §4.2:
 
-1. Subscribe to `spaceUri` using `moduleHash` (downloading the module if needed, with user consent — see [[SYNC-MODULE]] §6.2).
+1. Subscribe to `spaceUri` using `moduleHash` (downloading the module if needed, with user consent — module installation semantics are out of scope here).
 2. Begin emitting and accepting `ContextDiff`s scoped to the mounted graph IRI.
 
 ### 6.3 Sync Operations
@@ -460,7 +458,7 @@ partitioned:  "lwsync:dedicated:" + <graph-did>
 custom:       "lwsync:named:" + <custom-name>
 ```
 
-The namespace-id is typically the `did:graph:...` of a root context that other contexts participate in.
+The namespace-id is typically the sovereign DID of a root context that other contexts participate in.
 
 ### 7.4 Space Memberships
 
@@ -514,8 +512,8 @@ This section is normative.
 
 The full handshake for an agent to subscribe to a context they have not previously mounted:
 
-1. **Discover.** The agent obtains the context's `did:graph:...` plus addressing hints (space URI, module hash, relay endpoints, snapshot URI) — typically out of band (invitation link, paper, side-channel).
-2. **Resolve.** The runtime resolves the DID per [[GROUP-IDENTITY]] §4.4. If no snapshot is locally available, fetch one via the snapshot URI hint and verify it (the snapshot's `graphIri` is its content hash; the snapshot's `group://wrapsGraph` triple confirms the binding to the `did:graph`).
+1. **Discover.** The agent obtains the context's sovereign DID plus addressing hints (space URI, module hash, relay endpoints, snapshot URI) — typically out of band (invitation link, paper, side-channel).
+2. **Resolve.** The runtime resolves the DID per [[DID-CORE]]. If no snapshot is locally available, fetch one via the snapshot URI hint and verify it (the snapshot's `graphIri` is its content hash; the snapshot's binding to the sovereign DID is verified per the conventions established by the DID method in use).
 3. **Verify snapshot.** Verify the snapshot's signatures.
 4. **Verify capability.** If the mount mode requires authorisation, verify the agent's `capabilityProof` against the (now-resolved) context governance.
 5. **Mount.** Open the per-context store and write the snapshot triples ([[PERSONAL-LINKED-DATA-GRAPHS]] §5.3).
@@ -526,7 +524,7 @@ The agent is now subscribed. Subsequent diffs propagate via gossip; subsequent w
 
 ### 8.2 Maintaining the Subscription
 
-The runtime keeps the per-context store in sync via the module's `connect()` / `onRemoteDiff()` flow ([[SYNC-MODULE]] §5). Heartbeats, peer discovery, and retry are module-defined.
+The runtime keeps the per-context store in sync via the module's connection and remote-diff handling. Heartbeats, peer discovery, and retry are module-defined.
 
 ### 8.3 Losing the Subscription
 
@@ -565,7 +563,7 @@ Every `ContextDiff` is governance-verified at three points:
 A conforming sync module's `validate(graphDid, diff, author, graphState)` MUST:
 
 1. Verify the diff's `CapabilityProof.chain` against the context's governance ([[CAPABILITY-FRAMEWORK]] §7).
-2. Re-evaluate any content-dependent caveats against the actual triples in `additions` and `removals` (per [[CAPABILITY-FRAMEWORK]] §9 and [[CONSTRAINT-VOCABULARY]]).
+2. Re-evaluate any content-dependent caveats against the actual triples in `additions` and `removals` (per [[CAPABILITY-FRAMEWORK]] §9).
 3. Verify each triple's reifier signature against the resolved author.
 4. Return `{ accepted: true }` or `{ accepted: false, module: ..., reason: ... }`.
 
@@ -586,7 +584,7 @@ The runtime SHALL inspect the context's `governance://enforcement_mode` ([[CAPAB
 - **Announced**: Verify but do not reject on capability failure; log.
 - **Enforced**: Verify and reject.
 
-Constraint kinds supplied by [[CONSTRAINT-VOCABULARY]] (content, temporal, credential) are applied in all modes per their own rules.
+Constraint kinds supplied by extension specifications (e.g., content, temporal, credential) are applied in all modes per their own rules.
 
 ---
 
@@ -599,7 +597,7 @@ Sync activity executes in the user-agent-managed environment and persists across
 - Background tabs
 - User agent restart (sessions reconnect)
 
-The user agent MAY pause sync activity under battery / network / resource pressure, surfacing pause/resume controls via the module management UI ([[SYNC-MODULE]] §6.6).
+The user agent MAY pause sync activity under battery / network / resource pressure, surfacing pause/resume controls via the module management UI (out of scope here).
 
 When all top-level browsing contexts are closed, the user agent MAY continue running modules briefly (e.g., to flush pending diffs) before fully suspending.
 
@@ -649,7 +647,7 @@ Receiving peers MUST independently verify `CapabilityProof.chain` against the co
 
 ### 12.2 DID Resolution Trust
 
-Resolving a `did:graph:...` from snapshots is subject to the trust level of the snapshot source ([[DECENTRALISED-IDENTITY]] §7.2). Security-sensitive operations SHOULD require `"local"` or `"mounted-read"` trust. Verifying a snapshot's `graphIri` is intrinsically a single hash check (the IRI is the SHA-256 of the snapshot's triples; either it matches or it does not); the snapshot's signature establishes the trust level for the surrounding data.
+Resolving a sovereign DID from snapshots is subject to the trust level of the snapshot source ([[DECENTRALISED-IDENTITY]] §7.2). Security-sensitive operations SHOULD require `"local"` or `"mounted-read"` trust. Verifying a snapshot's `graphIri` is intrinsically a single hash check (the IRI is the SHA-256 of the snapshot's triples; either it matches or it does not); the snapshot's signature establishes the trust level for the surrounding data.
 
 ### 12.3 Sync Space Membership Privacy
 
@@ -661,11 +659,11 @@ A peer's presence in a sync space is visible to other space members. In a shared
 
 ### 12.5 Authoritative Timestamps
 
-Temporal constraints in [[CONSTRAINT-VOCABULARY]] and reifier-derived "entered state at" times in [[GRAPH-FLOWS]] depend on timestamps. The runtime MUST treat each ContextDiff's `timestamp` as the authoritative time for triples in that diff.
+Constraint kinds and downstream specifications that rely on time-of-write (e.g., temporal caveats, state-entry timestamps) depend on the diff's timestamp. The runtime MUST treat each ContextDiff's `timestamp` as the authoritative time for triples in that diff.
 
 ### 12.6 Module Sandbox
 
-Sync modules MUST run in the sandbox defined by [[SYNC-MODULE]] §3 with only the capabilities they requested and the user granted.
+Sync modules MUST run in a sandboxed environment with only the capabilities they requested and the user granted. The sandbox model itself is out of scope here and defined by an extension specification.
 
 ---
 
@@ -691,7 +689,7 @@ A peer's mount table is a sensitive artefact. The runtime MUST NOT disclose the 
 
 ### 13.4 DID Resolution Side Effects
 
-Resolving a `did:graph:...` can reveal interest in a context. Implementations SHOULD batch resolution requests and SHOULD avoid resolving identifiers based on untrusted input.
+Resolving a sovereign DID can reveal interest in a context. Implementations SHOULD batch resolution requests and SHOULD avoid resolving identifiers based on untrusted input.
 
 ### 13.5 Per-Context Identity
 
@@ -802,15 +800,11 @@ for (const s of spaces) {
 - **[RFC8174]** Leiba, B., "Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words", BCP 14, RFC 8174, May 2017.
 - **[RFC3339]** Klyne, G. and C. Newman, "Date and Time on the Internet: Timestamps", RFC 3339, July 2002.
 - **[RDF-CANON]** "RDF Dataset Canonicalization", W3C Recommendation, March 2025. https://www.w3.org/TR/rdf-canon/
+- **[DID-CORE]** Sporny, M., et al., "Decentralized Identifiers (DIDs) v1.0", W3C Recommendation, July 2022. https://www.w3.org/TR/did-core/
 - **[DECENTRALISED-IDENTITY]** [Decentralised Identity Integration for the Web Platform](./01_decentralised-identity-web-platform.md).
 - **[PERSONAL-LINKED-DATA-GRAPHS]** [Personal Linked Data Graphs](./02_personal-linked-data-graphs.md).
 - **[CAPABILITY-FRAMEWORK]** [Graph Capability Framework](./03_graph-capability-framework.md).
-- **[SYNC-MODULE]** [Sync Module Architecture](./05_sync-module-architecture.md).
-- **[DEFAULT-SYNC-MODULE]** [Default Sync Module](./08_default-sync-module.md).
 
 ### 15.2 Informative References
 
-- **[CONSTRAINT-VOCABULARY]** [Governance Constraint Vocabulary](./07_governance-constraint-vocabulary.md).
-- **[GRAPH-FLOWS]** [Graph Flows](./09_graph-flows.md).
-- **[SHAPE-VALIDATION]** [Dynamic Graph Shape Validation](./06_dynamic-graph-shape-validation.md).
-- **[GROUP-IDENTITY]** [Decentralised Group Identity](./10_decentralised-group-identity.md).
+None.

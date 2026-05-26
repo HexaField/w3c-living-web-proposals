@@ -9,7 +9,7 @@
 
 ## Abstract
 
-This specification defines an extension to SHACL (Shapes Constraint Language) [[SHACL]] that adds **action semantics** — constructors, property setters, and collection operations — enabling declarative CRUD over RDF graphs. Shapes register into a **context** (a named graph identified by a `did:graph:...` DID — see [[PERSONAL-LINKED-DATA-GRAPHS]]) and define both the validation constraints and the CRUD operations for a class of graph entities. Shapes are stored as triples inside the context they describe, so contexts are self-describing and shapes travel with their data through snapshot transfer (see [[PERSONAL-LINKED-DATA-GRAPHS]] §5). Shapes registered on a parent context are visible to child contexts that participate in it via [[GROUP-IDENTITY]] participation links.
+This specification defines an extension to SHACL (Shapes Constraint Language) [[SHACL]] that adds **action semantics** — constructors, property setters, and collection operations — enabling declarative CRUD over RDF graphs. Shapes register into a **context** (a named graph — see [[PERSONAL-LINKED-DATA-GRAPHS]]) and define both the validation constraints and the CRUD operations for a class of graph entities. Shapes are stored as triples inside the context they describe, so contexts are self-describing and shapes travel with their data through snapshot transfer (see [[PERSONAL-LINKED-DATA-GRAPHS]] §5). Shapes registered on a parent context are visible to child contexts that participate in it via `context://participates_in` links.
 
 ---
 
@@ -68,7 +68,7 @@ This specification defines:
 - Conventions for storing shapes as triples in the context they describe.
 - Shape inheritance across nested contexts via `context://participates_in`.
 - The relationship between this specification and standard SHACL validation.
-- The relationship between this specification and [[GRAPH-FLOWS]].
+- The relationship between this specification and process/flow specifications layered on top (see [§9](#9-relationship-to-flows)).
 
 This specification does NOT define a replacement for SHACL — standard SHACL validation remains applicable.
 
@@ -89,7 +89,7 @@ A **conforming implementation** MUST support all normative requirements when pro
 <dd>A named definition comprising a target class, property definitions, and constructor actions. Defines both validation constraints and CRUD operations for a class of entities.</dd>
 
 <dt><dfn>Context</dfn></dt>
-<dd>A named graph identified by a <code>did:graph:...</code> DID in which shapes are registered. See [[PERSONAL-LINKED-DATA-GRAPHS]] §3.3.</dd>
+<dd>A named graph (per [[PERSONAL-LINKED-DATA-GRAPHS]] §3.3) in which shapes are registered.</dd>
 
 <dt><dfn>ShapeInstance</dfn></dt>
 <dd>A graph entity (identified by a URI) that conforms to a shape. Created by executing a shape's constructor.</dd>
@@ -425,7 +425,7 @@ This makes shape definitions immutable. Modifying a shape produces a new content
 
 ```turtle
 # Inside the context's named graph:
-<did:graph:context>  shape://has_shape   <sha256:abc...> .
+<context-id>  shape://has_shape   <sha256:abc...> .
 
 <sha256:abc...>  rdf://type           shape://Shape ;
                  shape://name          "Task" ;
@@ -438,7 +438,7 @@ This makes shape definitions immutable. Modifying a shape produces a new content
 Shape definitions are content-addressed and immutable, so the same shape has the same address in any context. To import a shape:
 
 1. Add the shape definition's triples (with the existing content-address) to the target context.
-2. Add the `shape://has_shape` link from the target context's DID.
+2. Add the `shape://has_shape` link from the target context's identifier.
 
 Because the address is identical, an importer can detect that the same shape is already known.
 
@@ -450,7 +450,7 @@ This section is normative.
 
 ### 7.1 Inheritance via Context Participation
 
-Contexts can be nested via `context://participates_in` links declared from below (see [[GROUP-IDENTITY]]). A child context that participates in a parent inherits the parent's shapes, with the same extension constraints as in-shape `extends`:
+Contexts can be nested via `context://participates_in` links declared from below (see [[PERSONAL-LINKED-DATA-GRAPHS]] §3.3). A child context that participates in a parent inherits the parent's shapes, with the same extension constraints as in-shape `extends`:
 
 - The child MAY use the parent's shapes as if they were local.
 - The child MAY register a new shape with the same name *only if* it satisfies [§4.6](#46-shape-extension)'s narrowing rule — it must be a strict refinement of the parent's shape.
@@ -507,18 +507,18 @@ The action semantics are additive to SHACL:
 
 ### 8.4 The SHACL/ZCAP Bridge
 
-[[CONSTRAINT-VOCABULARY]] §7 defines a `shape` caveat that constrains a ZCAP to writes conforming to a specific shape. The caveat references a shape by URI; shapes define structure; the runtime evaluates them at write time. The two specifications compose: the ZCAP says "this agent can write Messages here", and the shape says "a Message has these fields."
+A `shape` caveat (defined by an extension constraint vocabulary or by applications) MAY constrain a ZCAP to writes conforming to a specific shape. The caveat references a shape by URI; shapes define structure; the runtime evaluates them at write time. The two compose: the ZCAP says "this agent can write Messages here", and the shape says "a Message has these fields."
 
 ---
 
 ## 9. Relationship to Flows
 
-Shapes describe **structure** — what data must look like. [[GRAPH-FLOWS]] describes **process** — how data must evolve over time. The two compose:
+Shapes describe **structure** — what data must look like. A separate class of specification — out of scope here — may describe **process** — how data must evolve over time. The two compose:
 
 - A shape says: "A Proposal has a body, an author, and a status."
-- A flow says: "A Proposal's status transitions through draft → comment → voting → ratified, with guards and temporal constraints at each step."
+- A flow specification says: "A Proposal's status transitions through draft → comment → voting → ratified, with guards and temporal constraints at each step."
 
-Flow definitions reference shapes by `targetClass`; shape constructors create instances that flows then govern. Both are stored as triples in the context, and both travel with the context through snapshot transfer.
+Flow definitions defined elsewhere may reference shapes by `targetClass`; shape constructors create instances that flows then govern. Both are stored as triples in the context, and both travel with the context through snapshot transfer.
 
 ---
 
@@ -638,7 +638,7 @@ for (const s of all) {
 
 ```javascript
 // Parent context defines a base "Item" shape.
-const community = await me.getContext("did:graph:community-root");
+const community = await me.getContext("graph://community-root...");
 await community.addShape("Item", JSON.stringify({
   targetClass: "schema://Thing",
   properties: [
@@ -712,13 +712,4 @@ await channel.addShape("FormalItem", JSON.stringify({
 
 <dt>[CAPABILITY-FRAMEWORK]</dt>
 <dd><a href="./03_graph-capability-framework.md">Graph Capability Framework</a>.</dd>
-
-<dt>[CONSTRAINT-VOCABULARY]</dt>
-<dd><a href="./07_governance-constraint-vocabulary.md">Governance Constraint Vocabulary</a>.</dd>
-
-<dt>[GRAPH-FLOWS]</dt>
-<dd><a href="./09_graph-flows.md">Graph Flows</a>.</dd>
-
-<dt>[GROUP-IDENTITY]</dt>
-<dd><a href="./10_decentralised-group-identity.md">Decentralised Group Identity</a>.</dd>
 </dl>

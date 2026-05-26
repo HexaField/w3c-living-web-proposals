@@ -181,7 +181,7 @@ All messages are CBOR-encoded with a common envelope:
 ### 5.3 PULL
 
 ```
-{ "graphDid": "did:graph:...", "fromRevision": "..." | null }
+{ "graphDid": "<sovereign-did>", "fromRevision": "..." | null }
 ```
 
 The recipient responds with a `SNAPSHOT` (if `fromRevision` is `null` or unknown) or a sequence of `DIFF` messages.
@@ -189,7 +189,7 @@ The recipient responds with a `SNAPSHOT` (if `fromRevision` is `null` or unknown
 ### 5.4 SNAPSHOT
 
 ```
-{ "graphDid": "did:graph:...", "snapshot": <GraphSnapshot CBOR> }
+{ "graphDid": "<sovereign-did>", "snapshot": <GraphSnapshot CBOR> }
 ```
 
 The `snapshot` is the context snapshot as defined in [[PERSONAL-LINKED-DATA-GRAPHS]] §5.
@@ -433,4 +433,4 @@ Snapshot promotion announces "agent X took a snapshot of context G at time T". T
 
 ### 13.2 Informative References
 
-- **[GRAPH-FLOWS]** [Graph Flows](./09_graph-flows.md).
+None.

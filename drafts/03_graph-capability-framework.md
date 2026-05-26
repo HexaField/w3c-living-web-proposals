@@ -9,7 +9,7 @@
 
 ## Abstract
 
-This specification defines a capability-based authorisation framework for linked data **contexts** (named graphs identified by `graph://<content-hash>` IRIs, as defined in [[PERSONAL-LINKED-DATA-GRAPHS]]). It defines a **root capability** minted at context creation, a delegation algebra for [[ZCAP-LD]] capabilities targeting context IRIs, a **caveat type system** for fine-grained attenuation, three explicit **enforcement modes** (Open / Announced / Enforced), and a scope-inheritance mechanism via mutual `context://participates_in` / `context://accepts_participation` declarations. The framework is *vocabulary-neutral*: it defines the structure of capability chains and caveats, and an extension point through which specific constraint kinds (temporal, content, credential, shape — supplied by [[CONSTRAINT-VOCABULARY]]) plug in. Authority is constituted, not granted — no principal sits above the structure; capability chains trace to each context's own root capability. A ZCAP's `invoker` is a DID — typically an individual's `did:key` — and the framework treats a context's optional `did:graph` (from [[GROUP-IDENTITY]]) as an additional invoker form: when a capability is invoked by a delegate of a context's DID, the framework consults that context's DID document via [[GROUP-IDENTITY]] §5 to verify the signer.
+This specification defines a capability-based authorisation framework for linked data **contexts** (named graphs identified by `graph://<content-hash>` IRIs, as defined in [[PERSONAL-LINKED-DATA-GRAPHS]]). It defines a **root capability** minted at context creation, a delegation algebra for [[ZCAP-LD]] capabilities targeting context IRIs, a **caveat type system** for fine-grained attenuation, three explicit **enforcement modes** (Open / Announced / Enforced), and a scope-inheritance mechanism via mutual `context://participates_in` / `context://accepts_participation` declarations. The framework is *vocabulary-neutral*: it defines the structure of capability chains and caveats, and an extension point through which specific constraint kinds (temporal, content, credential, shape) plug in via extension specifications or applications. Authority is constituted, not granted — no principal sits above the structure; capability chains trace to each context's own root capability. A ZCAP's `invoker` is a DID — typically an individual's `did:key` — and the framework treats a context's optional sovereign DID (the `did` attribute defined in [[PERSONAL-LINKED-DATA-GRAPHS]] §3.3) as an additional invoker form: when a capability is invoked by a delegate of a context's DID, the framework consults that DID's document to verify the signer.
 
 ---
 
@@ -53,17 +53,17 @@ This specification places authorisation at the data layer: every triple write ma
 
 ### 1.2 Authority Is Constituted, Not Granted
 
-When a context comes into existence, a single **root capability** is minted as a ZCAP, signed by the creator using their `did:key` (or, for a context created within a *groupified* parent context, signed by a `capabilityDelegation` delegate of the parent's `did:graph`).
+When a context comes into existence, a single **root capability** is minted as a ZCAP, signed by the creator using their `did:key` (or, for a context created within a parent context that carries a sovereign DID, signed by a `capabilityDelegation` delegate of the parent's DID).
 
 From that moment, the structure of who-can-do-what is the accumulated history of delegations made by participants according to the governance rules they themselves defined. No principal sits above the structure. The creator initially holds the root capability and MAY delegate or rotate it — but as soon as they delegate it, others have equal standing under the new rules. Authority is **constituted**, not granted.
 
-### 1.3 ZCAPs Target Graph DIDs
+### 1.3 ZCAPs Target Sovereign DIDs
 
-The critical architectural decision: **a graph's *sovereign* identifier is the canonical resource of a ZCAP that governs its evolution**. A graph IRI (`graph://<content-hash>`) is a snapshot address — it changes whenever the graph's triples change (see [[PERSONAL-LINKED-DATA-GRAPHS]] §3.3) — and so cannot serve as the resource of a ZCAP that is meant to outlive even a single write. A `did:graph:...` ([[GROUP-IDENTITY]]) does not change with content, so it can. Therefore:
+The critical architectural decision: **a graph's *sovereign* identifier is the canonical resource of a ZCAP that governs its evolution**. A graph IRI (`graph://<content-hash>`) is a snapshot address — it changes whenever the graph's triples change (see [[PERSONAL-LINKED-DATA-GRAPHS]] §3.3) — and so cannot serve as the resource of a ZCAP that is meant to outlive even a single write. A sovereign DID (the `did` attribute defined in [[PERSONAL-LINKED-DATA-GRAPHS]] §3.3) does not change with content, so it can. Therefore:
 
-- For a context that has been **groupified**, ZCAP `resource` SHOULD be the `did:graph:...`. Capabilities then survive every mutation to the graph's content.
+- For a context that carries a sovereign DID, ZCAP `resource` SHOULD be that DID. Capabilities then survive every mutation to the graph's content.
 - A ZCAP MAY target a `graph://<content-hash>` IRI when authority is *deliberately* scoped to one snapshot — for example, "may sign a republication of *this specific* state". Such capabilities expire (in the sense that they no longer match the context's current resource) as soon as the graph mutates; this is the intended semantics.
-- For an **ungroupified** context the only identifier available is its current IRI. ZCAPs against ungroupified contexts therefore only make sense for one-shot, immutable artifacts. Long-lived governance against a mutable graph REQUIRES groupification.
+- For a context with no sovereign DID, the only identifier available is its current IRI. ZCAPs against such contexts therefore only make sense for one-shot, immutable artifacts. Long-lived governance against a mutable graph REQUIRES a sovereign DID; how one is attached is out of scope for this specification.
 
 ### 1.4 Enforcement Modes
 
@@ -87,10 +87,10 @@ Communities crystallise authorisation over time, not all at once. This specifica
 ### 1.6 Relationship to Other Specifications
 
 - [[DECENTRALISED-IDENTITY]] defines `did:key` and the `DIDCredential` signing surface.
-- [[GROUP-IDENTITY]] defines `did:graph` and the DID-document delegate model that this framework's `updateDIDDocument` ZCAP governs.
-- [[PERSONAL-LINKED-DATA-GRAPHS]] defines the Context that this framework governs.
+- [[PERSONAL-LINKED-DATA-GRAPHS]] defines the Context that this framework governs, including the optional sovereign DID (`Context.did`) and its DID-document delegate model that this framework's `updateDIDDocument` ZCAP governs.
 - [[ZCAP-LD]] defines the underlying capability data model.
-- [[CONSTRAINT-VOCABULARY]] supplies specific constraint kinds (temporal, content, credential, shape) that plug into the framework defined here.
+
+Specific constraint kinds (temporal, content, credential, shape) are out of scope here; they plug in via extension specifications or applications using the mechanism in [§9.4](#94-constraint-kind-plug-ins).
 
 ### 1.7 Use Cases
 
@@ -107,7 +107,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 A conforming **governance engine** is a software component that implements the algorithms in Sections [§6](#6-scope-resolution-context-nesting), [§7](#7-zcap-verification-algorithm), and [§8](#8-capability-attenuation), supports all three enforcement modes ([§5](#5-enforcement-modes)), and exposes the API defined in [§11](#11-governance-api-on-context).
 
-A conforming **constraint-kind plug-in** (as may be supplied by [[CONSTRAINT-VOCABULARY]] or by applications) MUST implement the verification interface defined in [§9.4](#94-constraint-kind-plug-ins).
+A conforming **constraint-kind plug-in** (as may be supplied by an extension specification or by applications) MUST implement the verification interface defined in [§9.4](#94-constraint-kind-plug-ins).
 
 A conforming **application** MAY call the governance engine's query methods to determine allowed actions, but MUST NOT be relied upon as an enforcement point.
 
@@ -118,13 +118,13 @@ A conforming **application** MAY call the governance engine's query methods to d
 <dl>
 
 <dt>Context</dt>
-<dd>A named graph identified by a <code>graph://&lt;content-hash&gt;</code> IRI, optionally also addressable by a <code>did:graph:...</code> DID when groupified. The unit of governance. See [[PERSONAL-LINKED-DATA-GRAPHS]] §3.3.</dd>
+<dd>A named graph identified by a <code>graph://&lt;content-hash&gt;</code> IRI, optionally also addressable by a sovereign DID (the <code>did</code> attribute). The unit of governance. See [[PERSONAL-LINKED-DATA-GRAPHS]] §3.3.</dd>
 
 <dt>Triple</dt>
 <dd>A directed, labelled relationship (subject, predicate, object). See [[PERSONAL-LINKED-DATA-GRAPHS]] §3.1.</dd>
 
 <dt>Constraint</dt>
-<dd>A set of triples with <code>governance://</code> predicates defining a rule. Classified by <em>kind</em>; specific kinds are defined by [[CONSTRAINT-VOCABULARY]] (or by applications).</dd>
+<dd>A set of triples with <code>governance://</code> predicates defining a rule. Classified by <em>kind</em>; specific kinds are out of scope for this specification (see [§9.4](#94-constraint-kind-plug-ins)).</dd>
 
 <dt>Constraint Binding</dt>
 <dd>A triple linking a constraint to the context it governs: <code>&lt;context-did&gt; -[governance://has_constraint]→ &lt;constraint&gt;</code>.</dd>
@@ -159,7 +159,7 @@ A conforming **application** MAY call the governance engine's query methods to d
 
 ## 4. Data Model
 
-This section defines the `governance://` predicates this framework defines. Constraint-kind-specific predicates are defined by [[CONSTRAINT-VOCABULARY]] (or by applications via the plug-in mechanism in [§9.4](#94-constraint-kind-plug-ins)). All predicates use string-literal targets unless otherwise noted.
+This section defines the `governance://` predicates this framework defines. Constraint-kind-specific predicates are out of scope here and are declared by the specifications or applications that define those kinds (via the plug-in mechanism in [§9.4](#94-constraint-kind-plug-ins)). All predicates use string-literal targets unless otherwise noted.
 
 ### 4.1 Constraint Base Type
 
@@ -170,7 +170,7 @@ Every constraint instance MUST have:
 <constraint-id> -[governance://constraint_kind]→ <kind>
 ```
 
-The framework recognises the kind `"capability"` natively (defined in [§4.5](#45-capability-constraints-zcap-based)). All other kinds are supplied by [[CONSTRAINT-VOCABULARY]] or by application-defined plug-ins ([§9.4](#94-constraint-kind-plug-ins)). The framework engine MUST treat unknown kinds conservatively (defer to a registered plug-in if present; otherwise reject the operation).
+The framework recognises the kind `"capability"` natively (defined in [§4.5](#45-capability-constraints-zcap-based)). All other kinds are supplied by extension specifications or application-defined plug-ins ([§9.4](#94-constraint-kind-plug-ins)). The framework engine MUST treat unknown kinds conservatively (defer to a registered plug-in if present; otherwise reject the operation).
 
 The optional `governance://constraint_scope` specifies the context this constraint applies to. If absent, the scope is the context to which the constraint is bound.
 
@@ -204,7 +204,7 @@ A parent cannot reach into a child's graph to modify the child's constraints. On
 When a context is created, a **root capability** is minted as a ZCAP. The capability is signed:
 
 - By the creator's `did:key` if the context is created standalone.
-- By a `capabilityDelegation` delegate of the creating context's `did:graph` if the context is created as a participant of a *groupified* parent (per [[GROUP-IDENTITY]]).
+- By a `capabilityDelegation` delegate of the creating context's sovereign DID if the context is created as a participant of a parent context that carries one.
 
 The root capability is recorded in the new context as:
 
@@ -257,14 +257,14 @@ Restricts which predicates require capability verification. If absent or empty, 
 
 A ZCAP that governs a context typically lives **as triples inside that context** — its triples are part of the same graph whose authority it asserts. This creates an apparent self-reference: how does a ZCAP stored *in* graph G describe graph G?
 
-The answer is the two-layer identifier model defined by [[PERSONAL-LINKED-DATA-GRAPHS]] §3.3 and [[GROUP-IDENTITY]] §4.
+The answer is the two-layer identifier model defined by [[PERSONAL-LINKED-DATA-GRAPHS]] §3.3.
 
-- A ZCAP's `resource` MUST be the graph's `did:graph:...` — its **sovereign identity**, derived from a fresh keypair at groupification, independent of the graph's content.
+- A ZCAP's `resource` MUST be the graph's sovereign DID — its **content-independent identity**, independent of the graph's content.
 - A ZCAP's `resource` MUST NOT be the graph's `graph://<content-hash>` IRI when the intent is ongoing authority. The IRI is a snapshot hash; adding the ZCAP triple to the graph changes the content and therefore changes the IRI, so any IRI-resourced ZCAP would target a state that no longer exists. (You also could not compute the post-add IRI before the ZCAP existed — a chicken-and-egg.)
 
 An IRI-resourced ZCAP is *only* the correct primitive for **snapshot-scoped authority** — e.g., "authority to republish *this exact* state". Such a capability naturally ceases to match the context's current resource on the next mutation. This is the intended semantics, not a defect.
 
-A consequence: a context that cannot be groupified (any context that will never receive a `did:graph`) cannot have long-lived governance written into it. Conforming `createGovernanceLayer` implementations SHOULD reject ungroupified host contexts.
+A consequence: a context that never receives a sovereign DID cannot have long-lived governance written into it. Conforming `createGovernanceLayer` implementations SHOULD reject host contexts with no sovereign DID.
 
 #### 4.5.3 ZCAP Document Structure
 
@@ -280,7 +280,7 @@ Authorisation capabilities are stored as JSON-LD documents conforming to [[ZCAP-
   "invoker": "did:key:z6MkAgent...",
   "parentCapability": "urn:uuid:parent-cap-id",
   "actions": ["createLink", "removeLink"],
-  "resource": "did:graph:z6MkChannelGeneral...",
+  "resource": "did:example:z6MkChannelGeneral...",
   "caveats": [
     { "type": "expiry", "value": { "expiresAt": "2027-01-01T00:00:00Z" } },
     { "type": "predicate", "value": { "allowed": ["msg://has_message"] } },
@@ -302,7 +302,7 @@ Authorisation capabilities are stored as JSON-LD documents conforming to [[ZCAP-
 | `invoker` | DID | REQUIRED | The agent (or graph DID) authorised to exercise this capability |
 | `parentCapability` | URN UUID or `null` | REQUIRED | Identifier of the parent capability. `null` for the root capability. |
 | `actions` | Array of strings | REQUIRED | Actions this capability authorises ([§4.5.3](#453-actions)). |
-| `resource` | URI | REQUIRED | The context's `did:graph:...` for long-lived governance (RECOMMENDED for any groupified context). A `graph://<content-hash>` IRI MAY be used when authority is deliberately scoped to a specific snapshot — see [§3](#3-zcap-shape). |
+| `resource` | URI | REQUIRED | The context's sovereign DID for long-lived governance (RECOMMENDED for any context that carries one). A `graph://<content-hash>` IRI MAY be used when authority is deliberately scoped to a specific snapshot — see [§3](#3-zcap-shape). |
 | `caveats` | Array of caveat objects | OPTIONAL | Fine-grained constraints ([§9](#9-caveat-type-system)). |
 | `proof` | Object | REQUIRED | Cryptographic proof signed by the delegator. The delegator MUST be the `invoker` of the parent capability (or the holder of a `capabilityDelegation` delegate key on the parent invoker's DID document if the parent invoker is a graph DID). |
 
@@ -315,9 +315,9 @@ Standard actions:
 | `createLink` | Author a new triple in the context |
 | `removeLink` | Remove an existing triple |
 | `updateProperty` | Modify a scalar property of a ShapeInstance |
-| `updateSHACL` | Register or modify shapes ([[SHAPE-VALIDATION]]) |
+| `updateSHACL` | Register or modify shapes (defined by an extension specification) |
 | `updateGovernance` | Add/remove governance constraints |
-| `updateFlow` | Register or modify flows ([[GRAPH-FLOWS]]) |
+| `updateFlow` | Register or modify flows (defined by an extension specification) |
 | `updateDIDDocument` | Add/remove DID-document delegates ([§10](#10-governance-of-did-document-delegates)) |
 | `mountContext` | Mount the context (used to gate read access) |
 | `delegateCapability` | Issue new delegations from this capability |
@@ -399,7 +399,7 @@ The recommended progression is **Open → Announced → Enforced**.
 
 ### 5.3 Mode-Agnostic Constraints
 
-Non-capability constraints (those defined by [[CONSTRAINT-VOCABULARY]] or applications) apply in **all three modes**. The enforcement mode only governs whether *capability* checks are advisory or mandatory.
+Non-capability constraints (those defined by extension specifications or applications) apply in **all three modes**. The enforcement mode only governs whether *capability* checks are advisory or mandatory.
 
 ### 5.4 Caveats and Enforcement Mode
 
@@ -465,11 +465,11 @@ Implementations SHOULD cache ancestry chains and invalidate when participation l
 
 3. **Collect capability constraints.** From [§6.2](#62-constraint-collection), select constraints with `constraint_kind = "capability"` and `capability_enforcement = "required"`. If none, return ACCEPT.
 
-4. **Find author's capabilities.** Query for `<author> -[governance://has_zcap]→ ?cap`, resolving each ZCAP. Include capabilities whose `invoker` is a graph DID *if* the author currently holds a `capabilityInvocation` delegate on that graph (per [[GROUP-IDENTITY]] §5).
+4. **Find author's capabilities.** Query for `<author> -[governance://has_zcap]→ ?cap`, resolving each ZCAP. Include capabilities whose `invoker` is a graph's sovereign DID *if* the author currently holds a `capabilityInvocation` delegate on that DID's document.
 
 5. **Evaluate each capability.**
    1. **Action match.** *action* MUST be in `cap.actions`.
-   2. **Resource match.** `cap.resource` MUST equal the context's `did:graph:...` (for a groupified context — the stable, content-independent identifier) OR the context's current IRI (when the capability is deliberately scoped to this specific snapshot), or be an ancestor in the scope chain. Capabilities whose `resource` is an IRI that no longer matches the current state do not apply.
+   2. **Resource match.** `cap.resource` MUST equal the context's sovereign DID (the stable, content-independent identifier, when present) OR the context's current IRI (when the capability is deliberately scoped to this specific snapshot), or be an ancestor in the scope chain. Capabilities whose `resource` is an IRI that no longer matches the current state do not apply.
    3. **Expiry check.** If `caveats[].expiry.expiresAt` is set and exceeded, skip.
    4. **Revocation check.** If a valid revocation targets this `cap.id`, skip.
    5. **Caveat check.** Evaluate each caveat ([§9](#9-caveat-type-system)) against the operation. If any fails, skip.
@@ -512,7 +512,7 @@ Each caveat in a ZCAP's `caveats` array is:
 { "type": "<caveat-type>", "value": { ... } }
 ```
 
-The framework defines the format and the meta-semantics of caveats (composition, attenuation). Specific caveat **types** are defined by this framework only when they are core to capability mechanics; the broader vocabulary is defined by [[CONSTRAINT-VOCABULARY]] and by applications.
+The framework defines the format and the meta-semantics of caveats (composition, attenuation). Specific caveat **types** are defined by this framework only when they are core to capability mechanics; the broader vocabulary is supplied by extension specifications and by applications.
 
 ### 9.2 Core Caveat Types
 
@@ -529,13 +529,13 @@ The following caveats are defined by this framework because they apply to the ca
 | `object` | Restrict triple object patterns (glob) | `{ "pattern": "<glob>" }` |
 | `authorOnly` | Operation must come from the original instance creator | `{}` |
 
-Additional caveat types are defined by [[CONSTRAINT-VOCABULARY]] (notably `shape`, `content`) and MAY be defined by applications. The engine MUST treat unknown caveat types conservatively (reject the operation) unless a registered plug-in supplies handling.
+Additional caveat types are defined by extension specifications or by applications. The engine MUST treat unknown caveat types conservatively (reject the operation) unless a registered plug-in supplies handling.
 
 ### 9.3 Three Levels of Granularity
 
 - **Coarse (graph-level):** `actions: [createLink], caveats: []` — "can write anything to this context."
 - **Medium (predicate-level):** `+ { "type": "predicate", "value": { "allowed": ["msg://body"] }}` — "can only write the `msg://body` predicate."
-- **Fine (shape-level, requires [[CONSTRAINT-VOCABULARY]]):** `+ { "type": "shape", "value": { "shapeIri": "msg://MessageShape" }}` — "can only write data conforming to MessageShape."
+- **Fine (shape-level, requires an extension caveat type):** `+ { "type": "shape", "value": { "shapeIri": "msg://MessageShape" }}` — "can only write data conforming to MessageShape."
 
 ### 9.4 Constraint-Kind Plug-ins
 
@@ -554,7 +554,7 @@ interface ConstraintKindHandler {
 
 The engine routes constraint validation to the registered handler for the constraint's `governance://constraint_kind`. Unregistered kinds cause the framework to reject the write (fail-closed).
 
-[[CONSTRAINT-VOCABULARY]] supplies handlers for the `temporal`, `content`, and `credential` kinds (and the `shape` and `content` caveat types). Applications MAY register additional kinds.
+Extension specifications and applications MAY register handlers for additional kinds (e.g., `temporal`, `content`, `credential`, `shape`).
 
 ### 9.5 Performance
 
@@ -571,7 +571,7 @@ Caveat evaluation is designed for negligible overhead:
 
 This section is normative.
 
-The DID-document delegate model ([[GROUP-IDENTITY]] §5) gives a context shared signing authority through multiple keys listed in capability sections of its DID document. Modifying these is a write to the context's own triples and is therefore governed by this specification.
+A context's optional sovereign DID (per [[PERSONAL-LINKED-DATA-GRAPHS]] §3.3) is associated with a DID document whose capability sections list one or more verification methods. This delegate model gives the context shared signing authority across multiple keys. Modifying the DID-document triples is a write to the context's own graph and is therefore governed by this specification.
 
 ### 10.1 Governed Predicates
 
@@ -601,7 +601,7 @@ A delegate MAY rotate their own key by issuing a `did-document://remove-method` 
 
 ### 10.5 Non-Goal: Multisig
 
-This specification does NOT define multisig, threshold signing, or aggregate-key schemes for the graph DID itself. Shared authority is achieved through the delegate set in the DID document; "this graph said it" is satisfied by any current delegate's signature. See [[GROUP-IDENTITY]] §5.2.
+This specification does NOT define multisig, threshold signing, or aggregate-key schemes for the graph DID itself. Shared authority is achieved through the delegate set in the DID document; "this graph said it" is satisfied by any current delegate's signature.
 
 ---
 
@@ -638,7 +638,7 @@ dictionary GraphConstraint {
 dictionary CapabilityInfo {
   required USVString id;
   required sequence<USVString> actions;
-  required USVString resource;     // did:graph:... (RECOMMENDED) or specific-snapshot graph IRI
+  required USVString resource;     // sovereign DID (RECOMMENDED) or specific-snapshot graph IRI
   sequence<object> caveats;
   DOMString? expires;
 };
@@ -662,7 +662,7 @@ Reads the current enforcement mode; the setter requires an `updateGovernance` ca
 
 ### 11.5 Consumer Integration
 
-The framework exposes `canAddTriple()` (and the internal `validate(triple, ctx)` it implements) as the integration point for any consumer that needs authorisation checks — most notably the sync protocol ([[CONTEXT-SYNC]]). The framework itself does not depend on any particular consumer.
+The framework exposes `canAddTriple()` (and the internal `validate(triple, ctx)` it implements) as the integration point for any consumer that needs authorisation checks (for example, a sync protocol). The framework itself does not depend on any particular consumer.
 
 ---
 
@@ -698,7 +698,7 @@ Governance rules are interpreted at runtime.
 
 ### 13.1 Cryptographic Verification
 
-ZCAP chain verification MUST validate all signatures. For graph-DID-signed delegations, the runtime MUST resolve the graph's DID document and verify that the signing method is currently listed in `capabilityDelegation` ([[GROUP-IDENTITY]] §5).
+ZCAP chain verification MUST validate all signatures. For graph-DID-signed delegations, the runtime MUST resolve the graph's DID document and verify that the signing method is currently listed in `capabilityDelegation`.
 
 ### 13.2 Revocation Freshness
 
@@ -815,7 +815,8 @@ const general = await me.createContext({
   participatesIn: community.did
 });
 // The runtime:
-//   1. Mints a fresh graph IRI for #general (optionally groupified per Spec 10).
+//   1. Mints a fresh graph IRI for #general (and a sovereign DID for long-lived
+//      governance, when supported by the runtime).
 //   2. Issues a bootstrap ZCAP from community.did (signed by an authorised
 //      capabilityDelegation delegate of community).
 //   3. Constitutionalises it as <#general.did> -[governance://root_capability]→ ...
@@ -840,7 +841,7 @@ await community.addTriple({
 // Mod's chain is invalidated; sub-delegations from mod are also invalidated.
 ```
 
-For examples of temporal, content, credential, and shape constraints, see [[CONSTRAINT-VOCABULARY]] §6.
+Examples of temporal, content, credential, and shape constraints are defined by extension specifications that supply those constraint kinds.
 
 ---
 
@@ -867,7 +868,7 @@ For examples of temporal, content, credential, and shape constraints, see [[CONS
 | `did-document://grant-section` | URI | Add method to a capability section |
 | `did-document://revoke-section` | URI | Remove method from a capability section |
 
-Plug-in-supplied constraint kinds (e.g., `temporal`, `content`, `credential`) declare additional predicates in their own specifications. See [[CONSTRAINT-VOCABULARY]] §11 for the predicates supplied by the standard vocabulary.
+Plug-in-supplied constraint kinds (e.g., `temporal`, `content`, `credential`) declare additional predicates in their own specifications.
 
 ---
 
@@ -903,19 +904,4 @@ Plug-in-supplied constraint kinds (e.g., `temporal`, `content`, `credential`) de
 
 ### 17.2 Informative References
 
-<dl>
-<dt>[CONSTRAINT-VOCABULARY]</dt>
-<dd><a href="./07_governance-constraint-vocabulary.md">Governance Constraint Vocabulary</a>.</dd>
-
-<dt>[CONTEXT-SYNC]</dt>
-<dd><a href="./04_context-sync-protocol.md">Context Synchronisation Protocol</a>.</dd>
-
-<dt>[SHAPE-VALIDATION]</dt>
-<dd><a href="./06_dynamic-graph-shape-validation.md">Dynamic Graph Shape Validation</a>.</dd>
-
-<dt>[GRAPH-FLOWS]</dt>
-<dd><a href="./09_graph-flows.md">Graph Flows</a>.</dd>
-
-<dt>[GROUP-IDENTITY]</dt>
-<dd><a href="./10_decentralised-group-identity.md">Decentralised Group Identity</a>.</dd>
-</dl>
+None.

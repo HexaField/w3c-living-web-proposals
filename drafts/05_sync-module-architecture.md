@@ -9,7 +9,7 @@
 
 ## Abstract
 
-This specification defines the architecture for pluggable, content-addressed **sync modules** that implement the [[CONTEXT-SYNC]] protocol. A sync module is a WebAssembly bundle conforming to the `GraphSyncModule` interface defined here; the module supplies transport, merge logic, peer discovery, and governance-validation behaviour for one or more sync spaces. Modules execute in a capability-scoped sandbox managed by the user agent, isolated from the page realm and from each other. This specification defines the module interface, the capability vocabulary that gates module access to runtime resources, the lifecycle (installation, update, suspension, removal), and the user-consent model. Conforming user agents MUST ship the built-in default module defined in [[DEFAULT-SYNC-MODULE]].
+This specification defines the architecture for pluggable, content-addressed **sync modules** that implement the [[CONTEXT-SYNC]] protocol. A sync module is a WebAssembly bundle conforming to the `GraphSyncModule` interface defined here; the module supplies transport, merge logic, peer discovery, and governance-validation behaviour for one or more sync spaces. Modules execute in a capability-scoped sandbox managed by the user agent, isolated from the page realm and from each other. This specification defines the module interface, the capability vocabulary that gates module access to runtime resources, the lifecycle (installation, update, suspension, removal), and the user-consent model. Any specific built-in default module is out of scope here.
 
 ---
 
@@ -40,7 +40,7 @@ This is a draft Community Group Report. It has no official W3C standing and is s
 
 No single sync strategy is optimal for all use cases. A collaborative editor needs different merge semantics than a social feed. Rather than prescribing one approach, [[CONTEXT-SYNC]] is implemented over a **pluggable sync module architecture** — each sync space specifies the WebAssembly module that handles its gossip.
 
-This specification defines the module interface and execution environment. Conforming user agents MUST ship the built-in default module defined in [[DEFAULT-SYNC-MODULE]]. Communities MAY install additional modules to implement custom transports, merge algorithms, or peer-discovery mechanisms.
+This specification defines the module interface and execution environment. Conforming user agents MUST ship at least one built-in default module that satisfies this interface (the specific default module is out of scope here). Communities MAY install additional modules to implement custom transports, merge algorithms, or peer-discovery mechanisms.
 
 ### 1.2 Scope
 
@@ -57,8 +57,9 @@ This specification defines:
 - [[CONTEXT-SYNC]] defines the protocol that modules implement.
 - [[PERSONAL-LINKED-DATA-GRAPHS]] defines the Context and Triple types passed across the module boundary.
 - [[CAPABILITY-FRAMEWORK]] defines the governance engine that a module's `validate()` invokes.
-- [[DEFAULT-SYNC-MODULE]] defines the built-in module that conforming user agents MUST ship.
 - [[WEBASSEMBLY]] is the execution environment for modules.
+
+The specific built-in default module that ships with conforming user agents is out of scope for this specification.
 
 ---
 
@@ -350,5 +351,4 @@ Because modules execute outside the page realm, they MUST NOT be addressable fro
 
 ### 10.2 Informative References
 
-- **[DEFAULT-SYNC-MODULE]** [Default Sync Module](./08_default-sync-module.md).
-- **[CONSTRAINT-VOCABULARY]** [Governance Constraint Vocabulary](./07_governance-constraint-vocabulary.md).
+None.
