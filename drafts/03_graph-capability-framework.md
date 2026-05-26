@@ -253,7 +253,20 @@ Optional:
 
 Restricts which predicates require capability verification. If absent or empty, all predicates within scope require verification.
 
-#### 4.5.2 ZCAP Document Structure
+#### 4.5.2 Self-Reference: Why `resource` MUST Be the Sovereign DID
+
+A ZCAP that governs a context typically lives **as triples inside that context** — its triples are part of the same graph whose authority it asserts. This creates an apparent self-reference: how does a ZCAP stored *in* graph G describe graph G?
+
+The answer is the two-layer identifier model defined by [[PERSONAL-LINKED-DATA-GRAPHS]] §3.3 and [[GROUP-IDENTITY]] §4.
+
+- A ZCAP's `resource` MUST be the graph's `did:graph:...` — its **sovereign identity**, derived from a fresh keypair at groupification, independent of the graph's content.
+- A ZCAP's `resource` MUST NOT be the graph's `graph://<content-hash>` IRI when the intent is ongoing authority. The IRI is a snapshot hash; adding the ZCAP triple to the graph changes the content and therefore changes the IRI, so any IRI-resourced ZCAP would target a state that no longer exists. (You also could not compute the post-add IRI before the ZCAP existed — a chicken-and-egg.)
+
+An IRI-resourced ZCAP is *only* the correct primitive for **snapshot-scoped authority** — e.g., "authority to republish *this exact* state". Such a capability naturally ceases to match the context's current resource on the next mutation. This is the intended semantics, not a defect.
+
+A consequence: a context that cannot be groupified (any context that will never receive a `did:graph`) cannot have long-lived governance written into it. Conforming `createGovernanceLayer` implementations SHOULD reject ungroupified host contexts.
+
+#### 4.5.3 ZCAP Document Structure
 
 Authorisation capabilities are stored as JSON-LD documents conforming to [[ZCAP-LD]]:
 

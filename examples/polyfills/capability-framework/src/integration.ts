@@ -45,10 +45,25 @@ export interface GovernanceLayer {
 }
 
 export function createGovernanceLayer(context: Context, opts: GovernanceOptions = {}): GovernanceLayer {
+  // Long-lived governance requires a sovereign identity for the graph.
+  // A context's IRI is a snapshot hash — it changes whenever any triple
+  // (including the ZCAP triples we're about to write!) changes. So we'd
+  // have no stable resource to anchor capabilities to. Require did:graph
+  // from [[GROUP-IDENTITY]]: groupify the context before setting up
+  // governance.
+  if (!context.did) {
+    throw new DOMException(
+      `createGovernanceLayer requires a groupified context (no did:graph on ${context.id}). ` +
+      `Capabilities target the graph's sovereign DID, not its current snapshot IRI — call ` +
+      `store.groupify() or store.createGroup() first.`,
+      'InvalidStateError',
+    );
+  }
+  const graphDid = context.did;
   const expressionStore = new Map<string, unknown>();
 
   const ctx: ValidationContext = {
-    graphDid: (context.did ?? context.iri),
+    graphDid,
     rootCapabilityId: opts.rootCapabilityId ?? null,
     enforcementMode: opts.enforcementMode ?? 'open',
     queryTriples: async (q) => {
@@ -78,7 +93,7 @@ export function createGovernanceLayer(context: Context, opts: GovernanceOptions 
   (async () => {
     if (!ctx.rootCapabilityId) {
       const triples = await ctx.queryTriples({
-        subject: (context.did ?? context.iri),
+        subject: graphDid,
         predicate: GOV.ROOT_CAPABILITY,
       });
       if (triples.length > 0) ctx.rootCapabilityId = triples[0].data.object;
@@ -106,7 +121,7 @@ export function createGovernanceLayer(context: Context, opts: GovernanceOptions 
     },
 
     async constraintsFor(contextDid) {
-      return engine.constraintsFor(contextDid ?? (context.did ?? context.iri));
+      return engine.constraintsFor(contextDid ?? graphDid);
     },
 
     async myCapabilities(myDid) {
@@ -119,7 +134,7 @@ export function createGovernanceLayer(context: Context, opts: GovernanceOptions 
 
     async setEnforcementMode(mode) {
       await context.addTriple({
-        subject: (context.did ?? context.iri),
+        subject: graphDid,
         predicate: GOV.ENFORCEMENT_MODE,
         object: `"${mode}"`,
       });

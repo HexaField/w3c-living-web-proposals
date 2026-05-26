@@ -47,7 +47,7 @@ export function setupGovernance(context: Context, ownerDid: string): GovernanceS
   const rootZcap = createCapability(
     ownerDid,
     [...ADMIN_ACTIONS],
-    context.iri,
+    context.did!,
     ownerDid,
   );
   layer.storeExpression(rootZcap.id, rootZcap);
