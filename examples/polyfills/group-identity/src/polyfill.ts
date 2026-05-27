@@ -8,7 +8,7 @@
  *   - registers the `did:graph` resolver on identity.
  *   - registers a `GraphDIDWriter` so addDelegate / removeDelegate write
  *     through to the underlying graph store.
- *   - installs the Group convenience methods on `GraphStore`.
+ *   - installs the Group convenience methods on `GraphManager`.
  *
  * Import order MUST be:
  *   1. `@living-web/identity/polyfill`
@@ -28,14 +28,14 @@ import { installGroupExtension } from './extension.js';
 installCredentialAugmentation();
 installGroupExtension();
 
-// Wire the did:graph binding. The full GraphStoreManager may not exist yet
+// Wire the did:graph binding. The full GraphManager may not exist yet
 // (personal-graph's install() is what creates it); we use a thin shim that
 // proxies to whatever the manager is *now*.
 installDIDGraphBinding({
-  *knownStores() {
+  *knownGraphs() {
     const m = getPersonalGraphManager();
     if (!m) return;
-    yield* m.knownStores();
+    yield* m.knownGraphs();
   },
   fullManager: () => getPersonalGraphManager(),
 });

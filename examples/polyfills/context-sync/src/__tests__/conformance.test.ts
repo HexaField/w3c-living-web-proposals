@@ -1,8 +1,8 @@
 /**
  * Conformance tests for @living-web/context-sync.
  *
- * Covers ContextDiff construction + immutability, revision determinism, and
- * sync space derivation. Integration tests for the Context.prototype extension
+ * Covers GraphDiff construction + immutability, revision determinism, and
+ * sync space derivation. Integration tests for the Graph.prototype extension
  * live in the package that supplies the active sync module (e.g.,
  * @living-web/default-sync-module).
  */
@@ -12,21 +12,21 @@ import 'fake-indexeddb/auto';
 
 import {
   Triple,
-  Context,
+  Graph,
   GraphStorage,
   EphemeralIdentity,
 } from '@living-web/personal-graph';
 
 import {
-  ContextDiff,
+  GraphDiff,
   createContextDiff,
   computeRevision,
   deriveSpaceUri,
 } from '../index.js';
 
-describe('§5.1 ContextDiff', () => {
+describe('§5.1 GraphDiff', () => {
   it('is immutable after construction', () => {
-    const diff = new ContextDiff({
+    const diff = new GraphDiff({
       graphDid: 'did:graph:z6Mkhabc',
       revision: 'deadbeef',
       additions: [],
@@ -62,7 +62,7 @@ describe('§5.2 Revision', () => {
     const id = new EphemeralIdentity();
     await id.ensureReady();
     const storage = new GraphStorage(`revdet-${crypto.randomUUID()}`);
-    const ctx = new Context('did:graph:z6Mkhrevdet', null, id, storage);
+    const ctx = new Graph('did:graph:z6Mkhrevdet', null, id, storage);
     const a = await ctx.addTriple(new Triple('urn:a', 'pred://p', 'x'));
     const b = await ctx.addTriple(new Triple('urn:b', 'pred://p', 'y'));
     const r1 = computeRevision('did:graph:z6Mkhrevdet', [a, b], [], []);
@@ -89,7 +89,7 @@ describe('§7.3 Space derivation', () => {
     expect(a).toBe(b);
   });
 
-  it('differs across topologies for the same context', () => {
+  it('differs across topologies for the same graph', () => {
     const u = deriveSpaceUri('unified', 'did:graph:z6Mkhabc');
     const p = deriveSpaceUri('fully-partitioned', 'did:graph:z6Mkhabc');
     expect(u).not.toBe(p);

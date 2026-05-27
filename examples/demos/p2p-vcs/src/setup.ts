@@ -2,7 +2,7 @@
  * P2P VCS — Setup: identity, repo create/fork, state management
  */
 import { install as installIdentity, IdentityManager, DIDIdentityProvider } from '@living-web/identity';
-import { install as installPersonalGraph, Context, Triple, type IdentityProvider } from '@living-web/personal-graph';
+import { install as installPersonalGraph, Graph, Triple, type IdentityProvider } from '@living-web/personal-graph';
 import '@living-web/group-identity/polyfill';
 import '@living-web/shape-validation/polyfill';
 import '@living-web/default-sync-module/polyfill';
@@ -58,7 +58,7 @@ export interface Contributor {
 export interface AppState {
   did: string;
   displayName: string;
-  context: Context;
+  graph: Graph;
   repoId: string;
   repoName: string;
   branches: Branch[];
@@ -84,33 +84,32 @@ export async function createIdentity(displayName: string): Promise<{ did: string
   return { did: provider.getDID(), identity: provider };
 }
 
-async function registerShapes(context: Context): Promise<void> {
-  await context.addShape('Repository', JSON.stringify(RepositoryShape));
-  await context.addShape('Branch', JSON.stringify(BranchShape));
-  await context.addShape('Commit', JSON.stringify(CommitShape));
-  await context.addShape('TreeSnapshot', JSON.stringify(TreeSnapshotShape));
-  await context.addShape('FileContent', JSON.stringify(FileContentShape));
-  await context.addShape('Contributor', JSON.stringify(ContributorShape));
+async function registerShapes(graph: Graph): Promise<void> {
+  await graph.addShape('Repository', JSON.stringify(RepositoryShape));
+  await graph.addShape('Branch', JSON.stringify(BranchShape));
+  await graph.addShape('Commit', JSON.stringify(CommitShape));
+  await graph.addShape('TreeSnapshot', JSON.stringify(TreeSnapshotShape));
+  await graph.addShape('FileContent', JSON.stringify(FileContentShape));
+  await graph.addShape('Contributor', JSON.stringify(ContributorShape));
 }
 
 export async function createRepo(
   displayName: string, repoName: string, identity: IdentityProvider, did: string,
 ): Promise<AppState> {
-  const store = await navigator.graph.create(repoName);
-  const repoGroup = await store.createGroup({ displayName: repoName });
-  const context = repoGroup.context;
-  await context.publish();
-  await registerShapes(context);
+  const repoGroup = await navigator.graph.createGroup({ displayName: repoName });
+  const graph = repoGroup.graph;
+  await graph.publish();
+  await registerShapes(graph);
 
   const repoId = `repo:${crypto.randomUUID()}`;
-  await context.createShapeInstance('Repository', repoId, { name: repoName, description: repoName, owner: did });
+  await graph.createShapeInstance('Repository', repoId, { name: repoName, description: repoName, owner: did });
 
   const snapshotId = `snapshot:${crypto.randomUUID()}`;
-  await context.createShapeInstance('TreeSnapshot', snapshotId, { entries: '[]' });
+  await graph.createShapeInstance('TreeSnapshot', snapshotId, { entries: '[]' });
 
   const commitId = `commit:${crypto.randomUUID()}`;
   const now = Date.now();
-  await context.createShapeInstance('Commit', commitId, {
+  await graph.createShapeInstance('Commit', commitId, {
     message: 'Initial commit',
     author: did,
     authorName: displayName,
@@ -120,20 +119,20 @@ export async function createRepo(
   });
 
   const mainBranchId = `branch:${crypto.randomUUID()}`;
-  await context.createShapeInstance('Branch', mainBranchId, {
+  await graph.createShapeInstance('Branch', mainBranchId, {
     name: 'main',
     headCommit: commitId,
     protected: 'true',
     createdBy: did,
   });
-  await context.addTriple(new Triple(repoId, PREDICATES.HAS_BRANCH, mainBranchId));
-  await context.addTriple(new Triple(repoId, PREDICATES.DEFAULT_BRANCH, mainBranchId));
+  await graph.addTriple(new Triple(repoId, PREDICATES.HAS_BRANCH, mainBranchId));
+  await graph.addTriple(new Triple(repoId, PREDICATES.DEFAULT_BRANCH, mainBranchId));
 
   const contribId = `contrib:${crypto.randomUUID()}`;
-  await context.createShapeInstance('Contributor', contribId, { did, name: displayName, role: 'owner' });
-  await context.addTriple(new Triple(repoId, PREDICATES.HAS_CONTRIBUTOR, contribId));
+  await graph.createShapeInstance('Contributor', contribId, { did, name: displayName, role: 'owner' });
+  await graph.addTriple(new Triple(repoId, PREDICATES.HAS_CONTRIBUTOR, contribId));
 
-  const governance = setupGovernance(context, did);
+  const governance = setupGovernance(graph, did);
   const bc = new BroadcastChannel(SYNC_CHANNEL);
 
   const initialCommit: Commit = {
@@ -142,7 +141,7 @@ export async function createRepo(
   };
 
   const state: AppState = {
-    did, displayName, context,
+    did, displayName, graph,
     repoId, repoName,
     branches: [{ id: mainBranchId, name: 'main', headCommitId: commitId, protected: true, createdBy: did }],
     currentBranchId: mainBranchId,
@@ -163,9 +162,8 @@ export async function createRepo(
 export async function forkRepo(
   displayName: string, contextIri: string, identity: IdentityProvider, did: string,
 ): Promise<AppState> {
-  const store = await navigator.graph.create(displayName);
-  const placeholderGroup = await store.createGroup({ displayName: 'pending-fork' });
-  const placeholderContext = placeholderGroup.context;
+  const placeholderGroup = await navigator.graph.createGroup({ displayName: 'pending-fork' });
+  const placeholderContext = placeholderGroup.graph;
   await placeholderContext.publish();
   await registerShapes(placeholderContext);
 
@@ -175,7 +173,7 @@ export async function forkRepo(
     const timeout = setTimeout(() => {
       const governance = setupGovernance(placeholderContext, did);
       resolve({
-        did, displayName, context: placeholderContext,
+        did, displayName, graph: placeholderContext,
         repoId: 'repo:fallback', repoName: 'Repository',
         branches: [], currentBranchId: '',
         commits: [], workingFiles: [],
@@ -196,7 +194,7 @@ export async function forkRepo(
       issueContributorZcap(governance, did, data.ownerDid);
 
       const state: AppState = {
-        did, displayName, context: placeholderContext,
+        did, displayName, graph: placeholderContext,
         repoId: data.repoId,
         repoName: data.repoName,
         branches: data.branches,
@@ -228,8 +226,8 @@ export async function forkRepo(
 }
 
 function setupCrossTabSync(state: AppState): void {
-  const { bc, context } = state;
-  const contextIri = context.iri;
+  const { bc, graph } = state;
+  const contextIri = graph.iri;
 
   bc.addEventListener('message', (ev: MessageEvent) => {
     const msg = ev.data;
@@ -306,17 +304,17 @@ export async function createCommit(
     const hash = await hashContent(file.content);
     file.hash = hash;
     file.contentId = `file:${crypto.randomUUID()}`;
-    await state.context.createShapeInstance('FileContent', file.contentId, {
+    await state.graph.createShapeInstance('FileContent', file.contentId, {
       path: file.path, content: file.content, hash,
     });
   }
 
   const snapshotId = `snapshot:${crypto.randomUUID()}`;
   const entries = JSON.stringify(files.map(f => ({ path: f.path, contentId: f.contentId })));
-  await state.context.createShapeInstance('TreeSnapshot', snapshotId, { entries });
+  await state.graph.createShapeInstance('TreeSnapshot', snapshotId, { entries });
 
   const commitId = `commit:${crypto.randomUUID()}`;
-  await state.context.createShapeInstance('Commit', commitId, {
+  await state.graph.createShapeInstance('Commit', commitId, {
     message,
     author: state.did,
     authorName: state.displayName,
@@ -344,7 +342,7 @@ export async function createCommit(
 
   state.bc.postMessage({
     type: 'vcs-new-commit',
-    contextIri: state.context.iri,
+    contextIri: state.graph.iri,
     branchId: state.currentBranchId,
     commit,
   });
@@ -367,7 +365,7 @@ export function createBranch(state: AppState, name: string): Branch {
   };
 
   state.branches.push(branch);
-  state.bc.postMessage({ type: 'vcs-new-branch', contextIri: state.context.iri, branch });
+  state.bc.postMessage({ type: 'vcs-new-branch', contextIri: state.graph.iri, branch });
   document.dispatchEvent(new CustomEvent('vcs-update', { detail: { type: 'branch' } }));
   return branch;
 }
@@ -390,7 +388,7 @@ export function switchBranch(state: AppState, branchId: string): void {
 export function broadcastEditing(state: AppState, filePath: string | null): void {
   state.bc.postMessage({
     type: 'vcs-editing',
-    contextIri: state.context.iri,
+    contextIri: state.graph.iri,
     did: state.did,
     displayName: state.displayName,
     filePath,

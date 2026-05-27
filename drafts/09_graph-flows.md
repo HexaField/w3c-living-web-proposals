@@ -1,4 +1,4 @@
-# Graph Flows: Temporal Process Primitives for Linked Data Contexts
+# Graph Flows: Temporal Process Primitives for Linked Data Graphs
 
 **W3C Draft Community Group Report**
 
@@ -9,7 +9,7 @@
 
 ## Abstract
 
-This specification defines **flows** — declarative state machines that govern how data within a context evolves over time. Flows complement shapes (which constrain what data looks like — [[SHAPE-VALIDATION]]), contexts (which scope where data lives — [[PERSONAL-LINKED-DATA-GRAPHS]]), and ZCAPs (which authorise who can act — [[CAPABILITY-FRAMEWORK]]). A flow defines states, transitions between them, **SPARQL ASK guards** that gate transitions, **temporal constraints** (minimum delays, deadlines), and **role requirements** that bind transitions to specific capabilities. Flows are stored as triples inside the context they govern; they participate in graph-snapshot transfer, so a context's process logic travels with its data and rules.
+This specification defines **flows** — declarative state machines that govern how data within a graph evolves over time. Flows complement shapes (which constrain what data looks like — [[SHAPE-VALIDATION]]), graphs (which scope where data lives — [[PERSONAL-LINKED-DATA-GRAPHS]]), and ZCAPs (which authorise who can act — [[CAPABILITY-FRAMEWORK]]). A flow defines states, transitions between them, **SPARQL ASK guards** that gate transitions, **temporal constraints** (minimum delays, deadlines), and **role requirements** that bind transitions to specific capabilities. Flows are stored as triples inside the graph they govern; they participate in graph-snapshot transfer, so a graph's process logic travels with its data and rules.
 
 ---
 
@@ -54,20 +54,20 @@ This is what flows are for. They complement the three existing primitives:
 | Primitive | Governs | Example |
 |---|---|---|
 | SHACL Shapes [[SHAPE-VALIDATION]] | What data must look like | "A message must have a body and an author" |
-| Contexts [[PERSONAL-LINKED-DATA-GRAPHS]] | Where data lives | "Messages in #general live in the `#general` context" |
+| Graphs [[PERSONAL-LINKED-DATA-GRAPHS]] | Where data lives | "Messages in #general live in the `#general` graph" |
 | ZCAPs [[CAPABILITY-FRAMEWORK]] | Who can act | "Only moderators can delete messages" |
 | **Flows** | **How data evolves** | "A proposal must be open for 48h before it can be ratified" |
 
-### 1.2 Flows Travel With the Context
+### 1.2 Flows Travel With the Graph
 
-Because flows are stored as triples in the context they govern, they participate in graph-snapshot transfer ([[PERSONAL-LINKED-DATA-GRAPHS]] §5). Export a context → export its flows. Mount a context → mount its flows. The process constraints travel with the data they constrain. When you subscribe to a context, you do not separately download "the data" and "the rules" — you receive one graph that contains both.
+Because flows are stored as triples in the graph they govern, they participate in graph-snapshot transfer ([[PERSONAL-LINKED-DATA-GRAPHS]] §5). Export a graph → export its flows. Mount a graph → mount its flows. The process constraints travel with the data they constrain. When you subscribe to a graph, you do not separately download "the data" and "the rules" — you receive one graph that contains both.
 
 ### 1.3 Scope
 
 This specification defines:
 
 - A JSON format for flow definitions.
-- The storage convention for flows as triples in a context.
+- The storage convention for flows as triples in a graph.
 - The flow instance lifecycle and state representation.
 - SPARQL ASK guards on transitions.
 - Temporal constraints (`minDelay`, `maxDelay`, deadline behaviour).
@@ -102,7 +102,7 @@ A conforming **flow engine** is a software component that:
 <dd>A declarative state machine definition: states, transitions, guards, temporal constraints, role requirements.</dd>
 
 <dt><dfn>FlowInstance</dfn></dt>
-<dd>A specific entity in a context that is governed by a flow. The instance's current state is recorded as a triple <code>&lt;instance&gt; -[flow://state]→ &lt;state-name&gt;</code>.</dd>
+<dd>A specific entity in a graph that is governed by a flow. The instance's current state is recorded as a triple <code>&lt;instance&gt; -[flow://state]→ &lt;state-name&gt;</code>.</dd>
 
 <dt><dfn>State</dfn></dt>
 <dd>A named position in a flow's state machine. An instance is always in exactly one state per flow.</dd>
@@ -134,7 +134,7 @@ A conforming **flow engine** is a software component that:
 
 ```json
 {
-  "name": "<flow name, unique within the context>",
+  "name": "<flow name, unique within the graph>",
   "namespace": "<URI namespace prefix for this flow's predicates>",
   "appliesTo": "<targetClass URI — the shape of entities this flow governs>",
   "initialState": "<state name>",
@@ -143,7 +143,7 @@ A conforming **flow engine** is a software component that:
 }
 ```
 
-- **name** (REQUIRED): Unique flow identifier within the context.
+- **name** (REQUIRED): Unique flow identifier within the graph.
 - **namespace** (REQUIRED): URI namespace under which state and transition predicates are defined. Convention: `flow://<flow-name>/`.
 - **appliesTo** (REQUIRED): The `targetClass` of entities this flow governs. SHOULD reference a shape registered via [[SHAPE-VALIDATION]].
 - **initialState** (REQUIRED): The name of the state assigned to a newly-created instance.
@@ -190,7 +190,7 @@ A conforming **flow engine** is a software component that:
 - **toState** (REQUIRED): The state this transition enters.
 - **guard** (OPTIONAL): A SPARQL ASK query. If present, MUST return `true` for the transition to fire. See [§7](#7-guards).
 - **temporal** (OPTIONAL): Temporal constraints. See [§8](#8-temporal-constraints).
-- **role** (OPTIONAL): A ZCAP action name ([[CAPABILITY-FRAMEWORK]] §4.5.3). If present, the firing agent MUST hold a valid ZCAP authorising this action on the context. See [§9](#9-role-requirements).
+- **role** (OPTIONAL): A ZCAP action name ([[CAPABILITY-FRAMEWORK]] §4.5.3). If present, the firing agent MUST hold a valid ZCAP authorising this action on the graph. See [§9](#9-role-requirements).
 - **actions** (OPTIONAL): Side effects to perform on transition (triple writes). See [§4.4](#44-actions).
 - **triggersSubFlow** (OPTIONAL): The name of a sub-flow that this transition launches. See [§10](#10-composite-flows).
 
@@ -214,11 +214,11 @@ Actions are triple operations executed atomically with the state change:
 
 ### 5.1 Triple Representation
 
-A flow is stored as triples inside the context it governs:
+A flow is stored as triples inside the graph it governs:
 
 ```turtle
-# In the community-root context
-<context-id>  flow://has_flow  <flow://Proposal> .
+# In the community-root graph
+<graph-id>  flow://has_flow  <flow://Proposal> .
 
 <flow://Proposal>  rdf://type           flow://Flow ;
                    flow://name           "Proposal" ;
@@ -254,8 +254,8 @@ A flow is stored as triples inside the context it governs:
 
 | Predicate | Purpose |
 |---|---|
-| `flow://has_flow` | Binds a flow to a context |
-| `flow://name` | The flow's name (unique within the context) |
+| `flow://has_flow` | Binds a flow to a graph |
+| `flow://name` | The flow's name (unique within the graph) |
 | `flow://applies_to` | The shape (or class URI) of entities this flow governs |
 | `flow://initial_state` | The state name a new instance enters |
 | `flow://has_state` | Enumerates the flow's states |
@@ -269,9 +269,9 @@ A flow is stored as triples inside the context it governs:
 | `flow://state` | A FlowInstance's current state (on the instance itself) |
 | `flow://entered_state_at` | A FlowInstance's timestamp of entering its current state (carried by reifier on the state-establishing link) |
 
-### 5.3 Self-Describing Contexts
+### 5.3 Self-Describing Graphs
 
-Flows are part of a context's self-description. Exporting a context as a snapshot ([[PERSONAL-LINKED-DATA-GRAPHS]] §5) includes flow triples. Mounting a snapshot installs the flows. The flow engine queries the context's local store to discover flows on demand — no separate registration step is required after mount.
+Flows are part of a graph's self-description. Exporting a graph as a snapshot ([[PERSONAL-LINKED-DATA-GRAPHS]] §5) includes flow triples. Mounting a snapshot installs the flows. The flow engine queries the graph's local store to discover flows on demand — no separate registration step is required after mount.
 
 ### 5.4 Discovery
 
@@ -315,7 +315,7 @@ Firing a transition (via `executeFlowTransition()`) MUST:
 ### 6.3 State Inspection
 
 ```javascript
-const state = await context.getFlowState("Proposal", instanceUri);
+const state = await graph.getFlowState("Proposal", instanceUri);
 // → "voting"
 ```
 
@@ -341,7 +341,7 @@ ASK WHERE {
 
 ### 7.2 Evaluation
 
-- The guard query is evaluated against the context the flow is registered in. Cross-context references in the query MUST use SPARQL `GRAPH` clauses with the target context's DID.
+- The guard query is evaluated against the graph the flow is registered in. Cross-graph references in the query MUST use SPARQL `GRAPH` clauses with the target graph's DID.
 - Plain literal storage ensures all property values are SPARQL-visible — guards can reason over them directly.
 - Evaluation MUST timeout after a UA-configurable budget (RECOMMENDED: 100ms per guard). On timeout, the transition is rejected.
 
@@ -401,7 +401,7 @@ LIMIT 1
 
 ### 8.4 Auto-Transition Authorship
 
-Auto-transitions fired by the runtime SHOULD be authored under a designated "system" identity (a delegate of the context's sovereign DID dedicated to runtime operations). Implementations MAY support per-flow system identities so different contexts isolate their automation.
+Auto-transitions fired by the runtime SHOULD be authored under a designated "system" identity (a delegate of the graph's sovereign DID dedicated to runtime operations). Implementations MAY support per-flow system identities so different graphs isolate their automation.
 
 ---
 
@@ -410,7 +410,7 @@ Auto-transitions fired by the runtime SHOULD be authored under a designated "sys
 A transition's `role` field names a ZCAP action ([[CAPABILITY-FRAMEWORK]] §4.5.3) that the firing agent MUST be authorised for. The flow engine MUST:
 
 1. Resolve the role action.
-2. Query [[CAPABILITY-FRAMEWORK]]'s `myCapabilities()` on the context (or directly check ZCAPs via `verify(agent, action, context, ...)`).
+2. Query [[CAPABILITY-FRAMEWORK]]'s `myCapabilities()` on the graph (or directly check ZCAPs via `verify(agent, action, graph, ...)`).
 3. If no valid capability is held, reject the transition with `"NotAllowedError"`.
 
 This composes the flow with the governance layer: shapes describe structure, ZCAPs grant authority, flows define when authority can be exercised, and the *role* field is the joint:
@@ -459,11 +459,11 @@ Sub-flows can themselves trigger sub-sub-flows; the runtime MUST enforce a maxim
 
 ## 11. API
 
-### 11.1 Context Methods
+### 11.1 Graph Methods
 
 ```webidl
 [Exposed=Window,Worker]
-partial interface Context {
+partial interface Graph {
   [NewObject] Promise<undefined> addFlow(DOMString name, DOMString flowJson);
   [NewObject] Promise<undefined> removeFlow(DOMString name);
   [NewObject] Promise<sequence<FlowInfo>> getFlows();
@@ -503,7 +503,7 @@ dictionary FlowTransitionResult {
 
 ### 11.2 addFlow
 
-Registers a flow into this context. Requires an `updateFlow` capability ([[CAPABILITY-FRAMEWORK]] §4.5.3). Validates the JSON, writes the flow's triples to the context.
+Registers a flow into this graph. Requires an `updateFlow` capability ([[CAPABILITY-FRAMEWORK]] §4.5.3). Validates the JSON, writes the flow's triples to the graph.
 
 ### 11.3 executeFlowTransition
 
@@ -522,7 +522,7 @@ Returns the names of transitions that would *currently* succeed for the given in
 
 ### 11.5 Subscription
 
-`ontransitionfired` fires when any FlowInstance in this context transitions. `ontransitiondeadline` fires when a transition with `temporal.maxDelay` and `onDeadline: "notify"` reaches its deadline.
+`ontransitionfired` fires when any FlowInstance in this graph transitions. `ontransitiondeadline` fires when a transition with `temporal.maxDelay` and `onDeadline: "notify"` reaches its deadline.
 
 ---
 
@@ -530,15 +530,15 @@ Returns the names of transitions that would *currently* succeed for the given in
 
 ### 12.1 Transitions as Diffs
 
-A transition is a write to the context — removing the old state link, adding the new state link, executing `actions`. These triples are gathered into a `ContextDiff` ([[CONTEXT-SYNC]]) carrying the firing agent's `CapabilityProof`.
+A transition is a write to the graph — removing the old state link, adding the new state link, executing `actions`. These triples are gathered into a `GraphDiff` ([[CONTEXT-SYNC]]) carrying the firing agent's `CapabilityProof`.
 
 ### 12.2 Validation on Receipt
 
-When a peer receives a `ContextDiff` containing flow state transitions, the receiving peer:
+When a peer receives a `GraphDiff` containing flow state transitions, the receiving peer:
 
 1. Re-evaluates the guard against its local state.
 2. Re-checks temporal constraints against the local reifier timestamps.
-3. Re-verifies the role requirement against the context's current ZCAPs.
+3. Re-verifies the role requirement against the graph's current ZCAPs.
 
 If any check fails on the receiving peer's local state, the diff is rejected.
 
@@ -580,14 +580,14 @@ A shape can declare its associated flow:
 A flow's `role` field names a ZCAP action ([§9](#9-role-requirements)). The complete authorisation story:
 
 1. Shape says "a Proposal has body, author, status."
-2. ZCAP says "this agent can `createLink` (Messages) and `ratify` (Proposals) in this context."
+2. ZCAP says "this agent can `createLink` (Messages) and `ratify` (Proposals) in this graph."
 3. Flow says "to ratify, you need the `ratify` capability AND the proposal must be in `voting` state for 48 hours AND quorum must be reached."
 
 Each layer composes cleanly; none can substitute for the others.
 
 ### 13.3 Governance Mode and Flows
 
-Flows are subject to the context's enforcement mode ([[CAPABILITY-FRAMEWORK]] §5):
+Flows are subject to the graph's enforcement mode ([[CAPABILITY-FRAMEWORK]] §5):
 
 - **Open mode**: Role requirements are not enforced (anyone may fire any transition that passes guards and temporals).
 - **Announced mode**: Role requirements are checked and recorded but not enforced.
@@ -601,7 +601,7 @@ This lets a community shape flow design iteratively without instantly gating con
 
 ### 14.1 Guard Safety
 
-Guards run SPARQL queries against the local context. They MUST be read-only and time-bounded ([§7.4](#74-safety-constraints)). Implementations MUST disable destructive SPARQL keywords and federated services unless explicitly permitted.
+Guards run SPARQL queries against the local graph. They MUST be read-only and time-bounded ([§7.4](#74-safety-constraints)). Implementations MUST disable destructive SPARQL keywords and federated services unless explicitly permitted.
 
 ### 14.2 Timestamp Authority
 
@@ -629,11 +629,11 @@ An adversarial peer could spam transition attempts to win deterministic tie-brea
 
 ### 15.1 Process Visibility
 
-Flow definitions are stored as triples in the context. Anyone with read access to the context sees the flow structure — what states exist, what transitions are possible, what guards gate them.
+Flow definitions are stored as triples in the graph. Anyone with read access to the graph sees the flow structure — what states exist, what transitions are possible, what guards gate them.
 
 ### 15.2 Transition History
 
-Every state change is a triple with a reifier carrying author and timestamp. The complete history of state changes for a FlowInstance is observable to all participants. Applications that need transition privacy SHOULD partition sensitive flows into restricted-mount contexts.
+Every state change is a triple with a reifier carrying author and timestamp. The complete history of state changes for a FlowInstance is observable to all participants. Applications that need transition privacy SHOULD partition sensitive flows into restricted-mount graphs.
 
 ### 15.3 Guard Disclosure
 
@@ -800,7 +800,7 @@ await community.addFlow("VotingPeriod", JSON.stringify({
 <dd><a href="./03_graph-capability-framework.md">Graph Capability Framework</a>.</dd>
 
 <dt>[CONTEXT-SYNC]</dt>
-<dd><a href="./04_context-sync-protocol.md">Context Synchronisation Protocol</a>.</dd>
+<dd><a href="./04_context-sync-protocol.md">Graph Synchronisation Protocol</a>.</dd>
 
 <dt>[SHAPE-VALIDATION]</dt>
 <dd><a href="./06_dynamic-graph-shape-validation.md">Dynamic Graph Shape Validation</a>.</dd>

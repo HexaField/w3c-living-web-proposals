@@ -1,7 +1,7 @@
 /**
  * Governance setup for P2P VCS
  */
-import { Context } from '@living-web/personal-graph';
+import { Graph } from '@living-web/personal-graph';
 import {
   createGovernanceLayer,
   createCapability,
@@ -10,8 +10,8 @@ import {
 } from '@living-web/capability-framework';
 import { PREDICATES } from './shapes.js';
 
-/** Back-compat: Context is what the previous SharedGraph alias now resolves to. */
-type SharedGraph = Context;
+/** Back-compat: Graph is what the previous SharedGraph alias now resolves to. */
+type SharedGraph = Graph;
 
 const OWNER_PREDICATES = [
   PREDICATES.REPO_NAME, PREDICATES.REPO_DESCRIPTION,

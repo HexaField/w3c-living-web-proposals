@@ -27,7 +27,7 @@ const noopModule: SyncModule = {
 };
 
 describe('installSyncModule', () => {
-  it('registers the module as the active context-sync runtime', () => {
+  it('registers the module as the active graph-sync runtime', () => {
     installSyncModule(noopModule);
     expect(getSyncRuntime()).toBe(noopModule);
   });

@@ -14,7 +14,7 @@ test.describe('Cross-device sync via WebSocket relay', () => {
     await browser2?.close();
   });
 
-  test('two browser contexts sync triples via relay', async () => {
+  test('two browser graphs sync triples via relay', async () => {
     const context1 = await browser1.newContext();
     const context2 = await browser2.newContext();
     const page1 = await context1.newPage();

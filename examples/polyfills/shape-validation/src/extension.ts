@@ -1,7 +1,7 @@
 /**
- * Shape extension — mixed into Context.prototype at install time.
+ * Shape extension — mixed into Graph.prototype at install time.
  *
- * Methods exposed on Context:
+ * Methods exposed on Graph:
  *   addShape(name, shapeJson)
  *   removeShape(name)
  *   getShapes(options?)
@@ -12,12 +12,12 @@
  *   addToShapeCollection(shapeName, address, collection, value)
  *   removeFromShapeCollection(shapeName, address, collection, value)
  *
- * Shape definitions are stored as triples inside the context. Shape inheritance
+ * Shape definitions are stored as triples inside the graph. Shape inheritance
  * walks `context://participates_in` links upward through the navigator.graph
  * resolver.
  */
 
-import { Context } from '@living-web/personal-graph';
+import { Graph } from '@living-web/personal-graph';
 import type {
   ShapeDefinition,
   PropertyDefinition,
@@ -37,13 +37,13 @@ import { validateShapeDefinition } from './validator.js';
 import { validateDatatype } from './xsd.js';
 import { contentAddress } from './storage.js';
 
-const registries = new WeakMap<Context, Map<string, RegisteredShape>>();
+const registries = new WeakMap<Graph, Map<string, RegisteredShape>>();
 
-function getRegistry(context: Context): Map<string, RegisteredShape> {
-  let reg = registries.get(context);
+function getRegistry(graph: Graph): Map<string, RegisteredShape> {
+  let reg = registries.get(graph);
   if (!reg) {
     reg = new Map();
-    registries.set(context, reg);
+    registries.set(graph, reg);
   }
   return reg;
 }
@@ -104,9 +104,9 @@ function propToPublic(prop: PropertyDefinition): PropertyInfo {
   };
 }
 
-// ── Public methods (mixed into Context.prototype) ────────────────────────────
+// ── Public methods (mixed into Graph.prototype) ────────────────────────────
 
-async function addShape(this: Context, name: string, shapeJson: string): Promise<void> {
+async function addShape(this: Graph, name: string, shapeJson: string): Promise<void> {
   const registry = getRegistry(this);
   if (registry.has(name)) {
     throw new DOMException(`Shape "${name}" already exists`, 'ConstraintError');
@@ -127,7 +127,7 @@ async function addShape(this: Context, name: string, shapeJson: string): Promise
   registry.set(name, { name, definition, address, contextDid: (this.did ?? this.id) });
 }
 
-async function removeShape(this: Context, name: string): Promise<void> {
+async function removeShape(this: Graph, name: string): Promise<void> {
   const registry = getRegistry(this);
   const shape = registry.get(name);
   if (!shape) return;
@@ -144,7 +144,7 @@ interface GetShapesOptions {
   includeInherited?: boolean;
 }
 
-async function getShapes(this: Context, options?: GetShapesOptions): Promise<ShapeInfo[]> {
+async function getShapes(this: Graph, options?: GetShapesOptions): Promise<ShapeInfo[]> {
   const registry = getRegistry(this);
   const result: ShapeInfo[] = [];
   for (const shape of registry.values()) {
@@ -164,26 +164,26 @@ async function getShapes(this: Context, options?: GetShapesOptions): Promise<Sha
 }
 
 interface GraphStoreLike {
-  resolveContext(graphDid: string): Promise<Context | null>;
+  resolveContext(graphDid: string): Promise<Graph | null>;
 }
 
 interface NavigatorWithGraph {
   graph?: GraphStoreLike;
 }
 
-async function collectInheritedShapes(context: Context): Promise<ShapeInfo[]> {
+async function collectInheritedShapes(graph: Graph): Promise<ShapeInfo[]> {
   const inherited: ShapeInfo[] = [];
   const nav = globalThis.navigator as Navigator & NavigatorWithGraph;
   const manager = nav.graph;
   if (!manager || typeof manager.resolveContext !== 'function') return inherited;
 
-  const participations = await context.queryTriples({
-    subject: context.did,
+  const participations = await graph.queryTriples({
+    subject: graph.did,
     predicate: 'context://participates_in',
   });
   for (const link of participations) {
     const parent = await manager.resolveContext(link.data.object);
-    if (parent && parent !== context) {
+    if (parent && parent !== graph) {
       const parentShapes = await getShapes.call(parent, { includeInherited: true });
       for (const p of parentShapes) inherited.push(p);
     }
@@ -191,14 +191,14 @@ async function collectInheritedShapes(context: Context): Promise<ShapeInfo[]> {
   return inherited;
 }
 
-async function resolveShape(context: Context, shapeName: string): Promise<RegisteredShape | null> {
-  const local = getRegistry(context).get(shapeName);
+async function resolveShape(graph: Graph, shapeName: string): Promise<RegisteredShape | null> {
+  const local = getRegistry(graph).get(shapeName);
   if (local) return local;
   const nav = globalThis.navigator as Navigator & NavigatorWithGraph;
   const manager = nav.graph;
   if (!manager) return null;
-  const participations = await context.queryTriples({
-    subject: context.did,
+  const participations = await graph.queryTriples({
+    subject: graph.did,
     predicate: 'context://participates_in',
   });
   for (const link of participations) {
@@ -212,7 +212,7 @@ async function resolveShape(context: Context, shapeName: string): Promise<Regist
 }
 
 async function createShapeInstance(
-  this: Context,
+  this: Graph,
   shapeName: string,
   address: string,
   initialValues: Record<string, unknown> = {},
@@ -257,7 +257,7 @@ async function createShapeInstance(
   return address;
 }
 
-async function getShapeInstances(this: Context, shapeName: string): Promise<string[]> {
+async function getShapeInstances(this: Graph, shapeName: string): Promise<string[]> {
   const shape = await resolveShape(this, shapeName);
   if (!shape) throw new TypeError(`Shape "${shapeName}" not found`);
   const disc = getDiscriminator(shape.definition);
@@ -267,7 +267,7 @@ async function getShapeInstances(this: Context, shapeName: string): Promise<stri
 }
 
 async function getShapeInstanceData(
-  this: Context,
+  this: Graph,
   shapeName: string,
   address: string,
 ): Promise<Record<string, unknown>> {
@@ -305,7 +305,7 @@ async function getShapeInstanceData(
 }
 
 async function setShapeProperty(
-  this: Context,
+  this: Graph,
   shapeName: string,
   address: string,
   property: string,
@@ -325,7 +325,7 @@ async function setShapeProperty(
 }
 
 async function addToShapeCollection(
-  this: Context,
+  this: Graph,
   shapeName: string,
   address: string,
   collection: string,
@@ -349,7 +349,7 @@ async function addToShapeCollection(
 }
 
 async function removeFromShapeCollection(
-  this: Context,
+  this: Graph,
   shapeName: string,
   address: string,
   collection: string,
@@ -371,11 +371,11 @@ async function removeFromShapeCollection(
 }
 
 /**
- * Augment Context with shape methods. The interface declarations let TypeScript
- * see the methods on `Context` after the module is loaded.
+ * Augment Graph with shape methods. The interface declarations let TypeScript
+ * see the methods on `Graph` after the module is loaded.
  */
 declare module '@living-web/personal-graph' {
-  interface Context {
+  interface Graph {
     addShape(name: string, shapeJson: string): Promise<void>;
     removeShape(name: string): Promise<void>;
     getShapes(options?: GetShapesOptions): Promise<ShapeInfo[]>;
@@ -410,11 +410,11 @@ declare module '@living-web/personal-graph' {
   }
 }
 
-/** Install all methods onto Context.prototype. Idempotent. */
+/** Install all methods onto Graph.prototype. Idempotent. */
 export function installShapeExtension(): void {
-  const proto = Context.prototype as Context;
+  const proto = Graph.prototype as Graph;
   if (typeof proto.addShape === 'function') return;
-  Object.assign(Context.prototype, {
+  Object.assign(Graph.prototype, {
     addShape,
     removeShape,
     getShapes,

@@ -127,15 +127,15 @@ async function createChannelPrompt(state: AppState): Promise<void> {
   if (!name || !name.trim()) return;
 
   const channelId = `channel:${crypto.randomUUID()}`;
-  await state.context.createShapeInstance('Channel', channelId, { name: name.trim() });
-  await state.context.addTriple(new Triple(state.communityId, PREDICATES.HAS_CHILD, channelId));
+  await state.graph.createShapeInstance('Channel', channelId, { name: name.trim() });
+  await state.graph.addTriple(new Triple(state.communityId, PREDICATES.HAS_CHILD, channelId));
 
   state.channels.push({ id: channelId, name: name.trim() });
   state.messages.set(channelId, []);
 
   state.bc.postMessage({
     type: 'new-channel',
-    groupDid: state.context.did,
+    groupDid: state.graph.did,
     channel: { id: channelId, name: name.trim() },
   });
 

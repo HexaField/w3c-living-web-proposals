@@ -1,7 +1,7 @@
 /**
- * Flow extension — mixed into Context.prototype at install time.
+ * Flow extension — mixed into Graph.prototype at install time.
  *
- * Methods exposed on Context:
+ * Methods exposed on Graph:
  *   addFlow(name, flowJson)
  *   removeFlow(name)
  *   getFlows()
@@ -10,7 +10,7 @@
  *   availableTransitions(flowName, instanceUri)
  */
 
-import { Context } from '@living-web/personal-graph';
+import { Graph } from '@living-web/personal-graph';
 import {
   FLOW,
   flowActionKind,
@@ -20,9 +20,9 @@ import {
 } from './types.js';
 import { parseISODuration } from './duration.js';
 
-const registries = new WeakMap<Context, Map<string, FlowDefinition>>();
+const registries = new WeakMap<Graph, Map<string, FlowDefinition>>();
 
-function getRegistry(ctx: Context): Map<string, FlowDefinition> {
+function getRegistry(ctx: Graph): Map<string, FlowDefinition> {
   let r = registries.get(ctx);
   if (!r) {
     r = new Map();
@@ -31,7 +31,7 @@ function getRegistry(ctx: Context): Map<string, FlowDefinition> {
   return r;
 }
 
-async function addFlow(this: Context, name: string, flowJson: string): Promise<void> {
+async function addFlow(this: Graph, name: string, flowJson: string): Promise<void> {
   const def = JSON.parse(flowJson) as FlowDefinition;
   if (!def.name || !def.initialState || !Array.isArray(def.states) || !Array.isArray(def.transitions)) {
     throw new DOMException('Invalid flow definition', 'SyntaxError');
@@ -82,7 +82,7 @@ async function addFlow(this: Context, name: string, flowJson: string): Promise<v
   reg.set(name, def);
 }
 
-async function removeFlow(this: Context, name: string): Promise<void> {
+async function removeFlow(this: Graph, name: string): Promise<void> {
   const reg = getRegistry(this);
   const def = reg.get(name);
   if (!def) return;
@@ -92,7 +92,7 @@ async function removeFlow(this: Context, name: string): Promise<void> {
   reg.delete(name);
 }
 
-async function getFlows(this: Context): Promise<FlowInfo[]> {
+async function getFlows(this: Graph): Promise<FlowInfo[]> {
   const reg = getRegistry(this);
   return [...reg.values()].map(def => ({
     name: def.name,
@@ -103,7 +103,7 @@ async function getFlows(this: Context): Promise<FlowInfo[]> {
   }));
 }
 
-async function getFlowState(this: Context, flowName: string, instanceUri: string): Promise<string> {
+async function getFlowState(this: Graph, flowName: string, instanceUri: string): Promise<string> {
   const reg = getRegistry(this);
   const def = reg.get(flowName);
   if (!def) throw new TypeError(`Flow "${flowName}" not found`);
@@ -113,7 +113,7 @@ async function getFlowState(this: Context, flowName: string, instanceUri: string
 }
 
 async function executeFlowTransition(
-  this: Context,
+  this: Graph,
   flowName: string,
   instanceUri: string,
   transitionName: string,
@@ -191,7 +191,7 @@ async function executeFlowTransition(
   return { success: true, newState: transition.toState };
 }
 
-async function availableTransitions(this: Context, flowName: string, instanceUri: string): Promise<string[]> {
+async function availableTransitions(this: Graph, flowName: string, instanceUri: string): Promise<string[]> {
   const reg = getRegistry(this);
   const def = reg.get(flowName);
   if (!def) return [];
@@ -212,7 +212,7 @@ async function availableTransitions(this: Context, flowName: string, instanceUri
 }
 
 declare module '@living-web/personal-graph' {
-  interface Context {
+  interface Graph {
     addFlow(name: string, flowJson: string): Promise<void>;
     removeFlow(name: string): Promise<void>;
     getFlows(): Promise<FlowInfo[]>;
@@ -227,9 +227,9 @@ declare module '@living-web/personal-graph' {
 }
 
 export function installFlowExtension(): void {
-  const proto = Context.prototype as Context;
+  const proto = Graph.prototype as Graph;
   if (typeof proto.addFlow === 'function') return;
-  Object.assign(Context.prototype, {
+  Object.assign(Graph.prototype, {
     addFlow,
     removeFlow,
     getFlows,

@@ -7,9 +7,9 @@
  * interface applies.
  */
 
-import type { Context, SignedTriple } from '@living-web/personal-graph';
+import type { Graph, SignedTriple } from '@living-web/personal-graph';
 import {
-  ContextDiff,
+  GraphDiff,
   DiffEvent,
   PeerEvent,
   SignalEvent,
@@ -21,26 +21,26 @@ import {
   type ContextSyncState,
   type Peer,
   type PublishOptions,
-  type PublishedContext,
+  type PublishedGraph,
 } from '@living-web/context-sync';
 
 const DEFAULT_MODULE_HASH = 'sha256-default-or-set-crdt-v1';
 
 /**
- * Sync requires the context to have a stable, content-independent identity —
- * a `did:graph` ([[GROUP-IDENTITY]]). Ungroupified contexts have only a
+ * Sync requires the graph to have a stable, content-independent identity —
+ * a `did:graph` ([[GROUP-IDENTITY]]). Ungroupified graphs have only a
  * content-hash IRI that changes per mutation; they cannot be subscribed to
- * across edits. Throw `NotSupportedError` if the context isn't groupified.
+ * across edits. Throw `NotSupportedError` if the graph isn't groupified.
  */
-function requireDid(context: Context): string {
-  if (!context.did) {
+function requireDid(graph: Graph): string {
+  if (!graph.did) {
     throw new DOMException(
-      `Context ${context.iri} is not groupified — sync requires a did:graph (per [[GROUP-IDENTITY]]). ` +
+      `Graph ${graph.iri} is not groupified — sync requires a did:graph (per [[GROUP-IDENTITY]]). ` +
       `Call store.groupify() or store.createGroup() before publish().`,
       'NotSupportedError',
     );
   }
-  return context.did;
+  return graph.did;
 }
 
 interface PublishedState {
@@ -56,7 +56,7 @@ interface PublishedState {
   revisionChain: string[];
 }
 
-const published = new WeakMap<Context, PublishedState>();
+const published = new WeakMap<Graph, PublishedState>();
 
 function getSessionId(): string {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
@@ -69,7 +69,7 @@ function toBytes(payload: BufferSource): Uint8Array {
   return new Uint8Array(payload.buffer, payload.byteOffset, payload.byteLength);
 }
 
-function serialiseDiff(diff: ContextDiff): ChannelDiffPayload {
+function serialiseDiff(diff: GraphDiff): ChannelDiffPayload {
   return {
     graphDid: diff.graphDid,
     revision: diff.revision,
@@ -83,12 +83,12 @@ function serialiseDiff(diff: ContextDiff): ChannelDiffPayload {
   };
 }
 
-function emitDiff(context: Context, additions: SignedTriple[], removals: SignedTriple[]): void {
-  const state = published.get(context);
+function emitDiff(graph: Graph, additions: SignedTriple[], removals: SignedTriple[]): void {
+  const state = published.get(graph);
   if (!state) return;
-  const author = context.getIdentity().getDID();
+  const author = graph.getIdentity().getDID();
   const diff = createContextDiff({
-    graphDid: requireDid(context),
+    graphDid: requireDid(graph),
     additions,
     removals,
     dependencies: state.revisionChain.length === 0 ? [] : [state.revisionChain[state.revisionChain.length - 1]],
@@ -104,11 +104,11 @@ function emitDiff(context: Context, additions: SignedTriple[], removals: SignedT
 }
 
 export const defaultSyncModule: ContextSyncRuntime = {
-  async publish(context: Context, options: PublishOptions = {}): Promise<PublishedContext> {
-    const existing = published.get(context);
+  async publish(graph: Graph, options: PublishOptions = {}): Promise<PublishedGraph> {
+    const existing = published.get(graph);
     if (existing) {
       return {
-        graphDid: requireDid(context),
+        graphDid: requireDid(graph),
         spaceUri: existing.spaceUri,
         moduleHash: existing.moduleHash,
         relays: existing.relays,
@@ -117,7 +117,7 @@ export const defaultSyncModule: ContextSyncRuntime = {
 
     const moduleHash = options.moduleHash ?? DEFAULT_MODULE_HASH;
     const topology = options.spaceTopology ?? 'unified';
-    const spaceUri = deriveSpaceUri(topology, requireDid(context), { customName: options.customSpace });
+    const spaceUri = deriveSpaceUri(topology, requireDid(graph), { customName: options.customSpace });
     const sessionId = getSessionId();
 
     let channel: BroadcastChannel | null = null;
@@ -126,10 +126,10 @@ export const defaultSyncModule: ContextSyncRuntime = {
       channel.onmessage = (event: MessageEvent<ChannelMessage>) => {
         const msg = event.data;
         if (msg.origin === sessionId) return;
-        const state = published.get(context);
+        const state = published.get(graph);
         if (!state) return;
-        if (msg.type === 'DIFF' && msg.diff.graphDid === requireDid(context)) {
-          const diff = new ContextDiff({
+        if (msg.type === 'DIFF' && msg.diff.graphDid === requireDid(graph)) {
+          const diff = new GraphDiff({
             graphDid: msg.diff.graphDid,
             revision: msg.diff.revision,
             additions: msg.diff.additions,
@@ -141,22 +141,22 @@ export const defaultSyncModule: ContextSyncRuntime = {
             diffsSinceSnapshot: msg.diff.diffsSinceSnapshot,
           });
           if (!state.revisionChain.includes(diff.revision)) state.revisionChain.push(diff.revision);
-          context.dispatchEvent(new DiffEvent(diff));
+          graph.dispatchEvent(new DiffEvent(diff));
         } else if (msg.type === 'SIGNAL') {
-          if (msg.to && msg.to.did !== context.getIdentity().getDID()) return;
+          if (msg.to && msg.to.did !== graph.getIdentity().getDID()) return;
           if (msg.to?.sessionId && msg.to.sessionId !== sessionId) return;
-          context.dispatchEvent(new SignalEvent(msg.from, msg.payload));
+          graph.dispatchEvent(new SignalEvent(msg.from, msg.payload));
         } else if (msg.type === 'PEER_HELLO') {
           const peer: Peer = { ...msg.peer, online: true, lastSeen: Date.now() };
           const key = `${peer.did}@${peer.sessionId}`;
           if (state.peers.has(key)) return;
           state.peers.set(key, peer);
-          context.dispatchEvent(new PeerEvent('peerjoined', peer));
+          graph.dispatchEvent(new PeerEvent('peerjoined', peer));
           channel?.postMessage({
             type: 'PEER_HELLO',
             origin: sessionId,
             peer: {
-              did: context.getIdentity().getDID(),
+              did: graph.getIdentity().getDID(),
               sessionId,
               online: true,
               lastSeen: Date.now(),
@@ -167,18 +167,18 @@ export const defaultSyncModule: ContextSyncRuntime = {
           const p = state.peers.get(key);
           if (!p) return;
           state.peers.delete(key);
-          context.dispatchEvent(new PeerEvent('peerleft', { ...p, online: false }));
+          graph.dispatchEvent(new PeerEvent('peerleft', { ...p, online: false }));
         }
       };
     }
 
     const tripleAddedListener: EventListener = (event) => {
       const triple = (event as CustomEvent<SignedTriple>).detail ?? (event as { triple?: SignedTriple }).triple;
-      if (triple) emitDiff(context, [triple], []);
+      if (triple) emitDiff(graph, [triple], []);
     };
     const tripleRemovedListener: EventListener = (event) => {
       const triple = (event as CustomEvent<SignedTriple>).detail ?? (event as { triple?: SignedTriple }).triple;
-      if (triple) emitDiff(context, [], [triple]);
+      if (triple) emitDiff(graph, [], [triple]);
     };
 
     const state: PublishedState = {
@@ -193,12 +193,12 @@ export const defaultSyncModule: ContextSyncRuntime = {
       tripleRemovedListener,
       revisionChain: [],
     };
-    published.set(context, state);
+    published.set(graph, state);
 
-    context.addEventListener('tripleadded', tripleAddedListener);
-    context.addEventListener('tripleremoved', tripleRemovedListener);
+    graph.addEventListener('tripleadded', tripleAddedListener);
+    graph.addEventListener('tripleremoved', tripleRemovedListener);
 
-    const localDid = context.getIdentity().getDID();
+    const localDid = graph.getIdentity().getDID();
     channel?.postMessage({
       type: 'PEER_HELLO',
       origin: sessionId,
@@ -206,52 +206,52 @@ export const defaultSyncModule: ContextSyncRuntime = {
     });
 
     state.syncState = 'synced';
-    context.dispatchEvent(new SyncStateChangeEvent('synced'));
+    graph.dispatchEvent(new SyncStateChangeEvent('synced'));
 
-    return { graphDid: requireDid(context), spaceUri, moduleHash, relays: [...state.relays] };
+    return { graphDid: requireDid(graph), spaceUri, moduleHash, relays: [...state.relays] };
   },
 
-  async unpublish(context: Context): Promise<void> {
-    const state = published.get(context);
+  async unpublish(graph: Graph): Promise<void> {
+    const state = published.get(graph);
     if (!state) return;
-    const localDid = context.getIdentity().getDID();
+    const localDid = graph.getIdentity().getDID();
     state.channel?.postMessage({
       type: 'PEER_BYE',
       origin: state.sessionId,
       peer: { did: localDid, sessionId: state.sessionId, online: false, lastSeen: Date.now() },
     });
     state.channel?.close();
-    context.removeEventListener('tripleadded', state.tripleAddedListener);
-    context.removeEventListener('tripleremoved', state.tripleRemovedListener);
-    published.delete(context);
-    context.dispatchEvent(new SyncStateChangeEvent('idle'));
+    graph.removeEventListener('tripleadded', state.tripleAddedListener);
+    graph.removeEventListener('tripleremoved', state.tripleRemovedListener);
+    published.delete(graph);
+    graph.dispatchEvent(new SyncStateChangeEvent('idle'));
   },
 
-  async syncState(context: Context): Promise<ContextSyncState> {
-    return published.get(context)?.syncState ?? 'idle';
+  async syncState(graph: Graph): Promise<ContextSyncState> {
+    return published.get(graph)?.syncState ?? 'idle';
   },
 
-  async peers(context: Context): Promise<Peer[]> {
-    return [...(published.get(context)?.peers.values() ?? [])];
+  async peers(graph: Graph): Promise<Peer[]> {
+    return [...(published.get(graph)?.peers.values() ?? [])];
   },
 
-  async onlinePeers(context: Context): Promise<Peer[]> {
-    return [...(published.get(context)?.peers.values() ?? [])].filter(p => p.online);
+  async onlinePeers(graph: Graph): Promise<Peer[]> {
+    return [...(published.get(graph)?.peers.values() ?? [])].filter(p => p.online);
   },
 
-  async currentRevision(context: Context): Promise<string> {
-    const state = published.get(context);
+  async currentRevision(graph: Graph): Promise<string> {
+    const state = published.get(graph);
     if (state && state.revisionChain.length > 0) {
       return state.revisionChain[state.revisionChain.length - 1];
     }
-    const snap = await context.snapshot();
-    return computeRevision(requireDid(context), snap, [], []);
+    const snap = await graph.snapshot();
+    return computeRevision(requireDid(graph), snap, [], []);
   },
 
-  async sendSignal(context: Context, remoteDid: string, payload: BufferSource): Promise<void> {
-    const state = published.get(context);
+  async sendSignal(graph: Graph, remoteDid: string, payload: BufferSource): Promise<void> {
+    const state = published.get(graph);
     if (!state?.channel) return;
-    const localDid = context.getIdentity().getDID();
+    const localDid = graph.getIdentity().getDID();
     state.channel.postMessage({
       type: 'SIGNAL',
       origin: state.sessionId,
@@ -262,14 +262,14 @@ export const defaultSyncModule: ContextSyncRuntime = {
   },
 
   async sendSignalToSession(
-    context: Context,
+    graph: Graph,
     remoteDid: string,
     sessionId: string,
     payload: BufferSource,
   ): Promise<void> {
-    const state = published.get(context);
+    const state = published.get(graph);
     if (!state?.channel) return;
-    const localDid = context.getIdentity().getDID();
+    const localDid = graph.getIdentity().getDID();
     state.channel.postMessage({
       type: 'SIGNAL',
       origin: state.sessionId,
@@ -279,10 +279,10 @@ export const defaultSyncModule: ContextSyncRuntime = {
     });
   },
 
-  async broadcast(context: Context, payload: BufferSource): Promise<void> {
-    const state = published.get(context);
+  async broadcast(graph: Graph, payload: BufferSource): Promise<void> {
+    const state = published.get(graph);
     if (!state?.channel) return;
-    const localDid = context.getIdentity().getDID();
+    const localDid = graph.getIdentity().getDID();
     state.channel.postMessage({
       type: 'SIGNAL',
       origin: state.sessionId,

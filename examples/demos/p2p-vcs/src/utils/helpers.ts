@@ -13,7 +13,7 @@ export async function hashContent(content: string): Promise<string> {
  * Simple line-based diff
  */
 export interface DiffLine {
-  type: 'added' | 'removed' | 'context';
+  type: 'added' | 'removed' | 'graph';
   text: string;
 }
 
@@ -42,7 +42,7 @@ export function computeDiff(oldText: string, newText: string): DiffLine[] {
   let i = m, j = n;
   while (i > 0 || j > 0) {
     if (i > 0 && j > 0 && oldLines[i - 1] === newLines[j - 1]) {
-      lines.unshift({ type: 'context', text: oldLines[i - 1] });
+      lines.unshift({ type: 'graph', text: oldLines[i - 1] });
       i--; j--;
     } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
       lines.unshift({ type: 'added', text: newLines[j - 1] });

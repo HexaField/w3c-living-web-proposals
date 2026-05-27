@@ -1,5 +1,5 @@
 /**
- * Sync space derivation — deterministic from topology + context identity.
+ * Sync space derivation — deterministic from topology + graph identity.
  */
 
 import { sha256 } from '@noble/hashes/sha2.js';

@@ -2,7 +2,7 @@
  * Collaborative Document — Setup
  */
 import { install as installIdentity, IdentityManager, DIDIdentityProvider } from '@living-web/identity';
-import { install as installPersonalGraph, Context, Triple } from '@living-web/personal-graph';
+import { install as installPersonalGraph, Graph, Triple } from '@living-web/personal-graph';
 import '@living-web/group-identity/polyfill';
 import '@living-web/shape-validation/polyfill';
 import '@living-web/default-sync-module/polyfill';
@@ -69,7 +69,7 @@ export interface CursorInfo {
 export interface AppState {
   did: string;
   displayName: string;
-  context: Context;
+  graph: Graph;
   docId: string;
   docTitle: string;
   blocks: Block[];
@@ -97,41 +97,40 @@ function nextColor(index: number): string {
   return CURSOR_COLORS[index % CURSOR_COLORS.length];
 }
 
-async function ensureShapes(context: Context): Promise<void> {
-  await context.addShape('Document', JSON.stringify(DocumentShape));
-  await context.addShape('Block', JSON.stringify(BlockShape));
-  await context.addShape('Comment', JSON.stringify(CommentShape));
-  await context.addShape('CommentReply', JSON.stringify(CommentReplyShape));
-  await context.addShape('Collaborator', JSON.stringify(CollaboratorShape));
+async function ensureShapes(graph: Graph): Promise<void> {
+  await graph.addShape('Document', JSON.stringify(DocumentShape));
+  await graph.addShape('Block', JSON.stringify(BlockShape));
+  await graph.addShape('Comment', JSON.stringify(CommentShape));
+  await graph.addShape('CommentReply', JSON.stringify(CommentReplyShape));
+  await graph.addShape('Collaborator', JSON.stringify(CollaboratorShape));
 }
 
 export async function createDoc(
   displayName: string, docTitle: string, identity: IdentityProvider, did: string,
 ): Promise<AppState> {
-  const store = await navigator.graph.create(docTitle);
-  const docGroup = await store.createGroup({ displayName: docTitle });
-  const context = docGroup.context;
-  await context.publish();
+  const docGroup = await navigator.graph.createGroup({ displayName: docTitle });
+  const graph = docGroup.graph;
+  await graph.publish();
 
-  await ensureShapes(context);
+  await ensureShapes(graph);
 
   const docId = `doc:${crypto.randomUUID()}`;
-  await context.createShapeInstance('Document', docId, { title: docTitle, owner: did });
+  await graph.createShapeInstance('Document', docId, { title: docTitle, owner: did });
 
   const blockId = `block:${crypto.randomUUID()}`;
-  await context.createShapeInstance('Block', blockId, { type: 'paragraph', content: ' ', author: did });
-  await context.addTriple(new Triple(docId, PREDICATES.HAS_BLOCK, blockId));
+  await graph.createShapeInstance('Block', blockId, { type: 'paragraph', content: ' ', author: did });
+  await graph.addTriple(new Triple(docId, PREDICATES.HAS_BLOCK, blockId));
 
   const collabId = `collab:${crypto.randomUUID()}`;
   const color = nextColor(0);
-  await context.createShapeInstance('Collaborator', collabId, { did, name: displayName, role: 'owner', color });
-  await context.addTriple(new Triple(docId, PREDICATES.HAS_COLLABORATOR, collabId));
+  await graph.createShapeInstance('Collaborator', collabId, { did, name: displayName, role: 'owner', color });
+  await graph.addTriple(new Triple(docId, PREDICATES.HAS_COLLABORATOR, collabId));
 
-  const governance = setupGovernance(context, did);
+  const governance = setupGovernance(graph, did);
   const bc = new BroadcastChannel(SYNC_CHANNEL);
 
   const state: AppState = {
-    did, displayName, context, docId, docTitle,
+    did, displayName, graph, docId, docTitle,
     blocks: [{ id: blockId, type: 'paragraph', content: '', authorDid: did, locked: false, lockedBy: null }],
     comments: [],
     collaborators: [{ id: collabId, did, name: displayName, role: 'owner', color }],
@@ -148,11 +147,10 @@ export async function joinDoc(
   displayName: string, contextIri: string, identity: IdentityProvider, did: string,
 ): Promise<AppState> {
   // Cross-tab join: a sibling tab on the same origin will reply via BroadcastChannel
-  // with the document state. We create a local placeholder context that mirrors the
+  // with the document state. We create a local placeholder graph that mirrors the
   // received state for display purposes.
-  const store = await navigator.graph.create(displayName);
-  const placeholderGroup = await store.createGroup({ displayName: 'pending-join' });
-  const placeholderContext = placeholderGroup.context;
+  const placeholderGroup = await navigator.graph.createGroup({ displayName: 'pending-join' });
+  const placeholderContext = placeholderGroup.graph;
   await placeholderContext.publish();
   const bc = new BroadcastChannel(SYNC_CHANNEL);
 
@@ -161,7 +159,7 @@ export async function joinDoc(
       const fallbackBlockId = `block:${crypto.randomUUID()}`;
       const governance = setupGovernance(placeholderContext, did);
       resolve({
-        did, displayName, context: placeholderContext,
+        did, displayName, graph: placeholderContext,
         docId: 'doc:fallback', docTitle: 'Document',
         blocks: [{ id: fallbackBlockId, type: 'paragraph', content: '', authorDid: did, locked: false, lockedBy: null }],
         comments: [],
@@ -182,7 +180,7 @@ export async function joinDoc(
       const color = nextColor(msg.collaborators.length);
 
       const state: AppState = {
-        did, displayName, context: placeholderContext,
+        did, displayName, graph: placeholderContext,
         docId: msg.docId, docTitle: msg.docTitle,
         blocks: msg.blocks,
         comments: msg.comments || [],
@@ -210,8 +208,8 @@ export async function joinDoc(
 }
 
 function setupCrossTabSync(state: AppState): void {
-  const { bc, context } = state;
-  const contextIri = context.iri;
+  const { bc, graph } = state;
+  const contextIri = graph.iri;
 
   bc.addEventListener('message', (ev: MessageEvent) => {
     const msg = ev.data;
@@ -325,7 +323,7 @@ function setupCrossTabSync(state: AppState): void {
 export function broadcastBlockUpdate(state: AppState, blockId: string, content: string, blockType?: string): void {
   state.bc.postMessage({
     type: 'doc-block-update',
-    contextIri: state.context.iri,
+    contextIri: state.graph.iri,
     did: state.did,
     blockId, content, blockType,
   });
@@ -334,7 +332,7 @@ export function broadcastBlockUpdate(state: AppState, blockId: string, content: 
 export function broadcastNewBlock(state: AppState, afterBlockId: string, block: Block): void {
   state.bc.postMessage({
     type: 'doc-new-block',
-    contextIri: state.context.iri,
+    contextIri: state.graph.iri,
     did: state.did,
     afterBlockId, block,
   });
@@ -343,7 +341,7 @@ export function broadcastNewBlock(state: AppState, afterBlockId: string, block: 
 export function broadcastDeleteBlock(state: AppState, blockId: string): void {
   state.bc.postMessage({
     type: 'doc-delete-block',
-    contextIri: state.context.iri,
+    contextIri: state.graph.iri,
     did: state.did,
     blockId,
   });
@@ -356,7 +354,7 @@ export function promoteCollaborator(state: AppState, targetDid: string, newRole:
     issueRoleZcap(state.governance, targetDid, newRole, state.did);
     state.bc.postMessage({
       type: 'doc-role-change',
-      contextIri: state.context.iri,
+      contextIri: state.graph.iri,
       targetDid, newRole, ownerDid: state.did,
     });
     document.dispatchEvent(new CustomEvent('doc-update', { detail: { type: 'role-change' } }));

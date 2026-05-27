@@ -2,7 +2,7 @@
  * Governance setup — realigned to actions+resource ZCAPs targeting did:graph.
  */
 
-import { Context } from '@living-web/personal-graph';
+import { Graph } from '@living-web/personal-graph';
 import {
   createGovernanceLayer,
   createCapability,
@@ -38,16 +38,16 @@ export interface GovernanceState {
   lastMessageTime: Map<string, number>;
 }
 
-export function setupGovernance(context: Context, ownerDid: string): GovernanceState {
-  const layer = createGovernanceLayer(context, {
+export function setupGovernance(graph: Graph, ownerDid: string): GovernanceState {
+  const layer = createGovernanceLayer(graph, {
     enforcementMode: 'open',  // start in open mode; tighten as needed
   });
 
-  // Root ZCAP — represents the context's root capability
+  // Root ZCAP — represents the graph's root capability
   const rootZcap = createCapability(
     ownerDid,
     [...ADMIN_ACTIONS],
-    context.did!,
+    graph.did!,
     ownerDid,
   );
   layer.storeExpression(rootZcap.id, rootZcap);

@@ -1,7 +1,7 @@
 /**
  * Group Identity (Spec 10) — conformance tests.
  *
- * A Group IS a Context (a did:graph context); the group surface adds:
+ * A Group IS a Graph (a did:graph graph); the group surface adds:
  *   – Participation (context://accepts_participation)
  *   – Signers (DID-document delegates)
  *   – Nested groups (parent/child via participates_in)
@@ -12,9 +12,9 @@ import 'fake-indexeddb/auto';
 
 import {
   GraphStorage,
-  GraphStoreManager,
+  GraphManager,
   EphemeralIdentity,
-  type GraphStore,
+  type IdentityProvider,
 } from '@living-web/personal-graph';
 
 import { Group } from '../group.js';
@@ -23,99 +23,96 @@ import { GROUP, CONTEXT, RDF } from '../types.js';
 import { installCredentialAugmentation } from '../credential.js';
 import { installDIDGraphBinding } from '../binding.js';
 
-// Install the did:graph credential creator + ContextMethodBinding so
-// personal-graph can mint contexts. The binding's resolver/writer hooks read
-// the active store via a closure; the test suite uses one manager at a time,
-// so we install a binding that proxies to a mutable "current store" cell.
-let currentManager: GraphStoreManager | null = null;
+// The binding's resolver/writer hooks read graphs via a closure. Each test
+// installs a fresh manager and points the binding at it.
+let currentManager: GraphManager | null = null;
+let currentAgent: IdentityProvider | null = null;
 
 beforeAll(() => {
   installGroupExtension();
   installCredentialAugmentation();
   installDIDGraphBinding({
-    *knownStores() {
+    *knownGraphs() {
       if (!currentManager) return;
-      yield* currentManager.knownStores();
+      yield* currentManager.knownGraphs();
     },
-    async resolveContext(did: string) {
-      if (!currentManager) return null;
-      return currentManager.resolveContext(did);
-    },
+    fullManager: () => currentManager,
   });
 });
 
-async function newGraphStore(): Promise<GraphStore> {
+async function newManager(): Promise<GraphManager> {
   const eph = new EphemeralIdentity();
   await eph.ensureReady();
   const storage = new GraphStorage(`gi-${crypto.randomUUID()}`);
-  const manager = new GraphStoreManager(storage, async () => eph);
+  const manager = new GraphManager(storage, async () => eph);
   currentManager = manager;
-  return manager.create('ws');
+  currentAgent = eph;
+  return manager;
 }
 
 describe('§4 Group creation', () => {
   it('mints a did:graph for the group', async () => {
-    const gs = await newGraphStore();
-    const g = await gs.createGroup({ name: 'Test' });
+    const m = await newManager();
+    const g = await m.createGroup({ name: 'Test' });
     expect(g.did).toMatch(/^did:graph:/);
   });
 
-  it('exposes the underlying Context', async () => {
-    const gs = await newGraphStore();
-    const g = await gs.createGroup({ name: 'Test' });
-    expect(g.context.did).toBe(g.did);
+  it('exposes the underlying Graph', async () => {
+    const m = await newManager();
+    const g = await m.createGroup({ name: 'Test' });
+    expect(g.graph.did).toBe(g.did);
   });
 
   it('writes group identity triples (rdf:type, group://created, group://creator)', async () => {
-    const gs = await newGraphStore();
-    const g = await gs.createGroup({ name: 'Test' });
+    const m = await newManager();
+    const g = await m.createGroup({ name: 'Test' });
 
-    const typeT = await g.context.queryTriples({
+    const typeT = await g.graph.queryTriples({
       subject: g.did,
       predicate: RDF.TYPE,
       object: GROUP.TYPE,
     });
     expect(typeT.length).toBeGreaterThanOrEqual(1);
 
-    const createdT = await g.context.queryTriples({ subject: g.did, predicate: GROUP.CREATED });
+    const createdT = await g.graph.queryTriples({ subject: g.did, predicate: GROUP.CREATED });
     expect(createdT.length).toBeGreaterThanOrEqual(1);
 
-    const creatorT = await g.context.queryTriples({ subject: g.did, predicate: GROUP.CREATOR });
+    const creatorT = await g.graph.queryTriples({ subject: g.did, predicate: GROUP.CREATOR });
     expect(creatorT.length).toBeGreaterThanOrEqual(1);
-    expect(creatorT[0].data.object).toBe(gs.agentDid);
+    expect(creatorT[0].data.object).toBe(currentAgent!.getDID());
   });
 
   it('stores optional name and description', async () => {
-    const gs = await newGraphStore();
-    const g = await gs.createGroup({ name: 'My Group', description: 'A test group' });
+    const m = await newManager();
+    const g = await m.createGroup({ name: 'My Group', description: 'A test group' });
     expect(g.name).toBe('My Group');
     expect(g.description).toBe('A test group');
 
-    const nameT = await g.context.queryTriples({ subject: g.did, predicate: RDF.NAME });
+    const nameT = await g.graph.queryTriples({ subject: g.did, predicate: RDF.NAME });
     expect(nameT.length).toBeGreaterThanOrEqual(1);
     expect(nameT[0].data.object.replace(/^"|"$/g, '')).toBe('My Group');
   });
 
   it('two groups have different DIDs', async () => {
-    const gs = await newGraphStore();
-    const g1 = await gs.createGroup({ name: 'G1' });
-    const g2 = await gs.createGroup({ name: 'G2' });
+    const m = await newManager();
+    const g1 = await m.createGroup({ name: 'G1' });
+    const g2 = await m.createGroup({ name: 'G2' });
     expect(g1.did).not.toBe(g2.did);
   });
 });
 
 describe('§5 Participation', () => {
-  let gs: GraphStore;
+  let manager: GraphManager;
   let group: Group;
 
   beforeEach(async () => {
-    gs = await newGraphStore();
-    group = await gs.createGroup({ name: 'Team' });
+    manager = await newManager();
+    group = await manager.createGroup({ name: 'Team' });
   });
 
   it('invite() writes accepts_participation', async () => {
     await group.invite('did:key:zMember1');
-    const t = await group.context.queryTriples({
+    const t = await group.graph.queryTriples({
       subject: group.did,
       predicate: CONTEXT.ACCEPTS_PARTICIPATION,
       object: 'did:key:zMember1',
@@ -145,14 +142,14 @@ describe('§5 Participation', () => {
 
 describe('§5.5 Nested groups (participation chains)', () => {
   it('a group can participate_in another group', async () => {
-    const gs = await newGraphStore();
-    const parent = await gs.createGroup({ name: 'Parent' });
-    const child = await gs.createGroup({ name: 'Child', participatesIn: parent.did });
+    const m = await newManager();
+    const parent = await m.createGroup({ name: 'Parent' });
+    const child = await m.createGroup({ name: 'Child', participatesIn: parent.did });
 
-    // child.createContext writes participates_in with the child's STABLE
+    // The child writes participates_in with the child's STABLE
     // identifier (its did:graph, since groupified) as subject — the link
     // must outlive snapshots, so the volatile IRI can't be the subject.
-    const t = await child.context.queryTriples({
+    const t = await child.graph.queryTriples({
       subject: child.did,
       predicate: CONTEXT.PARTICIPATES_IN,
       object: parent.did,
@@ -161,9 +158,9 @@ describe('§5.5 Nested groups (participation chains)', () => {
   });
 
   it('transitiveParticipants flattens nested groups', async () => {
-    const gs = await newGraphStore();
-    const parent = await gs.createGroup({ name: 'Parent' });
-    const child = await gs.createGroup({ name: 'Child' });
+    const m = await newManager();
+    const parent = await m.createGroup({ name: 'Parent' });
+    const child = await m.createGroup({ name: 'Child' });
 
     await parent.invite(child.did);
     await child.invite('did:key:zLeaf');
@@ -173,27 +170,27 @@ describe('§5.5 Nested groups (participation chains)', () => {
   });
 });
 
-describe('GraphStore extension', () => {
+describe('GraphManager extension', () => {
   it('listGroups() reflects createGroup()', async () => {
-    const gs = await newGraphStore();
-    const g1 = await gs.createGroup({ name: 'A' });
-    const g2 = await gs.createGroup({ name: 'B' });
-    const list = await gs.listGroups();
+    const m = await newManager();
+    const g1 = await m.createGroup({ name: 'A' });
+    const g2 = await m.createGroup({ name: 'B' });
+    const list = await m.listGroups();
     expect(list.map(g => g.did).sort()).toEqual([g1.did, g2.did].sort());
   });
 
   it('openGroup() returns the registered instance', async () => {
-    const gs = await newGraphStore();
-    const g = await gs.createGroup({ name: 'A' });
-    const opened = await gs.openGroup(g.did);
+    const m = await newManager();
+    const g = await m.createGroup({ name: 'A' });
+    const opened = await m.openGroup(g.did);
     expect(opened.did).toBe(g.did);
   });
 });
 
 describe('DefaultGroupRegistry', () => {
   it('register + resolve round-trip a group', async () => {
-    const gs = await newGraphStore();
-    const g = await gs.createGroup({ name: 'X' });
+    const m = await newManager();
+    const g = await m.createGroup({ name: 'X' });
     const r = new DefaultGroupRegistry();
     r.register(g);
     expect(r.resolve(g.did)).toBe(g);

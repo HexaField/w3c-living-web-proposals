@@ -2,7 +2,7 @@
  * Setup — identity, world create/join, cross-tab sync
  */
 import { install as installIdentity, IdentityManager, DIDIdentityProvider } from '@living-web/identity';
-import { install as installPersonalGraph, Context, type IdentityProvider } from '@living-web/personal-graph';
+import { install as installPersonalGraph, Graph, type IdentityProvider } from '@living-web/personal-graph';
 import '@living-web/group-identity/polyfill';
 import '@living-web/shape-validation/polyfill';
 import '@living-web/default-sync-module/polyfill';
@@ -57,7 +57,7 @@ export interface ChatMsg {
 export interface AppState {
   did: string;
   displayName: string;
-  context: Context;
+  graph: Graph;
   worldId: string;
   worldName: string;
   myPlayer: PlayerData;
@@ -80,12 +80,12 @@ export async function createIdentity(displayName: string): Promise<{ did: string
   return { did: provider.getDID(), identity: provider };
 }
 
-async function registerShapes(context: Context): Promise<void> {
-  await context.addShape('World', JSON.stringify(WorldShape));
-  await context.addShape('Player', JSON.stringify(PlayerShape));
-  await context.addShape('GameObject', JSON.stringify(GameObjectShape));
-  await context.addShape('Collectible', JSON.stringify(CollectibleShape));
-  await context.addShape('ChatMessage', JSON.stringify(ChatMessageShape));
+async function registerShapes(graph: Graph): Promise<void> {
+  await graph.addShape('World', JSON.stringify(WorldShape));
+  await graph.addShape('Player', JSON.stringify(PlayerShape));
+  await graph.addShape('GameObject', JSON.stringify(GameObjectShape));
+  await graph.addShape('Collectible', JSON.stringify(CollectibleShape));
+  await graph.addShape('ChatMessage', JSON.stringify(ChatMessageShape));
 }
 
 function generateWorldObjects(): GameObjectData[] {
@@ -126,14 +126,13 @@ function generateCollectibles(): CollectibleData[] {
 export async function createWorld(
   displayName: string, worldName: string, identity: IdentityProvider, did: string,
 ): Promise<AppState> {
-  const store = await navigator.graph.create(worldName);
-  const worldGroup = await store.createGroup({ displayName: worldName });
-  const context = worldGroup.context;
-  await context.publish();
-  await registerShapes(context);
+  const worldGroup = await navigator.graph.createGroup({ displayName: worldName });
+  const graph = worldGroup.graph;
+  await graph.publish();
+  await registerShapes(graph);
 
   const worldId = `world:${crypto.randomUUID()}`;
-  await context.createShapeInstance('World', worldId, { name: worldName, owner: did });
+  await graph.createShapeInstance('World', worldId, { name: worldName, owner: did });
 
   const myColor = PLAYER_COLORS[0];
   const myPlayer: PlayerData = {
@@ -143,11 +142,11 @@ export async function createWorld(
 
   const objects = generateWorldObjects();
   const collectibles = generateCollectibles();
-  const governance = setupGovernance(context, did);
+  const governance = setupGovernance(graph, did);
   const bc = new BroadcastChannel(SYNC_CHANNEL);
 
   const state: AppState = {
-    did, displayName, context, worldId, worldName,
+    did, displayName, graph, worldId, worldName,
     myPlayer, players: new Map([[did, myPlayer]]),
     objects, collectibles, chatMessages: [],
     governance, isOwner: true, bc, identity,
@@ -161,9 +160,8 @@ export async function createWorld(
 export async function joinWorld(
   displayName: string, contextIri: string, identity: IdentityProvider, did: string,
 ): Promise<AppState> {
-  const store = await navigator.graph.create(displayName);
-  const placeholderGroup = await store.createGroup({ displayName: 'pending-join' });
-  const placeholderContext = placeholderGroup.context;
+  const placeholderGroup = await navigator.graph.createGroup({ displayName: 'pending-join' });
+  const placeholderContext = placeholderGroup.graph;
   await placeholderContext.publish();
   await registerShapes(placeholderContext);
 
@@ -175,7 +173,7 @@ export async function joinWorld(
       const governance = setupGovernance(placeholderContext, did);
       const myPlayer: PlayerData = { id: `player:${crypto.randomUUID()}`, did, name: displayName, color: myColor, x: 0, y: 1, z: 0, rotation: 0, score: 0 };
       resolve({
-        did, displayName, context: placeholderContext, worldId: 'world:fallback', worldName: 'World',
+        did, displayName, graph: placeholderContext, worldId: 'world:fallback', worldName: 'World',
         myPlayer, players: new Map([[did, myPlayer]]),
         objects: generateWorldObjects(), collectibles: generateCollectibles(),
         chatMessages: [], governance, isOwner: false, bc, identity, governanceLogs: [],
@@ -202,7 +200,7 @@ export async function joinWorld(
       players.set(did, myPlayer);
 
       const state: AppState = {
-        did, displayName, context: placeholderContext,
+        did, displayName, graph: placeholderContext,
         worldId: data.worldId, worldName: data.worldName,
         myPlayer, players,
         objects: data.objects || generateWorldObjects(),
@@ -222,8 +220,8 @@ export async function joinWorld(
 }
 
 function setupCrossTabSync(state: AppState): void {
-  const { bc, context } = state;
-  const contextIri = context.iri;
+  const { bc, graph } = state;
+  const contextIri = graph.iri;
 
   bc.addEventListener('message', (ev: MessageEvent) => {
     const msg = ev.data;

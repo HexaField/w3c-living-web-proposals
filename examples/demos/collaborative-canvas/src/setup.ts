@@ -2,7 +2,7 @@
  * Setup — identity creation, canvas create/join
  */
 import { install as installIdentity, IdentityManager, DIDIdentityProvider } from '@living-web/identity';
-import { install as installPersonalGraph, Context, Triple } from '@living-web/personal-graph';
+import { install as installPersonalGraph, Graph, Triple } from '@living-web/personal-graph';
 import '@living-web/group-identity/polyfill';
 import '@living-web/shape-validation/polyfill';
 import '@living-web/default-sync-module/polyfill';
@@ -62,7 +62,7 @@ export interface CursorData {
 export interface AppState {
   did: string;
   displayName: string;
-  context: Context;
+  graph: Graph;
   canvasId: string;
   canvasName: string;
   layers: LayerData[];
@@ -91,47 +91,46 @@ export async function createIdentity(displayName: string): Promise<{ did: string
   return { did: provider.getDID(), identity: provider };
 }
 
-async function registerShapes(context: Context): Promise<void> {
-  await context.addShape('Canvas', JSON.stringify(CanvasShape));
-  await context.addShape('Layer', JSON.stringify(LayerShape));
-  await context.addShape('CanvasShape', JSON.stringify(CanvasShapeShape));
-  await context.addShape('Path', JSON.stringify(PathShape));
-  await context.addShape('Collaborator', JSON.stringify(CollaboratorShape));
+async function registerShapes(graph: Graph): Promise<void> {
+  await graph.addShape('Canvas', JSON.stringify(CanvasShape));
+  await graph.addShape('Layer', JSON.stringify(LayerShape));
+  await graph.addShape('CanvasShape', JSON.stringify(CanvasShapeShape));
+  await graph.addShape('Path', JSON.stringify(PathShape));
+  await graph.addShape('Collaborator', JSON.stringify(CollaboratorShape));
 }
 
 export async function createCanvas(
   displayName: string, canvasName: string, identity: IdentityProvider, did: string,
 ): Promise<AppState> {
-  const store = await navigator.graph.create(canvasName);
   // Use createGroup so the canvas gets a stable did:graph — sync requires it.
-  const canvasGroup = await store.createGroup({ displayName: canvasName });
-  const context = canvasGroup.context;
-  await context.publish();
-  await registerShapes(context);
+  const canvasGroup = await navigator.graph.createGroup({ displayName: canvasName });
+  const graph = canvasGroup.graph;
+  await graph.publish();
+  await registerShapes(graph);
 
   const canvasId = `canvas:${crypto.randomUUID()}`;
-  await context.createShapeInstance('Canvas', canvasId, { name: canvasName, owner: did });
+  await graph.createShapeInstance('Canvas', canvasId, { name: canvasName, owner: did });
 
   const bgLayerId = `layer:${crypto.randomUUID()}`;
-  await context.createShapeInstance('Layer', bgLayerId, { name: 'Background', order: '0', visible: 'true' });
-  await context.addTriple(new Triple(canvasId, PREDICATES.HAS_LAYER, bgLayerId));
+  await graph.createShapeInstance('Layer', bgLayerId, { name: 'Background', order: '0', visible: 'true' });
+  await graph.addTriple(new Triple(canvasId, PREDICATES.HAS_LAYER, bgLayerId));
 
   const mainLayerId = `layer:${crypto.randomUUID()}`;
-  await context.createShapeInstance('Layer', mainLayerId, { name: 'Main', order: '1', visible: 'true' });
-  await context.addTriple(new Triple(canvasId, PREDICATES.HAS_LAYER, mainLayerId));
+  await graph.createShapeInstance('Layer', mainLayerId, { name: 'Main', order: '1', visible: 'true' });
+  await graph.addTriple(new Triple(canvasId, PREDICATES.HAS_LAYER, mainLayerId));
 
   const myColor = CURSOR_COLORS[0];
   const collabId = `collab:${crypto.randomUUID()}`;
-  await context.createShapeInstance('Collaborator', collabId, { did, name: displayName, role: 'owner', color: myColor });
-  await context.addTriple(new Triple(canvasId, PREDICATES.HAS_CHILD, collabId));
+  await graph.createShapeInstance('Collaborator', collabId, { did, name: displayName, role: 'owner', color: myColor });
+  await graph.addTriple(new Triple(canvasId, PREDICATES.HAS_CHILD, collabId));
 
-  const governance = setupGovernance(context, did);
+  const governance = setupGovernance(graph, did);
   governance.lockedLayers.add(bgLayerId);
 
   const bc = new BroadcastChannel(SYNC_CHANNEL);
 
   const state: AppState = {
-    did, displayName, context, canvasId, canvasName,
+    did, displayName, graph, canvasId, canvasName,
     layers: [
       { id: bgLayerId, name: 'Background', order: 0, visible: true, locked: true },
       { id: mainLayerId, name: 'Main', order: 1, visible: true, locked: false },
@@ -157,9 +156,8 @@ export async function createCanvas(
 export async function joinCanvas(
   displayName: string, contextIri: string, identity: IdentityProvider, did: string,
 ): Promise<AppState> {
-  const store = await navigator.graph.create(displayName);
-  const placeholderGroup = await store.createGroup({ displayName: 'pending-join' });
-  const placeholderContext = placeholderGroup.context;
+  const placeholderGroup = await navigator.graph.createGroup({ displayName: 'pending-join' });
+  const placeholderContext = placeholderGroup.graph;
   await placeholderContext.publish();
   await registerShapes(placeholderContext);
 
@@ -170,7 +168,7 @@ export async function joinCanvas(
     const timeout = setTimeout(() => {
       const governance = setupGovernance(placeholderContext, did);
       resolve({
-        did, displayName, context: placeholderContext, canvasId: 'canvas:fallback', canvasName: 'Canvas',
+        did, displayName, graph: placeholderContext, canvasId: 'canvas:fallback', canvasName: 'Canvas',
         layers: [{ id: 'layer:main', name: 'Main', order: 0, visible: true, locked: false }],
         activeLayerId: 'layer:main', shapes: [],
         collaborators: [{ id: `collab:${crypto.randomUUID()}`, did, name: displayName, role: 'viewer', color: myColor }],
@@ -192,7 +190,7 @@ export async function joinCanvas(
       for (const lid of (msg.lockedLayers || [])) governance.lockedLayers.add(lid);
 
       const state: AppState = {
-        did, displayName, context: placeholderContext,
+        did, displayName, graph: placeholderContext,
         canvasId: msg.canvasId, canvasName: msg.canvasName,
         layers: msg.layers, activeLayerId: msg.layers[msg.layers.length - 1]?.id || '',
         shapes: msg.shapes || [],
@@ -221,8 +219,8 @@ export async function joinCanvas(
 }
 
 function setupCrossTabSync(state: AppState): void {
-  const { bc, context } = state;
-  const contextIri = context.iri;
+  const { bc, graph } = state;
+  const contextIri = graph.iri;
 
   bc.addEventListener('message', (ev: MessageEvent) => {
     const msg = ev.data;

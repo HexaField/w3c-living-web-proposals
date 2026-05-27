@@ -75,7 +75,7 @@ function renderChannelsTab(container: HTMLElement, state: AppState, overlay: HTM
       setSlowMode(state.governance, channel.id, seconds * 1000);
       state.bc.postMessage({
         type: 'governance-update',
-        groupDid: state.context.did,
+        groupDid: state.graph.did,
         action: 'slow-mode',
         channelId: channel.id,
         interval: seconds * 1000,
@@ -101,7 +101,7 @@ function renderChannelsTab(container: HTMLElement, state: AppState, overlay: HTM
       setReadOnly(state.governance, channel.id, !isReadOnly);
       state.bc.postMessage({
         type: 'governance-update',
-        groupDid: state.context.did,
+        groupDid: state.graph.did,
         action: 'read-only',
         channelId: channel.id,
         readOnly: !isReadOnly,
@@ -147,7 +147,7 @@ function renderMembersTab(container: HTMLElement, state: AppState, overlay: HTML
       }
       state.bc.postMessage({
         type: 'governance-update',
-        groupDid: state.context.did,
+        groupDid: state.graph.did,
         action: 'promote',
         targetDid: member.did,
         ownerDid: state.did,
@@ -175,7 +175,7 @@ function renderMembersTab(container: HTMLElement, state: AppState, overlay: HTML
       banMember(state.governance, member.did);
       state.bc.postMessage({
         type: 'governance-update',
-        groupDid: state.context.did,
+        groupDid: state.graph.did,
         action: 'ban',
         targetDid: member.did,
       });

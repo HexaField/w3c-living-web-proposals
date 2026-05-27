@@ -360,7 +360,7 @@ A resolved DID document carries a `trustLevel` annotation describing the resolut
 | `trustLevel` | Meaning |
 |---|---|
 | `"local"` | The DID's state is fully resolvable from local, authoritative storage (for `did:key`, all resolutions are `"local"`). |
-| `"mounted-read"` | The DID's state is resolved from a locally mounted read-only source (for example, a context mounted in `read` mode). |
+| `"mounted-read"` | The DID's state is resolved from a locally mounted read-only source (for example, a graph mounted in `read` mode). |
 | `"external"` | The DID's state was fetched specifically for resolution and is not otherwise present locally. |
 | `"cached"` | The document was previously resolved and is still within its cache TTL. |
 
@@ -475,7 +475,7 @@ const zcap = await me.signCapability({
   parentCapability: rootCap.id,
   delegatee: "did:key:z6MkContractor...",
   actions: ["createLink"],
-  resource: "<some resource URI defined by another spec>",
+  resource: "urn:example:budget-2026",
   caveats: [
     { type: "expiry", expiresAt: "2027-01-01T00:00:00Z" }
   ]

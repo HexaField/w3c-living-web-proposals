@@ -1,5 +1,5 @@
 /**
- * GraphGovernanceEngine — orchestrator for a single context (did:graph).
+ * GraphGovernanceEngine — orchestrator for a single graph (did:graph).
  *
  * Capability checks are built in. All other constraint kinds (temporal,
  * content, credential, etc.) are supplied as plug-in handlers registered
@@ -33,7 +33,7 @@ export class GraphGovernanceEngine {
     this._historyMaxSize = opts?.historyMaxSize ?? 1000;
   }
 
-  get context(): ValidationContext { return this._ctx; }
+  get graph(): ValidationContext { return this._ctx; }
 
   async getEnforcementMode(): Promise<EnforcementMode> {
     const triples = await this._ctx.queryTriples({

@@ -1,7 +1,7 @@
 /**
- * Polyfill entrypoint — installs the Context sync extension on
- * `Context.prototype` and registers the default sync module as the active
- * runtime. Importing this module patches the global Context class.
+ * Polyfill entrypoint — installs the Graph sync extension on
+ * `Graph.prototype` and registers the default sync module as the active
+ * runtime. Importing this module patches the global Graph class.
  */
 
 export * from './index.js';

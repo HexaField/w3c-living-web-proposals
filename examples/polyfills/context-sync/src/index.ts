@@ -1,5 +1,5 @@
 export {
-  ContextDiff,
+  GraphDiff,
   DiffEvent,
   SignalEvent,
   PeerEvent,
@@ -12,7 +12,7 @@ export type {
   CapabilityProof,
   SpaceTopology,
   PublishOptions,
-  PublishedContext,
+  PublishedGraph,
   SyncSpaceInfo,
   SyncModuleInfo,
   SyncValidationResult,

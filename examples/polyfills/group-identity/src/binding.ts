@@ -2,14 +2,14 @@
  * Wire did:graph into personal-graph + identity.
  *
  *   - Provide `groupifyContext(ctx, opts)` — the upgrade operation defined by
- *     [[GROUP-IDENTITY]] §4.2 that takes an ungroupified context, mints a
+ *     [[GROUP-IDENTITY]] §4.2 that takes an ungroupified graph, mints a
  *     fresh `did:graph`, writes the binding + DID-document triples into the
- *     context, and persists the creator's delegate credential.
+ *     graph, and persists the creator's delegate credential.
  *   - Register the `did:graph` resolver on identity, drawing triples from the
- *     locally mounted contexts in the GraphStoreManager.
+ *     locally mounted graphs in the GraphManager.
  *   - Register the credential creator for `method: "graph"` so
  *     `navigator.credentials.create({ did: { method: "graph", ... } })`
- *     creates a fresh context and groupifies it.
+ *     creates a fresh graph and groupifies it.
  *   - Register a GraphDIDWriter so DIDCredential.addDelegate / etc. work.
  */
 
@@ -23,7 +23,7 @@ import {
   registerResolver,
   type DIDDocument,
 } from '@living-web/identity';
-import type { Context, GraphStoreManager } from '@living-web/personal-graph';
+import type { Graph, GraphManager } from '@living-web/personal-graph';
 import {
   isGraphDID,
   publicKeyToGraphDID,
@@ -53,8 +53,8 @@ export interface GroupifyOptions {
 }
 
 export interface GroupifyResult {
-  /** The host context (now groupified — `context.did` is set). */
-  readonly context: Context;
+  /** The host graph (now groupified — `graph.did` is set). */
+  readonly graph: Graph;
   /** The newly-minted did:graph. */
   readonly did: string;
   /** The credential holding the creator's delegate key. */
@@ -62,18 +62,18 @@ export interface GroupifyResult {
 }
 
 /**
- * Mint a fresh `did:graph` keypair and groupify the given context. One-way
- * upgrade — if the context already has a `did:graph` (its triples contain
+ * Mint a fresh `did:graph` keypair and groupify the given graph. One-way
+ * upgrade — if the graph already has a `did:graph` (its triples contain
  * a DID-document subject), rejects with `"InvalidStateError"`. The implicit
- * binding between the context and the new `did:graph` is the presence of
- * the DID-document triples themselves in this context.
+ * binding between the graph and the new `did:graph` is the presence of
+ * the DID-document triples themselves in this graph.
  */
 export async function groupifyContext(
-  context: Context,
+  graph: Graph,
   options: GroupifyOptions = {},
 ): Promise<GroupifyResult> {
-  if (context.did) {
-    throw new DOMException(`Context ${context.id} is already groupified (did=${context.did})`, 'InvalidStateError');
+  if (graph.did) {
+    throw new DOMException(`Graph ${graph.id} is already groupified (did=${graph.did})`, 'InvalidStateError');
   }
 
   const passphrase = options.passphrase ?? POLYFILL_PASSPHRASE;
@@ -89,14 +89,14 @@ export async function groupifyContext(
   const credential = new DIDCredential(did, methodId, 'Ed25519', credLabel, createdAt, publicKey, privateKey);
 
   // Write the seed DID-document triples. Their subject is the new did:graph;
-  // their presence inside this context is the implicit binding (per Spec 10).
+  // their presence inside this graph is the implicit binding (per Spec 10).
   const seedTriples = addMethodTriples(did, methodId, publicKey, [
     'capabilityInvocation',
     'capabilityDelegation',
     'assertionMethod',
     'authentication',
   ]);
-  for (const t of seedTriples) await context.addTriple(t);
+  for (const t of seedTriples) await graph.addTriple(t);
 
   // Write any initial delegates.
   if (options.initialDelegates) {
@@ -104,23 +104,23 @@ export async function groupifyContext(
       const pk = publicKeyFromDid(delegateDid);
       const id = `${did}#${delegateDid.split(':').pop()?.slice(0, 16) ?? 'delegate'}`;
       const triples = addMethodTriples(did, id, pk, ['capabilityInvocation', 'assertionMethod']);
-      for (const t of triples) await context.addTriple(t);
+      for (const t of triples) await graph.addTriple(t);
     }
   }
 
-  context.setDid(did);
-  return { context, did, credential };
+  graph.setDid(did);
+  return { graph, did, credential };
 }
 
 /**
  * Install did:graph integration. Call once at install time after
  * `@living-web/identity/polyfill` has run. The `manager` is the
- * personal-graph GraphStoreManager (or a thin shim around it).
+ * personal-graph GraphManager (or a thin shim around it).
  */
-export function installDIDGraphBinding(manager: GraphStoreManagerLike): void {
+export function installDIDGraphBinding(manager: GraphManagerLike): void {
   // ── DIDCredential method creator for "graph" ──────────────────────────────
   // For `navigator.credentials.create({ did: { method: "graph", ... } })`:
-  // create a fresh context in a fresh GraphStore and groupify it.
+  // create a fresh graph via the GraphManager and groupify it.
   registerCredentialMethod('graph', async (opts, passphrase, identityManager) => {
     const m = manager.fullManager?.();
     if (!m) {
@@ -133,17 +133,16 @@ export function installDIDGraphBinding(manager: GraphStoreManagerLike): void {
       | { hostGraphIri?: string; initialDelegates?: string[] }
       | undefined;
 
-    let context: Context | null = null;
+    let graph: Graph | undefined;
     if (graphOptions?.hostGraphIri) {
-      context = await m.resolveContext(graphOptions.hostGraphIri);
-      if (!context) throw new DOMException(`hostGraphIri not found: ${graphOptions.hostGraphIri}`, 'NotFoundError');
+      await m.ensureInit();
+      graph = m.getGraph(graphOptions.hostGraphIri);
+      if (!graph) throw new DOMException(`hostGraphIri not found: ${graphOptions.hostGraphIri}`, 'NotFoundError');
     } else {
-      // Mint a fresh context in a fresh GraphStore.
-      const store = await m.create(opts.displayName || 'Unnamed Graph');
-      context = await store.createContext({ displayName: opts.displayName || 'Unnamed Graph' });
+      graph = await m.create({ displayName: opts.displayName || 'Unnamed Graph' });
     }
 
-    const { credential } = await groupifyContext(context, {
+    const { credential } = await groupifyContext(graph, {
       displayName: opts.displayName,
       passphrase,
       initialDelegates: graphOptions?.initialDelegates,
@@ -155,17 +154,14 @@ export function installDIDGraphBinding(manager: GraphStoreManagerLike): void {
   // ── did:graph resolver into identity ──────────────────────────────────────
   const tripleSource: GraphTripleSource = {
     *readGraph(did: string): Iterable<GraphTriple> {
-      // The resolver receives a `did:graph:...`. Find the host context by
-      // looking for the `<did> group://wrapsGraph ?iri` binding (or, as a
-      // fallback, the reverse `<?iri> group://didIdentity <did>`).
-      for (const store of manager.knownStores()) {
-        for (const ctx of store.mounts.values()) {
-          if (ctx.did === did) {
-            for (const triple of ctx.readAllTriples()) {
-              yield { subject: triple.subject, predicate: triple.predicate, object: triple.object };
-            }
-            return;
+      // The resolver receives a `did:graph:...`. Find the host graph by
+      // matching its sovereign DID.
+      for (const g of manager.knownGraphs()) {
+        if (g.did === did) {
+          for (const triple of g.readAllTriples()) {
+            yield { subject: triple.subject, predicate: triple.predicate, object: triple.object };
           }
+          return;
         }
       }
     },
@@ -176,64 +172,61 @@ export function installDIDGraphBinding(manager: GraphStoreManagerLike): void {
   });
 
   // ── DID-document writer for DIDCredential.addDelegate / etc. ──────────────
-  // Translates writer-style mutations into context.addTriple / removeTriple
-  // against the host context. The DID may be located via its bound context
-  // (search by ctx.did === did).
-  const findHostContext = async (did: string): Promise<Context | null> => {
-    for (const store of manager.knownStores()) {
-      for (const ctx of store.mounts.values()) {
-        if (ctx.did === did) return ctx;
-      }
+  // Translates writer-style mutations into graph.addTriple / removeTriple
+  // against the host graph. The DID is located via its bound graph
+  // (search by g.did === did).
+  const findHostGraph = (did: string): Graph | null => {
+    for (const g of manager.knownGraphs()) {
+      if (g.did === did) return g;
     }
     return null;
   };
 
   const writer: GraphDIDWriter = {
     async addMethodToGraph(graphDid, methodId, publicKey, sections) {
-      const context = await findHostContext(graphDid);
-      if (!context) throw new Error(`Graph ${graphDid} not mounted`);
+      const graph = findHostGraph(graphDid);
+      if (!graph) throw new Error(`Graph ${graphDid} not known locally`);
       const triples = addMethodTriples(graphDid, methodId, publicKey, sections);
-      for (const t of triples) await context.addTriple(t);
+      for (const t of triples) await graph.addTriple(t);
     },
     async removeMethodFromGraph(graphDid, methodId) {
-      const context = await findHostContext(graphDid);
-      if (!context) throw new Error(`Graph ${graphDid} not mounted`);
+      const graph = findHostGraph(graphDid);
+      if (!graph) throw new Error(`Graph ${graphDid} not known locally`);
       for (const removal of removeMethodTriples(graphDid, methodId)) {
-        const matching = await context.queryTriples({
+        const matching = await graph.queryTriples({
           subject: removal.subject,
           predicate: removal.predicate,
           object: removal.object,
         });
-        for (const m of matching) await context.removeTriple(m);
+        for (const m of matching) await graph.removeTriple(m);
       }
     },
     async grantSectionInGraph(graphDid, methodId, section: DIDCapabilitySection) {
-      const context = await findHostContext(graphDid);
-      if (!context) throw new Error(`Graph ${graphDid} not mounted`);
-      await context.addTriple({
+      const graph = findHostGraph(graphDid);
+      if (!graph) throw new Error(`Graph ${graphDid} not known locally`);
+      await graph.addTriple({
         subject: graphDid,
         predicate: DID_DOC_PREDICATES[section],
         object: methodId,
       });
     },
     async revokeSectionInGraph(graphDid, methodId, section: DIDCapabilitySection) {
-      const context = await findHostContext(graphDid);
-      if (!context) throw new Error(`Graph ${graphDid} not mounted`);
-      const matching = await context.queryTriples({
+      const graph = findHostGraph(graphDid);
+      if (!graph) throw new Error(`Graph ${graphDid} not known locally`);
+      const matching = await graph.queryTriples({
         subject: graphDid,
         predicate: DID_DOC_PREDICATES[section],
         object: methodId,
       });
-      for (const m of matching) await context.removeTriple(m);
+      for (const m of matching) await graph.removeTriple(m);
     },
   };
   registerGraphDIDWriter(writer);
 }
 
-export interface GraphStoreManagerLike {
-  knownStores(): Iterable<{
-    mounts: Map<string, Context>;
-  }>;
-  /** Optional escape hatch — provides full GraphStoreManager when available, for credential-creator paths. */
-  fullManager?(): GraphStoreManager | null;
+export interface GraphManagerLike {
+  /** Iterate known graphs. */
+  knownGraphs(): Iterable<Graph>;
+  /** Optional escape hatch — provides full GraphManager when available, for credential-creator paths. */
+  fullManager?(): GraphManager | null;
 }

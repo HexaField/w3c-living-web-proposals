@@ -6,7 +6,7 @@ import { describe, test, expect, beforeEach } from 'vitest';
 import 'fake-indexeddb/auto';
 
 import {
-  Context,
+  Graph,
   GraphStorage,
   EphemeralIdentity,
   type IdentityProvider,
@@ -32,7 +32,7 @@ const BOB_DID = 'did:key:z6Mkbob';
 
 let store: GraphStorage;
 let identity: IdentityProvider;
-let context: Context;
+let graph: Graph;
 
 beforeEach(async () => {
   store = new GraphStorage(`test-${crypto.randomUUID()}`);
@@ -40,10 +40,10 @@ beforeEach(async () => {
   await eph.ensureReady();
   identity = eph;
   // Construct with the did:graph as the internal id (it doubles as the
-  // groupified identity, since these tests pre-suppose the context is
+  // groupified identity, since these tests pre-suppose the graph is
   // "the graph identified by GRAPH_DID"). setDid pins the sovereign id.
-  context = new Context(GRAPH_DID, 'Test', identity, store);
-  context.setDid(GRAPH_DID);
+  graph = new Graph(GRAPH_DID, 'Test', identity, store);
+  graph.setDid(GRAPH_DID);
 });
 
 function makeContext(): ValidationContext {
@@ -52,7 +52,7 @@ function makeContext(): ValidationContext {
     rootCapabilityId: null,
     enforcementMode: 'open',
     queryTriples: async (q) => {
-      const results = await context.queryTriples({
+      const results = await graph.queryTriples({
         subject: q.subject ?? undefined,
         predicate: q.predicate ?? undefined,
         object: q.object ?? undefined,
@@ -175,14 +175,14 @@ describe('Caveat evaluation', () => {
 describe('Enforcement mode', () => {
   test('open mode accepts unauthorised writes', async () => {
     const engine = new GraphGovernanceEngine(makeContext());
-    const ctx = engine.context;
+    const ctx = engine.graph;
     ctx.enforcementMode = 'open';
     const result = await engine.validate(makeTriple('msg://body', 'hi'));
     expect(result.allowed).toBe(true);
   });
 
-  test('announced mode reads from context triples', async () => {
-    await context.addTriple({
+  test('announced mode reads from graph triples', async () => {
+    await graph.addTriple({
       subject: GRAPH_DID,
       predicate: GOV.ENFORCEMENT_MODE,
       object: '"announced"',
@@ -195,14 +195,14 @@ describe('Enforcement mode', () => {
 
 describe('Scope resolution', () => {
   test('walks context://participates_in upward', async () => {
-    // Set up: child context participates in parent. Use makeContext queries
-    // against `context` which holds the participation triple.
-    await context.addTriple({
+    // Set up: child graph participates in parent. Use makeContext queries
+    // against `graph` which holds the participation triple.
+    await graph.addTriple({
       subject: GRAPH_DID,
       predicate: CONTEXT.PARTICIPATES_IN,
       object: 'did:graph:parent',
     });
-    await context.addTriple({
+    await graph.addTriple({
       subject: 'did:graph:parent',
       predicate: CONTEXT.ACCEPTS_PARTICIPATION,
       object: GRAPH_DID,
@@ -214,7 +214,7 @@ describe('Scope resolution', () => {
   });
 
   test('ignores participation without mutual acceptance', async () => {
-    await context.addTriple({
+    await graph.addTriple({
       subject: GRAPH_DID,
       predicate: CONTEXT.PARTICIPATES_IN,
       object: 'did:graph:parent',
@@ -227,13 +227,13 @@ describe('Scope resolution', () => {
 });
 
 describe('createGovernanceLayer', () => {
-  test('queries the context for the root capability', async () => {
-    await context.addTriple({
+  test('queries the graph for the root capability', async () => {
+    await graph.addTriple({
       subject: GRAPH_DID,
       predicate: GOV.ROOT_CAPABILITY,
       object: 'urn:uuid:root',
     });
-    const layer = createGovernanceLayer(context);
+    const layer = createGovernanceLayer(graph);
     // Allow microtask in integration to read the triple.
     await new Promise(resolve => setTimeout(resolve, 0));
     const constraints = await layer.constraintsFor();
@@ -241,9 +241,9 @@ describe('createGovernanceLayer', () => {
   });
 
   test('setEnforcementMode persists the mode triple', async () => {
-    const layer = createGovernanceLayer(context);
+    const layer = createGovernanceLayer(graph);
     await layer.setEnforcementMode('enforced');
-    const triples = await context.queryTriples({
+    const triples = await graph.queryTriples({
       subject: GRAPH_DID,
       predicate: GOV.ENFORCEMENT_MODE,
     });

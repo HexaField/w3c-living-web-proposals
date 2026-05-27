@@ -2,9 +2,9 @@
  * Shape definitions for community chat.
  *
  * Action types use the `shape://actions/` namespace.
- * `context://participates_in` is used for cross-context nesting (e.g., a
- * channel context that participates in the community). In-graph parent/child
- * relations within the community context use the topical `chat://has_child`
+ * `context://participates_in` is used for cross-graph nesting (e.g., a
+ * channel graph that participates in the community). In-graph parent/child
+ * relations within the community graph use the topical `chat://has_child`
  * predicate.
  */
 
@@ -34,9 +34,9 @@ export const PREDICATES = {
   REACTION_EMOJI: `${CHAT}reaction_emoji`,
   REACTION_AUTHOR: `${CHAT}reaction_author`,
 
-  /** Topical parent/child for in-context entities (e.g., channel → message). */
+  /** Topical parent/child for in-graph entities (e.g., channel → message). */
   HAS_CHILD: `${CHAT}has_child`,
-  /** Cross-context nesting (e.g., a channel context participates in the community). */
+  /** Cross-graph nesting (e.g., a channel graph participates in the community). */
   PARTICIPATES_IN: `${CTX}participates_in`,
 } as const;
 

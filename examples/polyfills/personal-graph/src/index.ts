@@ -6,26 +6,15 @@ export type {
   SparqlResult,
   SparqlQueryOptions,
   LiteralValue,
-  MountMode,
-  MountOptions,
-  MountedContextInfo,
-  ContextSubscriptionState,
-  ContextCreationOptions,
+  GraphCreationOptions,
+  GraphFromSnapshotOptions,
 } from './types.js';
 
-export { Context, TripleEvent, IriChangedEvent, computeGraphIri } from './context.js';
-export type { TriplePattern } from './context.js';
-export {
-  GraphStore,
-  ContextQueryBuilder,
-  ContextLifecycleEvent,
-  credentialAsProvider,
-  newUuid,
-  newContextId,
-} from './graph-store.js';
-export { GraphStoreManager } from './manager.js';
+export { Graph, TripleEvent, computeGraphIri } from './graph.js';
+export type { TriplePattern, GraphManagerHooks } from './graph.js';
+export { GraphManager, newGraphId } from './manager.js';
 export { GraphStorage } from './storage.js';
-export type { ContextRecord, GraphStoreRecord } from './storage.js';
+export type { GraphRecord } from './storage.js';
 
 export {
   signTripleWithReifier,

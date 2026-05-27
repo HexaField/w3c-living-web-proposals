@@ -31,7 +31,7 @@ export interface GroupOptions {
   enforcementMode?: 'open' | 'announced' | 'enforced';
 }
 
-/** Context-nesting predicates (defined by Personal Linked-Data Graphs). */
+/** Graph-nesting predicates (defined by Personal Linked-Data Graphs). */
 export const CONTEXT = {
   PARTICIPATES_IN: 'context://participates_in',
   ACCEPTS_PARTICIPATION: 'context://accepts_participation',

@@ -7,7 +7,7 @@
  *   Subject, Object, AuthorOnly) are evaluated here. Additional caveat types
  *   (Shape, Content) and additional constraint kinds (temporal, content,
  *   credential) are supplied by plug-in handlers registered on the engine.
- * - A context's authority is rooted in its root capability — a single ZCAP
+ * - A graph's authority is rooted in its root capability — a single ZCAP
  *   minted at creation time and delegatable like any other.
  */
 
@@ -36,9 +36,9 @@ export interface Caveat {
 export interface GraphConstraint {
   readonly id: string;
   readonly kind: ConstraintKind;
-  /** The context (did:graph) this constraint is attached to. */
+  /** The graph (did:graph) this constraint is attached to. */
   readonly scope: string;
-  /** Depth in the holonic scope chain (0 = directly on the writing context). */
+  /** Depth in the holonic scope chain (0 = directly on the writing graph). */
   readonly depth: number;
   readonly properties: Record<string, string>;
 }
@@ -102,9 +102,9 @@ export interface TripleRecord {
 }
 
 export interface ValidationContext {
-  /** did:graph of the context being written to. */
+  /** did:graph of the graph being written to. */
   graphDid: string;
-  /** The root capability id of this context. */
+  /** The root capability id of this graph. */
   rootCapabilityId: string | null;
   /** Current enforcement mode (defaults to "open" if not set). */
   enforcementMode: EnforcementMode;
@@ -115,7 +115,7 @@ export interface ValidationContext {
 
 export interface ConstraintHandler {
   kind: string;
-  validate(triple: TripleInput, constraint: GraphConstraint, context: ValidationContext): GovernanceValidationResult | Promise<GovernanceValidationResult>;
+  validate(triple: TripleInput, constraint: GraphConstraint, graph: ValidationContext): GovernanceValidationResult | Promise<GovernanceValidationResult>;
 }
 
 export interface CapabilityProof {

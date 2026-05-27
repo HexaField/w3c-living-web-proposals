@@ -1,9 +1,9 @@
 /**
- * Setup — identity, GraphStore, community context, group convenience layer.
+ * Setup — identity, GraphManager, community graph, group convenience layer.
  *
- * A community is a Group (a Context with a did:graph DID). Channels, roles,
- * members are entities within the community's context. Role sub-groups are
- * separate contexts that participate_in the community.
+ * A community is a Group (a Graph with a did:graph DID). Channels, roles,
+ * members are entities within the community's graph. Role sub-groups are
+ * separate graphs that participate_in the community.
  */
 
 import { install as installIdentity, IdentityManager, DIDIdentityProvider } from '@living-web/identity';
@@ -11,7 +11,7 @@ import { install as installIdentity, IdentityManager, DIDIdentityProvider } from
 // did:graph credential creator, resolver, and ContextMethodBinding that
 // personal-graph's createContext depends on.
 import '@living-web/group-identity/polyfill';
-import { install as installPersonalGraph, Triple, Context, GraphStore, type IdentityProvider } from '@living-web/personal-graph';
+import { install as installPersonalGraph, Triple, Graph, GraphManager, type IdentityProvider } from '@living-web/personal-graph';
 import '@living-web/shape-validation/polyfill';
 import '@living-web/default-sync-module/polyfill';
 import '@living-web/flows/polyfill';
@@ -41,8 +41,7 @@ export interface ChatMessage {
 export interface AppState {
   did: string;
   displayName: string;
-  store: GraphStore;
-  context: Context;
+  graph: Graph;
   group: Group | null;
   groupDid: string;
   communityId: string;
@@ -76,18 +75,16 @@ export async function createIdentity(displayName: string): Promise<{ did: string
   return { did: provider.getDID(), identity: provider };
 }
 
-async function getOrCreateStore(name: string): Promise<GraphStore> {
-  const stores = await navigator.graph.list();
-  if (stores.length > 0) return stores[0];
-  return navigator.graph.create(name);
+function getManager(): GraphManager {
+  return navigator.graph;
 }
 
-async function registerShapes(context: Context): Promise<void> {
-  await context.addShape('Community', JSON.stringify(CommunityShape));
-  await context.addShape('Channel', JSON.stringify(ChannelShape));
-  await context.addShape('Message', JSON.stringify(MessageShape));
-  await context.addShape('Role', JSON.stringify(RoleShape));
-  await context.addShape('Member', JSON.stringify(MemberShape));
+async function registerShapes(graph: Graph): Promise<void> {
+  await graph.addShape('Community', JSON.stringify(CommunityShape));
+  await graph.addShape('Channel', JSON.stringify(ChannelShape));
+  await graph.addShape('Message', JSON.stringify(MessageShape));
+  await graph.addShape('Role', JSON.stringify(RoleShape));
+  await graph.addShape('Member', JSON.stringify(MemberShape));
 }
 
 export async function createCommunity(
@@ -97,19 +94,19 @@ export async function createCommunity(
   did: string,
 ): Promise<AppState> {
   await ensurePolyfills();
-  const store = await getOrCreateStore(`${displayName}'s workspace`);
+  const manager = getManager();
 
-  const communityGroup = await store.createGroup({
+  const communityGroup = await manager.createGroup({
     name: communityName,
     description: `Community: ${communityName}`,
     enforcementMode: 'open',
   });
-  const context = communityGroup.context;
-  await context.publish();
-  await registerShapes(context);
+  const graph = communityGroup.graph;
+  await graph.publish();
+  await registerShapes(graph);
 
   const communityId = `community:${crypto.randomUUID()}`;
-  await context.createShapeInstance('Community', communityId, { name: communityName });
+  await graph.createShapeInstance('Community', communityId, { name: communityName });
 
   const roles: AppState['roles'] = [];
   const roleGroupsMap = new Map<string, Group>();
@@ -120,10 +117,10 @@ export async function createCommunity(
     ['Member', '#2ecc71', '40'],
   ] as const) {
     const roleId = `role:${crypto.randomUUID()}`;
-    await context.createShapeInstance('Role', roleId, { name, color, position: pos });
-    await context.addTriple(new Triple(communityId, PREDICATES.HAS_CHILD, roleId));
+    await graph.createShapeInstance('Role', roleId, { name, color, position: pos });
+    await graph.addTriple(new Triple(communityId, PREDICATES.HAS_CHILD, roleId));
 
-    const roleGroup = await store.createGroup({
+    const roleGroup = await manager.createGroup({
       name: `${communityName}/${name}`,
       participatesIn: communityGroup.did,
     });
@@ -133,22 +130,22 @@ export async function createCommunity(
   }
 
   const generalId = `channel:${crypto.randomUUID()}`;
-  await context.createShapeInstance('Channel', generalId, { name: 'general' });
-  await context.addTriple(new Triple(communityId, PREDICATES.HAS_CHILD, generalId));
+  await graph.createShapeInstance('Channel', generalId, { name: 'general' });
+  await graph.addTriple(new Triple(communityId, PREDICATES.HAS_CHILD, generalId));
 
   const memberId = `member:${crypto.randomUUID()}`;
-  await context.createShapeInstance('Member', memberId, { did, displayName });
-  await context.addTriple(new Triple(communityId, PREDICATES.HAS_CHILD, memberId));
-  await context.addTriple(new Triple(memberId, PREDICATES.HAS_ROLE, roles[0].id));
+  await graph.createShapeInstance('Member', memberId, { did, displayName });
+  await graph.addTriple(new Triple(communityId, PREDICATES.HAS_CHILD, memberId));
+  await graph.addTriple(new Triple(memberId, PREDICATES.HAS_ROLE, roles[0].id));
 
   const ownerRoleGroup = roleGroupsMap.get('Owner');
   if (ownerRoleGroup) await ownerRoleGroup.invite(did);
 
-  const governance = setupGovernance(context, did);
+  const governance = setupGovernance(graph, did);
   const bc = new BroadcastChannel(SYNC_CHANNEL);
 
   const state: AppState = {
-    did, displayName, store, context,
+    did, displayName, graph,
     group: communityGroup,
     groupDid: communityGroup.did,
     communityId, communityName,
@@ -174,26 +171,30 @@ export async function joinCommunity(
   did: string,
 ): Promise<AppState> {
   await ensurePolyfills();
-  const store = await getOrCreateStore(`${displayName}'s workspace`);
+  const manager = getManager();
 
   // For the polyfill: in this single-origin demo, both tabs share IndexedDB.
   // The "join" path uses the BroadcastChannel sync-response from the owner tab.
-  let context: Context;
-  try {
-    context = await store.mount(groupDid, { mode: 'write' });
-  } catch {
-    context = await store.createContext({ displayName: 'Joined Community' });
+  // We materialise (or open) a local graph as the placeholder until the
+  // owning tab replies with state.
+  let graph: Graph;
+  await manager.ensureInit();
+  const existing = manager.getGraph(groupDid);
+  if (existing) {
+    graph = existing;
+  } else {
+    graph = await manager.create({ displayName: 'Joined Community' });
   }
-  await context.publish();
-  await registerShapes(context);
+  await graph.publish();
+  await registerShapes(graph);
 
   const bc = new BroadcastChannel(SYNC_CHANNEL);
 
   return new Promise<AppState>((resolve) => {
     const timeout = setTimeout(() => {
-      const governance = setupGovernance(context, did);
+      const governance = setupGovernance(graph, did);
       resolve({
-        did, displayName, store, context,
+        did, displayName, graph,
         group: null,
         groupDid,
         communityId: `community:fallback`,
@@ -214,8 +215,8 @@ export async function joinCommunity(
       clearTimeout(timeout);
       bc.removeEventListener('message', handler);
 
-      const governance = setupGovernance(context, data.ownerDid);
-      issueMemberZcap(governance, did, context.iri, data.ownerDid);
+      const governance = setupGovernance(graph, data.ownerDid);
+      issueMemberZcap(governance, did, graph.iri, data.ownerDid);
 
       if (data.slowModeChannels) for (const [k, v] of Object.entries(data.slowModeChannels)) governance.slowModeChannels.set(k, v as number);
       if (data.readOnlyChannels) for (const ch of data.readOnlyChannels) governance.readOnlyChannels.add(ch as string);
@@ -233,7 +234,7 @@ export async function joinCommunity(
       for (const ch of data.channels) if (!messages.has(ch.id)) messages.set(ch.id, []);
 
       const state: AppState = {
-        did, displayName, store, context,
+        did, displayName, graph,
         group: null,
         groupDid: data.groupDid || groupDid,
         communityId: data.communityId,
@@ -278,13 +279,13 @@ function serializeMessages(messages: Map<string, ChatMessage[]>): Record<string,
 }
 
 function setupCrossTabSync(state: AppState): void {
-  const { bc, context } = state;
+  const { bc, graph } = state;
   bc.addEventListener('message', (ev: MessageEvent) => {
     const msg = ev.data;
-    if (msg.type === 'sync-request' && msg.groupDid === context.iri && state.isOwner) {
+    if (msg.type === 'sync-request' && msg.groupDid === graph.iri && state.isOwner) {
       bc.postMessage({
         type: 'sync-response',
-        groupDid: context.iri,
+        groupDid: graph.iri,
         ownerDid: state.did,
         communityId: state.communityId,
         communityName: state.communityName,
@@ -297,7 +298,7 @@ function setupCrossTabSync(state: AppState): void {
         bannedDids: [...state.governance.bannedDids],
       });
     }
-    if (msg.type === 'new-message' && msg.groupDid === context.iri && msg.message.authorDid !== state.did) {
+    if (msg.type === 'new-message' && msg.groupDid === graph.iri && msg.message.authorDid !== state.did) {
       const chMsgs = state.messages.get(msg.message.channelId) ?? [];
       const m = msg.message;
       chMsgs.push({
@@ -307,21 +308,21 @@ function setupCrossTabSync(state: AppState): void {
       state.messages.set(msg.message.channelId, chMsgs);
       document.dispatchEvent(new CustomEvent('chat-update', { detail: { type: 'message' } }));
     }
-    if (msg.type === 'new-member' && msg.groupDid === context.iri) {
+    if (msg.type === 'new-member' && msg.groupDid === graph.iri) {
       if (!state.members.find(m => m.did === msg.member.did)) {
         state.members.push(msg.member);
-        if (state.isOwner) issueMemberZcap(state.governance, msg.member.did, context.iri, state.did);
+        if (state.isOwner) issueMemberZcap(state.governance, msg.member.did, graph.iri, state.did);
         document.dispatchEvent(new CustomEvent('chat-update', { detail: { type: 'member' } }));
       }
     }
-    if (msg.type === 'new-channel' && msg.groupDid === context.iri) {
+    if (msg.type === 'new-channel' && msg.groupDid === graph.iri) {
       if (!state.channels.find(c => c.id === msg.channel.id)) {
         state.channels.push(msg.channel);
         state.messages.set(msg.channel.id, []);
         document.dispatchEvent(new CustomEvent('chat-update', { detail: { type: 'channel' } }));
       }
     }
-    if (msg.type === 'governance-update' && msg.groupDid === context.iri) {
+    if (msg.type === 'governance-update' && msg.groupDid === graph.iri) {
       if (msg.action === 'slow-mode') {
         if (msg.interval > 0) state.governance.slowModeChannels.set(msg.channelId, msg.interval);
         else state.governance.slowModeChannels.delete(msg.channelId);
@@ -335,7 +336,7 @@ function setupCrossTabSync(state: AppState): void {
       }
       document.dispatchEvent(new CustomEvent('chat-update', { detail: { type: 'governance' } }));
     }
-    if (msg.type === 'reaction' && msg.groupDid === context.iri) {
+    if (msg.type === 'reaction' && msg.groupDid === graph.iri) {
       const chMsgs = state.messages.get(msg.channelId) ?? [];
       const chatMsg = chMsgs.find(m => m.id === msg.messageId);
       if (chatMsg) {
@@ -344,7 +345,7 @@ function setupCrossTabSync(state: AppState): void {
         document.dispatchEvent(new CustomEvent('chat-update', { detail: { type: 'reaction' } }));
       }
     }
-    if (msg.type === 'delete-message' && msg.groupDid === context.iri) {
+    if (msg.type === 'delete-message' && msg.groupDid === graph.iri) {
       const chMsgs = state.messages.get(msg.channelId) ?? [];
       const idx = chMsgs.findIndex(m => m.id === msg.messageId);
       if (idx !== -1) {

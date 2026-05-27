@@ -9,7 +9,7 @@
 
 ## Abstract
 
-This specification defines an extension to SHACL (Shapes Constraint Language) [[SHACL]] that adds **action semantics** — constructors, property setters, and collection operations — enabling declarative CRUD over RDF graphs. Shapes register into a **context** (a named graph — see [[PERSONAL-LINKED-DATA-GRAPHS]]) and define both the validation constraints and the CRUD operations for a class of graph entities. Shapes are stored as triples inside the context they describe, so contexts are self-describing and shapes travel with their data through snapshot transfer (see [[PERSONAL-LINKED-DATA-GRAPHS]] §5). Shapes registered on a parent context are visible to child contexts that participate in it via `context://participates_in` links.
+This specification defines an extension to SHACL (Shapes Constraint Language) [[SHACL]] that adds **action semantics** — constructors, property setters, and collection operations — enabling declarative CRUD over RDF graphs. Shapes register into a **graph** (a named graph — see [[PERSONAL-LINKED-DATA-GRAPHS]]) and define both the validation constraints and the CRUD operations for a class of graph entities. Shapes are stored as triples inside the graph they describe, so graphs are self-describing and shapes travel with their data through snapshot transfer (see [[PERSONAL-LINKED-DATA-GRAPHS]] §5). Shapes registered on a parent graph are visible to child graphs that participate in it via `context://participates_in` links.
 
 ---
 
@@ -27,7 +27,7 @@ This document is a draft Community Group Report. It has no official W3C standing
 4. [Shape Definition Format](#4-shape-definition-format)
 5. [API](#5-api)
 6. [Shape Storage Convention](#6-shape-storage-convention)
-7. [Shape Inheritance Across Contexts](#7-shape-inheritance-across-contexts)
+7. [Shape Inheritance Across Graphs](#7-shape-inheritance-across-graphs)
 8. [Relationship to SHACL](#8-relationship-to-shacl)
 9. [Relationship to Flows](#9-relationship-to-flows)
 10. [Security Considerations](#10-security-considerations)
@@ -45,18 +45,18 @@ SHACL [[SHACL]] excels at validation — "does this data conform to this shape?"
 
 Today each application implements its own CRUD logic over RDF triples, duplicating effort and producing incompatible data access patterns. This specification defines **action semantics** for SHACL shapes: constructors that create well-formed instances, property setters that maintain shape constraints, and collection operations that manage multi-valued properties.
 
-### 1.2 Shapes Are Context-Local Self-Description
+### 1.2 Shapes Are Graph-Local Self-Description
 
-Shapes register *into a specific context* and are stored as triples inside that context. This gives two important properties:
+Shapes register *into a specific graph* and are stored as triples inside that graph. This gives two important properties:
 
-- **Self-describing contexts.** Mounting a context (via `mountSnapshot()`) brings its shapes along. A new agent encountering a context can inspect its shapes, understand its constraints, and participate meaningfully — the description of what the context *is* travels with it.
-- **Cross-context inheritance.** A child context that declares `context://participates_in <parent>` inherits the parent's shapes. Child contexts MAY add new shapes or extend existing ones, but MUST NOT relax constraints below what the parent declares. See [§7](#7-shape-inheritance-across-contexts).
+- **Self-describing graphs.** Materialising a graph (via `navigator.graph.fromSnapshot()`) brings its shapes along. A new agent encountering a graph can inspect its shapes, understand its constraints, and participate meaningfully — the description of what the graph *is* travels with it.
+- **Cross-graph inheritance.** A child graph that declares `context://participates_in <parent>` inherits the parent's shapes. Child graphs MAY add new shapes or extend existing ones, but MUST NOT relax constraints below what the parent declares. See [§7](#7-shape-inheritance-across-graphs).
 
 ### 1.3 Use Cases
 
 - **Auto-generated forms.** Given a shape definition, an application can automatically generate a creation form with the correct fields, types, and cardinality.
-- **Agent tools from schemas.** Autonomous agents can discover available shapes in a context and use them as typed tools — creating instances, querying data, and updating properties without hardcoded knowledge of the data model.
-- **Portable data models.** Shape definitions travel with the context. Any application that understands this specification can interact with the data, regardless of which application created it.
+- **Agent tools from schemas.** Autonomous agents can discover available shapes in a graph and use them as typed tools — creating instances, querying data, and updating properties without hardcoded knowledge of the data model.
+- **Portable data models.** Shape definitions travel with the graph. Any application that understands this specification can interact with the data, regardless of which application created it.
 - **No-code application definitions.** Shapes define the data model; applications define the views. New data types can be introduced by adding shapes — no code deployment required.
 
 ### 1.4 Scope
@@ -64,9 +64,9 @@ Shapes register *into a specific context* and are stored as triples inside that 
 This specification defines:
 
 - A JSON format for shape definitions with action semantics.
-- A web API for registering, querying, and executing shapes within a context.
-- Conventions for storing shapes as triples in the context they describe.
-- Shape inheritance across nested contexts via `context://participates_in`.
+- A web API for registering, querying, and executing shapes within a graph.
+- Conventions for storing shapes as triples in the graph they describe.
+- Shape inheritance across nested graphs via `context://participates_in`.
 - The relationship between this specification and standard SHACL validation.
 - The relationship between this specification and process/flow specifications layered on top (see [§9](#9-relationship-to-flows)).
 
@@ -88,7 +88,7 @@ A **conforming implementation** MUST support all normative requirements when pro
 <dt><dfn>Shape</dfn></dt>
 <dd>A named definition comprising a target class, property definitions, and constructor actions. Defines both validation constraints and CRUD operations for a class of entities.</dd>
 
-<dt><dfn>Context</dfn></dt>
+<dt><dfn>Graph</dfn></dt>
 <dd>A named graph (per [[PERSONAL-LINKED-DATA-GRAPHS]] §3.3) in which shapes are registered.</dd>
 
 <dt><dfn>ShapeInstance</dfn></dt>
@@ -110,7 +110,7 @@ A **conforming implementation** MUST support all normative requirements when pro
 <dd>The URI namespace <code>shape://actions/</code> under which constructor action types are defined.</dd>
 
 <dt><dfn>Inherited Shape</dfn></dt>
-<dd>A shape defined in a parent context (a context that the current context declares <code>context://participates_in</code> against) which is visible inside the child context.</dd>
+<dd>A shape defined in a parent graph (a graph that the current graph declares <code>context://participates_in</code> against) which is visible inside the child graph.</dd>
 </dl>
 
 ---
@@ -175,7 +175,7 @@ A **conforming implementation** MUST support all normative requirements when pro
 <dd>A content protocol URI used to resolve the property value from a content-addressed store.</dd>
 
 <dt><code>getter</code> (OPTIONAL)</dt>
-<dd>A SPARQL expression that computes the property value from the context.</dd>
+<dd>A SPARQL expression that computes the property value from the graph.</dd>
 </dl>
 
 Property setter generation rules:
@@ -247,7 +247,7 @@ For a collection property `tags`:
 - `add_tags(value)` → adds `(instance, path, value)`.
 - `remove_tags(value)` → removes `(instance, path, value)`.
 
-Setters MUST validate values against the property's `datatype` before modifying the context. If validation fails, the setter MUST reject with `TypeError`.
+Setters MUST validate values against the property's `datatype` before modifying the graph. If validation fails, the setter MUST reject with `TypeError`.
 
 ### 4.5 Type Discriminator
 
@@ -286,18 +286,18 @@ When a shape defines `extends: "<parent>"`:
 - The child MAY override a parent property *only* by narrowing it: increasing `minCount`, decreasing `maxCount`, narrowing `datatype`, or setting `writable: false`. Loosening any constraint MUST cause `addShape()` to reject with `"ConstraintError"`.
 - The child's constructor is executed *after* the parent's constructor.
 
-This is the in-shape extension mechanism. Cross-context inheritance via `context://participates_in` is described in [§7](#7-shape-inheritance-across-contexts).
+This is the in-shape extension mechanism. Cross-graph inheritance via `context://participates_in` is described in [§7](#7-shape-inheritance-across-graphs).
 
 ---
 
 ## 5. API
 
-### 5.1 Context Methods
+### 5.1 Graph Methods
 
-All shape operations live on the `Context` interface (defined in [[PERSONAL-LINKED-DATA-GRAPHS]] §3.3). Shape modification is governed: the caller MUST hold an `updateSHACL` capability for the target context ([[CAPABILITY-FRAMEWORK]]).
+All shape operations live on the `Graph` interface (defined in [[PERSONAL-LINKED-DATA-GRAPHS]] §3.3). Shape modification is governed: the caller MUST hold an `updateSHACL` capability for the target graph ([[CAPABILITY-FRAMEWORK]]).
 
 ```webidl
-partial interface Context {
+partial interface Graph {
   // Registration
   [NewObject] Promise<undefined> addShape(DOMString name, DOMString shapeJson);
   [NewObject] Promise<undefined> removeShape(DOMString name);
@@ -337,15 +337,15 @@ partial interface Context {
 };
 
 dictionary GetShapesOptions {
-  boolean includeInherited = true;   // include shapes inherited from parent contexts
+  boolean includeInherited = true;   // include shapes inherited from parent graphs
 };
 
 dictionary ShapeInfo {
   DOMString name;
   USVString targetClass;
   USVString definitionAddress;
-  USVString sourceContextDid;       // the context where this shape is registered
-                                     // (= this context for local shapes, parent for inherited)
+  USVString sourceGraphDid;       // the graph where this shape is registered
+                                     // (= this graph for local shapes, parent for inherited)
   sequence<PropertyInfo> properties;
 };
 
@@ -362,14 +362,14 @@ dictionary PropertyInfo {
 
 ### 5.2 addShape
 
-Registers a shape definition into this context.
+Registers a shape definition into this graph.
 
-1. MUST verify the caller holds an `updateSHACL` capability for this context. If not, reject with `"NotAllowedError"`.
+1. MUST verify the caller holds an `updateSHACL` capability for this graph. If not, reject with `"NotAllowedError"`.
 2. MUST validate the shape JSON conforms to [§4](#4-shape-definition-format). If malformed, reject with `"SyntaxError"`.
 3. If `extends` is present, MUST resolve the parent shape and apply the extension rules from [§4.6](#46-shape-extension). If extension is invalid, reject with `"ConstraintError"`.
-4. MUST store the shape as triples in this context (see [§6](#6-shape-storage-convention)).
+4. MUST store the shape as triples in this graph (see [§6](#6-shape-storage-convention)).
 
-If a shape with the same name already exists in this context, reject with `"ConstraintError"`.
+If a shape with the same name already exists in this graph, reject with `"ConstraintError"`.
 
 ### 5.3 removeShape
 
@@ -377,7 +377,7 @@ Removes a shape registration. Requires `updateSHACL`. Existing instances are NOT
 
 ### 5.4 getShapes
 
-Returns shapes registered in this context. When `includeInherited` is true (default), also returns shapes inherited from parent contexts via [§7](#7-shape-inheritance-across-contexts).
+Returns shapes registered in this graph. When `includeInherited` is true (default), also returns shapes inherited from parent graphs via [§7](#7-shape-inheritance-across-graphs).
 
 ### 5.5 createShapeInstance
 
@@ -386,31 +386,31 @@ Creates a new instance by executing the shape's constructor actions. May referen
 1. Resolve the shape (local or inherited).
 2. If `address` is empty, MAY generate a content-addressed identifier.
 3. Validate that all required properties (`minCount ≥ 1`) without defaults are present in `initialValues`. If not, reject with `TypeError`.
-4. Each constructor action becomes a triple write to *this* context (not the source context, if inherited). Writes are subject to this context's governance.
+4. Each constructor action becomes a triple write to *this* graph (not the source graph, if inherited). Writes are subject to this graph's governance.
 5. Return the instance's address.
 
 ### 5.6 getShapeInstances / getShapeInstanceData
 
-`getShapeInstances` returns addresses of all entities in this context whose type discriminator matches the shape's `targetClass`. `getShapeInstanceData` returns the full property dictionary for an instance.
+`getShapeInstances` returns addresses of all entities in this graph whose type discriminator matches the shape's `targetClass`. `getShapeInstanceData` returns the full property dictionary for an instance.
 
 ### 5.7 setShapeProperty / addToShapeCollection / removeFromShapeCollection
 
-Standard CRUD operations. Each is a triple write to this context and is subject to governance.
+Standard CRUD operations. Each is a triple write to this graph and is subject to governance.
 
 ---
 
 ## 6. Shape Storage Convention
 
-### 6.1 Self-Describing Contexts
+### 6.1 Self-Describing Graphs
 
-Shapes are stored as triples *inside the context they govern*. A context can be mounted, snapshotted, and transferred via [[PERSONAL-LINKED-DATA-GRAPHS]] §5; its shapes travel with it. No separate shape registry or schema service is required.
+Shapes are stored as triples *inside the graph they govern*. A graph can be mounted, snapshotted, and transferred via [[PERSONAL-LINKED-DATA-GRAPHS]] §5; its shapes travel with it. No separate shape registry or schema service is required.
 
 ### 6.2 Well-Known Predicate
 
-Shapes are linked to the context via:
+Shapes are linked to the graph via:
 
 ```
-<context-did> -[shape://has_shape]→ <shape-definition-address>
+<graph-did> -[shape://has_shape]→ <shape-definition-address>
 ```
 
 The predicate `shape://has_shape` is reserved for this purpose.
@@ -424,8 +424,8 @@ This makes shape definitions immutable. Modifying a shape produces a new content
 ### 6.4 Stored Triple Shape
 
 ```turtle
-# Inside the context's named graph:
-<context-id>  shape://has_shape   <sha256:abc...> .
+# Inside the graph's named graph:
+<graph-id>  shape://has_shape   <sha256:abc...> .
 
 <sha256:abc...>  rdf://type           shape://Shape ;
                  shape://name          "Task" ;
@@ -435,22 +435,22 @@ This makes shape definitions immutable. Modifying a shape produces a new content
 
 ### 6.5 Composability
 
-Shape definitions are content-addressed and immutable, so the same shape has the same address in any context. To import a shape:
+Shape definitions are content-addressed and immutable, so the same shape has the same address in any graph. To import a shape:
 
-1. Add the shape definition's triples (with the existing content-address) to the target context.
-2. Add the `shape://has_shape` link from the target context's identifier.
+1. Add the shape definition's triples (with the existing content-address) to the target graph.
+2. Add the `shape://has_shape` link from the target graph's identifier.
 
 Because the address is identical, an importer can detect that the same shape is already known.
 
 ---
 
-## 7. Shape Inheritance Across Contexts
+## 7. Shape Inheritance Across Graphs
 
 This section is normative.
 
-### 7.1 Inheritance via Context Participation
+### 7.1 Inheritance via Graph Participation
 
-Contexts can be nested via `context://participates_in` links declared from below (see [[PERSONAL-LINKED-DATA-GRAPHS]] §3.3). A child context that participates in a parent inherits the parent's shapes, with the same extension constraints as in-shape `extends`:
+Graphs can be nested via `context://participates_in` links declared from below (see [[PERSONAL-LINKED-DATA-GRAPHS]] §3.3). A child graph that participates in a parent inherits the parent's shapes, with the same extension constraints as in-shape `extends`:
 
 - The child MAY use the parent's shapes as if they were local.
 - The child MAY register a new shape with the same name *only if* it satisfies [§4.6](#46-shape-extension)'s narrowing rule — it must be a strict refinement of the parent's shape.
@@ -460,8 +460,8 @@ Contexts can be nested via `context://participates_in` links declared from below
 
 When a method (such as `createShapeInstance` or `addShape`) references a shape by name, resolution proceeds:
 
-1. Look up the name in the current context's local shapes.
-2. If not found, walk `context://participates_in` links upward and look in each ancestor context, depth-first.
+1. Look up the name in the current graph's local shapes.
+2. If not found, walk `context://participates_in` links upward and look in each ancestor graph, depth-first.
 3. The first match wins.
 4. If `extends` is declared on a child shape, the parent shape MUST resolve via the same mechanism (typically to an inherited shape).
 
@@ -469,9 +469,9 @@ When a method (such as `createShapeInstance` or `addShape`) references a shape b
 
 If the same shape name is registered locally in a child and also visible from a parent, the child's registration applies *within the child*. Local-overrides-inherited is consistent with the participates-from-below semantics.
 
-### 7.4 Cross-Context Instance Discovery
+### 7.4 Cross-Graph Instance Discovery
 
-`getShapeInstances` on a parent context returns instances in the parent's context. `getShapeInstances` on a child context returns instances in the child's context. To enumerate instances across nested contexts, the application MUST iterate explicitly:
+`getShapeInstances` on a parent graph returns instances in the parent's graph. `getShapeInstances` on a child graph returns instances in the child's graph. To enumerate instances across nested graphs, the application MUST iterate explicitly:
 
 ```javascript
 const everywhere = [];
@@ -480,7 +480,7 @@ for (const ctx of [parent, ...childrenOfParent]) {
 }
 ```
 
-This is intentional: each context is sovereign over its own data, and cross-context enumeration is an explicit operation, not an implicit one.
+This is intentional: each graph is sovereign over its own data, and cross-graph enumeration is an explicit operation, not an implicit one.
 
 ---
 
@@ -518,7 +518,7 @@ Shapes describe **structure** — what data must look like. A separate class of 
 - A shape says: "A Proposal has a body, an author, and a status."
 - A flow specification says: "A Proposal's status transitions through draft → comment → voting → ratified, with guards and temporal constraints at each step."
 
-Flow definitions defined elsewhere may reference shapes by `targetClass`; shape constructors create instances that flows then govern. Both are stored as triples in the context, and both travel with the context through snapshot transfer.
+Flow definitions defined elsewhere may reference shapes by `targetClass`; shape constructors create instances that flows then govern. Both are stored as triples in the graph, and both travel with the graph through snapshot transfer.
 
 ---
 
@@ -530,7 +530,7 @@ Shape definitions are declarative; constructor actions are limited to triple ope
 
 ### 10.2 Getter Expressions
 
-The `getter` field accepts SPARQL expressions. Implementations MUST treat them as read-only against the context. They MUST NOT modify the context, access resources outside the context, or execute arbitrary code. Implementations SHOULD use a restricted SPARQL subset (SELECT only) for getters.
+The `getter` field accepts SPARQL expressions. Implementations MUST treat them as read-only against the graph. They MUST NOT modify the graph, access resources outside the graph, or execute arbitrary code. Implementations SHOULD use a restricted SPARQL subset (SELECT only) for getters.
 
 ### 10.3 Input Validation
 
@@ -538,11 +538,11 @@ All values provided to shape operations MUST be validated against the property's
 
 ### 10.4 Authorisation
 
-Shape registration, modification, and removal are governance-controlled operations. The runtime MUST verify an `updateSHACL` capability for the target context before processing them ([[CAPABILITY-FRAMEWORK]]).
+Shape registration, modification, and removal are governance-controlled operations. The runtime MUST verify an `updateSHACL` capability for the target graph before processing them ([[CAPABILITY-FRAMEWORK]]).
 
 ### 10.5 Inheritance Tampering
 
-Because inheritance walks `context://participates_in` links, an adversarial child context could declare participation in any parent to gain access to inherited shapes. Implementations MUST verify the parent context's governance accepts the child's participation — typically by a corresponding `context://accepts_participation` link from the parent, signed by a `capabilityDelegation` delegate of the parent. Unaccepted participation links MUST be ignored for inheritance purposes.
+Because inheritance walks `context://participates_in` links, an adversarial child graph could declare participation in any parent to gain access to inherited shapes. Implementations MUST verify the parent graph's governance accepts the child's participation — typically by a corresponding `context://accepts_participation` link from the parent, signed by a `capabilityDelegation` delegate of the parent. Unaccepted participation links MUST be ignored for inheritance purposes.
 
 ---
 
@@ -550,19 +550,19 @@ Because inheritance walks `context://participates_in` links, an adversarial chil
 
 ### 11.1 Ontology Disclosure
 
-Shapes stored in a context are visible to anyone with read access to the context. They reveal the ontology of the application — an observer can infer the types of data stored without seeing instance data.
+Shapes stored in a graph are visible to anyone with read access to the graph. They reveal the ontology of the application — an observer can infer the types of data stored without seeing instance data.
 
 ### 11.2 Shape Names
 
-Shape names are human-readable strings that may convey semantic meaning (e.g., "MedicalRecord"). Applications SHOULD consider the privacy implications of shape names in shared contexts.
+Shape names are human-readable strings that may convey semantic meaning (e.g., "MedicalRecord"). Applications SHOULD consider the privacy implications of shape names in shared graphs.
 
 ### 11.3 Instance Enumeration
 
-`getShapeInstances` returns all instances in a context for a given shape. Applications that require instance-level access control SHOULD implement it at the governance layer.
+`getShapeInstances` returns all instances in a graph for a given shape. Applications that require instance-level access control SHOULD implement it at the governance layer.
 
 ### 11.4 Inherited Shape Disclosure
 
-Inheriting a parent's shapes discloses that the child participates in the parent. Communities that need participation-set privacy SHOULD avoid using cross-context inheritance for sensitive shapes.
+Inheriting a parent's shapes discloses that the child participates in the parent. Communities that need participation-set privacy SHOULD avoid using cross-graph inheritance for sensitive shapes.
 
 ---
 
@@ -570,11 +570,10 @@ Inheriting a parent's shapes discloses that the child participates in the parent
 
 *This section is non-normative.*
 
-### 12.1 Defining a Task Shape in a Context
+### 12.1 Defining a Task Shape in a Graph
 
 ```javascript
-const me = await navigator.graph.create("My Workspace");
-const work = await me.createContext({ displayName: "Work Projects" });
+const work = await navigator.graph.create({ displayName: "Work Projects" });
 
 await work.addShape("Task", JSON.stringify({
   targetClass: "schema://Action",
@@ -630,15 +629,15 @@ const local = await work.getShapes({ includeInherited: false });
 
 const all = await work.getShapes();
 for (const s of all) {
-  console.log(`${s.name} (from ${s.sourceContextDid})`);
+  console.log(`${s.name} (from ${s.sourceGraphDid})`);
 }
 ```
 
-### 12.5 Shape Inheritance Across Contexts
+### 12.5 Shape Inheritance Across Graphs
 
 ```javascript
-// Parent context defines a base "Item" shape.
-const community = await me.getContext("graph://community-root...");
+// Parent graph defines a base "Item" shape.
+const community = await navigator.graph.create({ displayName: "Acme Community" });
 await community.addShape("Item", JSON.stringify({
   targetClass: "schema://Thing",
   properties: [
@@ -650,11 +649,9 @@ await community.addShape("Item", JSON.stringify({
   ]
 }));
 
-// Child context participates in the community and inherits "Item".
-const channel = await me.createContext({
-  displayName: "#general",
-  participatesIn: community.did
-});
+// Child graph participates in the community and inherits "Item".
+const channel = await navigator.graph.create({ displayName: "#general" });
+await channel.addTriple(new Triple(channel.iri, "context://participates_in", community.did));
 
 const item = await channel.createShapeInstance("Item", "item:1", { title: "Welcome" });
 ```

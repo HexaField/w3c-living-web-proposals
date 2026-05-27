@@ -67,7 +67,7 @@ function showSetup(): void {
     try {
       const { did, identity } = await createIdentity(displayName);
       const state = await createRepo(displayName, repoName, identity, did);
-      window.location.hash = state.context.iri;
+      window.location.hash = state.graph.iri;
       launchApp(state);
     } catch (e) {
       console.error('Failed to create repo:', e);
@@ -79,7 +79,7 @@ function showSetup(): void {
     const displayName = (document.getElementById('display-name') as HTMLInputElement).value.trim();
     const contextDid = (document.getElementById('graph-uri') as HTMLInputElement).value.trim();
     if (!displayName) { alert('Please enter a display name'); return; }
-    if (!contextDid) { alert('Please enter a context DID'); return; }
+    if (!contextDid) { alert('Please enter a graph DID'); return; }
     try {
       const { did, identity } = await createIdentity(displayName);
       const state = await forkRepo(displayName, contextDid, identity, did);

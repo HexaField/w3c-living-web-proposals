@@ -253,7 +253,7 @@ test.describe('Spec 02 — Identity (DID Credentials)', () => {
       const doc = cred.resolve();
       return {
         hasId: doc.id === cred.did,
-        hasContext: Array.isArray(doc['@context']),
+        hasContext: Array.isArray(doc['@graph']),
         hasVM: Array.isArray(doc.verificationMethod),
         hasAuth: Array.isArray(doc.authentication),
       };

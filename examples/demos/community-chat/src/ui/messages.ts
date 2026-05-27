@@ -127,7 +127,7 @@ export function renderMessages(container: HTMLElement, state: AppState, channelI
     // Broadcast to other tabs
     state.bc.postMessage({
       type: 'new-message',
-      groupDid: state.context.did,
+      groupDid: state.graph.did,
       message: {
         ...msg,
         reactions: {},
@@ -249,7 +249,7 @@ function addReaction(state: AppState, channelId: string, messageId: string, emoj
 
   state.bc.postMessage({
     type: 'reaction',
-    groupDid: state.context.did,
+    groupDid: state.graph.did,
     channelId, messageId, emoji,
     authorDid: state.did,
   });
@@ -271,7 +271,7 @@ function deleteMessage(state: AppState, channelId: string, messageId: string): v
   chMsgs.splice(idx, 1);
   state.bc.postMessage({
     type: 'delete-message',
-    groupDid: state.context.did,
+    groupDid: state.graph.did,
     channelId, messageId,
   });
 

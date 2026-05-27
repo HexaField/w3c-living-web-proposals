@@ -103,7 +103,7 @@ A **conforming relay** MUST implement the peer-relay protocol in [§6.1](#61-pee
 <dd>A CBOR-encoded message exchanged between peers via the relay or directly. See [§5](#5-wire-protocol).</dd>
 
 <dt>Relay</dt>
-<dd>A WebTransport server that forwards wire frames between peers in a sync space. Has no authority over context data.</dd>
+<dd>A WebTransport server that forwards wire frames between peers in a sync space. Has no authority over graph data.</dd>
 
 <dt>Open Space</dt>
 <dd>A sync space in which message bodies are in clear text on the relay. The relay can read them but cannot author or reject.</dd>
@@ -112,10 +112,10 @@ A **conforming relay** MUST implement the peer-relay protocol in [§6.1](#61-pee
 <dd>A sync space in which message bodies are end-to-end encrypted between peers; the relay sees only ciphertext and (DID, sessionId) routing metadata.</dd>
 
 <dt>OR-Set</dt>
-<dd>An Observed-Remove Set CRDT — the merge primitive used by this module for triples within a context.</dd>
+<dd>An Observed-Remove Set CRDT — the merge primitive used by this module for triples within a graph.</dd>
 
 <dt>Promotion</dt>
-<dd>The operation by which a context's diff chain is rolled into a single addressable snapshot, after which the prior chain MAY be garbage-collected.</dd>
+<dd>The operation by which a graph's diff chain is rolled into a single addressable snapshot, after which the prior chain MAY be garbage-collected.</dd>
 </dl>
 
 ---
@@ -138,8 +138,8 @@ The default module declares the following [[SYNC-MODULE]] §7 capabilities:
 
 | Capability | Used For |
 |---|---|
-| `graph.read` | Reading per-context triples for `requestSync`, snapshot generation, and `validate()` |
-| `graph.write` | Applying received `ContextDiff`s to the per-context store |
+| `graph.read` | Reading per-graph triples for `requestSync`, snapshot generation, and `validate()` |
+| `graph.write` | Applying received `GraphDiff`s to the per-graph store |
 | `crypto.sign` | Signing wire frames with the local agent's `did:key` |
 | `crypto.verify` | Verifying signatures on inbound frames |
 | `network.relay.<endpoint>` | Opening WebTransport sessions to the configured relays |
@@ -153,7 +153,7 @@ The default module declares the following [[SYNC-MODULE]] §7 capabilities:
 | **Transport** | WebTransport [[WEBTRANSPORT]] to a configurable relay; direct WebRTC where available. |
 | **Merge** | OR-Set CRDT ([§8](#8-merge-semantics)). |
 | **Peer discovery** | Relay-mediated ([§7.1](#71-relaymediated-discovery)). |
-| **Snapshot promotion** | Every `N` diffs per context (default 1000, configurable) ([§9](#9-snapshot-promotion)). |
+| **Snapshot promotion** | Every `N` diffs per graph (default 1000, configurable) ([§9](#9-snapshot-promotion)). |
 | **Validation** | Calls the runtime's [[CAPABILITY-FRAMEWORK]] engine ([§10](#10-validate-implementation)). |
 
 ---
@@ -176,7 +176,7 @@ All messages are CBOR-encoded with a common envelope:
 
 ### 5.2 DIFF
 
-`payload` is a CBOR-encoded `ContextDiff` ([[CONTEXT-SYNC]] §5.1).
+`payload` is a CBOR-encoded `GraphDiff` ([[CONTEXT-SYNC]] §5.1).
 
 ### 5.3 PULL
 
@@ -192,7 +192,7 @@ The recipient responds with a `SNAPSHOT` (if `fromRevision` is `null` or unknown
 { "graphDid": "<sovereign-did>", "snapshot": <GraphSnapshot CBOR> }
 ```
 
-The `snapshot` is the context snapshot as defined in [[PERSONAL-LINKED-DATA-GRAPHS]] §5.
+The `snapshot` is the graph snapshot as defined in [[PERSONAL-LINKED-DATA-GRAPHS]] §5.
 
 ### 5.5 SIGNAL
 
@@ -218,7 +218,7 @@ Announces presence/departure in the space.
 
 ## 6. Relay Protocol
 
-A relay is a WebTransport server that forwards messages between peers in a space. The relay maintains per-space membership lists, forwards messages to subscribed peers, and has NO authority over context data — it cannot inspect encrypted message bodies, cannot reject or modify diffs.
+A relay is a WebTransport server that forwards messages between peers in a space. The relay maintains per-space membership lists, forwards messages to subscribed peers, and has NO authority over graph data — it cannot inspect encrypted message bodies, cannot reject or modify diffs.
 
 ### 6.1 Peer–Relay Protocol
 
@@ -283,7 +283,7 @@ Other (non-default) modules MAY implement DHT-based, mDNS-based, or other discov
 
 ### 8.1 OR-Set CRDT
 
-The default module uses an Observed-Remove Set (OR-Set) CRDT for triples within a context.
+The default module uses an Observed-Remove Set (OR-Set) CRDT for triples within a graph.
 
 - **Add**: A triple add carries a unique add-tag (the diff's revision).
 - **Remove**: A triple remove carries the set of add-tags being removed.
@@ -293,11 +293,11 @@ This is commutative, associative, and idempotent — diffs can be applied in any
 
 ### 8.2 Causal Dependencies
 
-Each diff lists its `dependencies` — prior revisions in the same context's chain that this diff was authored on top of. Peers MUST apply dependencies before the diff itself. If a dependency is missing, request it via `PULL` ([§5.3](#53-pull)).
+Each diff lists its `dependencies` — prior revisions in the same graph's chain that this diff was authored on top of. Peers MUST apply dependencies before the diff itself. If a dependency is missing, request it via `PULL` ([§5.3](#53-pull)).
 
 ### 8.3 Reifier Convergence
 
-Reifiers (the triples carrying provenance for data triples) follow the same OR-Set semantics. A reifier and its data triple are added together in a single `ContextDiff`; the runtime treats them atomically.
+Reifiers (the triples carrying provenance for data triples) follow the same OR-Set semantics. A reifier and its data triple are added together in a single `GraphDiff`; the runtime treats them atomically.
 
 ### 8.4 Concurrent State Transitions
 
@@ -315,14 +315,14 @@ Diff chains grow unboundedly. New peers subscribing would have to download all h
 
 ### 9.2 Threshold
 
-The default module promotes when a context's diff chain since the last snapshot reaches a configured length (default: 1000 diffs).
+The default module promotes when a graph's diff chain since the last snapshot reaches a configured length (default: 1000 diffs).
 
 The threshold MUST be documented by the module — receiving peers need to know how far back they MAY need to request snapshots.
 
 ### 9.3 Promotion Algorithm
 
 1. The committing module decides to promote (typically the agent who authored the threshold-crossing diff).
-2. The module calls `getAsSnapshot()` on the context ([[PERSONAL-LINKED-DATA-GRAPHS]] §5.2) requesting `signBy: "both"`.
+2. The module calls `getAsSnapshot()` on the graph ([[PERSONAL-LINKED-DATA-GRAPHS]] §5.2) requesting `signBy: "both"`.
 3. The module commits a special `SNAPSHOT` diff into the space carrying the snapshot. The diff's `dependencies` includes all previously-unsnapshotted diffs.
 4. Receiving peers apply the snapshot, mark the prior chain as superseded, and discard older diffs from local cache after a grace period.
 
@@ -366,7 +366,7 @@ The engine internally applies the capability-chain verification ([[CAPABILITY-FR
 
 ### 10.2 Enforcement Mode
 
-The module MUST read the context's current `governance://enforcement_mode` via `graphState` before each validation pass and route accordingly per [[CONTEXT-SYNC]] §9.4.
+The module MUST read the graph's current `governance://enforcement_mode` via `graphState` before each validation pass and route accordingly per [[CONTEXT-SYNC]] §9.4.
 
 ### 10.3 Rejection Handling
 
@@ -390,7 +390,7 @@ Snapshots arriving from the network MUST be signed ([§9.5](#95-snapshot-signatu
 
 ### 11.4 Replay Attacks
 
-`ContextDiff.revision` is content-addressed, so replaying a previously-applied diff is a no-op (already in the OR-Set per [§8.1](#81-or-set-crdt)).
+`GraphDiff.revision` is content-addressed, so replaying a previously-applied diff is a no-op (already in the OR-Set per [§8.1](#81-or-set-crdt)).
 
 ### 11.5 Wire-Frame Forgery
 
@@ -414,7 +414,7 @@ WebRTC NAT traversal contacts STUN/TURN servers. The operators of those servers 
 
 ### 12.4 Snapshot-Promotion Disclosure
 
-Snapshot promotion announces "agent X took a snapshot of context G at time T". This is signed and intentionally publicly verifiable; it is not a privacy leak under the design but is worth noting for use cases where snapshot authorship should be limited.
+Snapshot promotion announces "agent X took a snapshot of graph G at time T". This is signed and intentionally publicly verifiable; it is not a privacy leak under the design but is worth noting for use cases where snapshot authorship should be limited.
 
 ---
 
@@ -427,7 +427,7 @@ Snapshot promotion announces "agent X took a snapshot of context G at time T". T
 - **[WEBTRANSPORT]** "WebTransport", W3C Working Draft. https://www.w3.org/TR/webtransport/
 - **[PERSONAL-LINKED-DATA-GRAPHS]** [Personal Linked Data Graphs](./02_personal-linked-data-graphs.md).
 - **[CAPABILITY-FRAMEWORK]** [Graph Capability Framework](./03_graph-capability-framework.md).
-- **[CONTEXT-SYNC]** [Context Synchronisation Protocol](./04_context-sync-protocol.md).
+- **[CONTEXT-SYNC]** [Graph Synchronisation Protocol](./04_context-sync-protocol.md).
 - **[SYNC-MODULE]** [Sync Module Architecture](./05_sync-module-architecture.md).
 - **[CONSTRAINT-VOCABULARY]** [Governance Constraint Vocabulary](./07_governance-constraint-vocabulary.md).
 

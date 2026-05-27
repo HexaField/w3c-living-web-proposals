@@ -67,7 +67,7 @@ function showSetup(): void {
     try {
       const { did, identity } = await createIdentity(displayName);
       const state = await createDoc(displayName, docTitle, identity, did);
-      window.location.hash = state.context.iri;
+      window.location.hash = state.graph.iri;
       launchApp(state);
     } catch (e) {
       console.error('Failed to create document:', e);
@@ -79,7 +79,7 @@ function showSetup(): void {
     const displayName = (document.getElementById('display-name') as HTMLInputElement).value.trim();
     const contextIri = (document.getElementById('graph-uri') as HTMLInputElement).value.trim();
     if (!displayName) { alert('Please enter a display name'); return; }
-    if (!contextIri) { alert('Please enter a context DID'); return; }
+    if (!contextIri) { alert('Please enter a graph DID'); return; }
     try {
       const { did, identity } = await createIdentity(displayName);
       const state = await joinDoc(displayName, contextIri, identity, did);

@@ -7,9 +7,9 @@ import 'fake-indexeddb/auto';
 
 import {
   Triple,
-  Context,
+  Graph,
   GraphStorage,
-  GraphStoreManager,
+  GraphManager,
   EphemeralIdentity,
   signTripleWithReifier,
   verifyReifier,
@@ -80,60 +80,60 @@ describe('Reifier signing', () => {
   });
 });
 
-describe('Context', () => {
+describe('Graph', () => {
   let identity: IdentityProvider;
-  let context: Context;
+  let graph: Graph;
 
   beforeEach(async () => {
     const eph = new EphemeralIdentity();
     await eph.ensureReady();
     identity = eph;
-    context = new Context('did:graph:test-ctx', 'Test', identity, store);
+    graph = new Graph('urn:graph:test', 'Test', identity, store);
   });
 
   it('adds a triple and emits tripleadded', async () => {
     const events: SignedTriple[] = [];
-    context.ontripleadded = (e) => {
+    graph.ontripleadded = (e) => {
       const ev = e as Event & { triple: SignedTriple };
       events.push(ev.triple);
     };
     const t = new Triple('urn:a', 'pred://x', 'value');
-    const signed = await context.addTriple(t);
+    const signed = await graph.addTriple(t);
     expect(signed.author).toBe(identity.getDID());
     expect(events).toHaveLength(1);
   });
 
   it('queries by subject, predicate, object', async () => {
-    await context.addTriple(new Triple('urn:a', 'pred://x', 'v1'));
-    await context.addTriple(new Triple('urn:a', 'pred://y', 'v2'));
-    await context.addTriple(new Triple('urn:b', 'pred://x', 'v3'));
+    await graph.addTriple(new Triple('urn:a', 'pred://x', 'v1'));
+    await graph.addTriple(new Triple('urn:a', 'pred://y', 'v2'));
+    await graph.addTriple(new Triple('urn:b', 'pred://x', 'v3'));
 
-    const bySource = await context.queryTriples({ subject: 'urn:a' });
+    const bySource = await graph.queryTriples({ subject: 'urn:a' });
     expect(bySource).toHaveLength(2);
 
-    const byPredicate = await context.queryTriples({ predicate: 'pred://x' });
+    const byPredicate = await graph.queryTriples({ predicate: 'pred://x' });
     expect(byPredicate).toHaveLength(2);
 
-    const byTarget = await context.queryTriples({ object: 'v3' });
+    const byTarget = await graph.queryTriples({ object: 'v3' });
     expect(byTarget).toHaveLength(1);
   });
 
   it('removes a triple and emits tripleremoved', async () => {
     const events: SignedTriple[] = [];
-    context.ontripleremoved = (e) => {
+    graph.ontripleremoved = (e) => {
       const ev = e as Event & { triple: SignedTriple };
       events.push(ev.triple);
     };
-    const signed = await context.addTriple(new Triple('urn:a', 'pred://x', 'v1'));
-    const ok = await context.removeTriple(signed);
+    const signed = await graph.addTriple(new Triple('urn:a', 'pred://x', 'v1'));
+    const ok = await graph.removeTriple(signed);
     expect(ok).toBe(true);
     expect(events).toHaveLength(1);
-    const remaining = await context.queryTriples({});
+    const remaining = await graph.queryTriples({});
     expect(remaining).toHaveLength(0);
   });
 
   it('addTriples is atomic and signs all triples', async () => {
-    const signed = await context.addTriples([
+    const signed = await graph.addTriples([
       new Triple('urn:a', 'pred://x', 'v1'),
       new Triple('urn:b', 'pred://x', 'v2'),
     ]);
@@ -142,18 +142,29 @@ describe('Context', () => {
   });
 
   it('exposes provenance for a triple', async () => {
-    const signed = await context.addTriple(new Triple('urn:a', 'pred://x', 'value'));
-    const reifiers = await context.provenance(signed.data);
+    const signed = await graph.addTriple(new Triple('urn:a', 'pred://x', 'value'));
+    const reifiers = await graph.provenance(signed.data);
     expect(reifiers).toHaveLength(1);
     expect(reifiers[0].author).toBe(identity.getDID());
   });
 
   it('snapshot returns triples sorted by timestamp ascending', async () => {
-    await context.addTriple(new Triple('urn:a', 'pred://x', 'v1'));
+    await graph.addTriple(new Triple('urn:a', 'pred://x', 'v1'));
     await new Promise(resolve => setTimeout(resolve, 5));
-    await context.addTriple(new Triple('urn:b', 'pred://x', 'v2'));
-    const snap = await context.snapshot();
+    await graph.addTriple(new Triple('urn:b', 'pred://x', 'v2'));
+    const snap = await graph.snapshot();
     expect(snap[0].timestamp <= snap[1].timestamp).toBe(true);
+  });
+
+  it('IRI changes after every mutation', async () => {
+    const iri0 = graph.iri;
+    await graph.addTriple(new Triple('urn:a', 'pred://x', 'v1'));
+    expect(graph.iri).not.toBe(iri0);
+  });
+
+  it('dissolve rejects subsequent mutations', async () => {
+    await graph.dissolve();
+    await expect(graph.addTriple(new Triple('urn:a', 'pred://x', 'v1'))).rejects.toThrow();
   });
 });
 
@@ -163,8 +174,8 @@ describe('Graph snapshots', () => {
     await id.ensureReady();
     const t1 = await signTripleWithReifier(new Triple('urn:a', 'pred://x', 'v1'), id, 'did:graph:g');
     const t2 = await signTripleWithReifier(new Triple('urn:b', 'pred://y', 'v2'), id, 'did:graph:g');
-    const hash1 = computeContentHash([reifierToSigned(t1), reifierToSigned(t2)], 'did:graph:g');
-    const hash2 = computeContentHash([reifierToSigned(t2), reifierToSigned(t1)], 'did:graph:g');
+    const hash1 = computeContentHash([reifierToSigned(t1), reifierToSigned(t2)]);
+    const hash2 = computeContentHash([reifierToSigned(t2), reifierToSigned(t1)]);
     expect(hash1).toBe(hash2);
   });
 
@@ -175,9 +186,10 @@ describe('Graph snapshots', () => {
     const snap = await getAsSnapshot('graph://test', null, [reifierToSigned(t)], id, null, { signBy: 'agent' });
     const parsed = parseSnapshot(snap);
     expect(parsed.triples).toHaveLength(1);
-    expect(parsed.triples[0].subject).toBe('urn:a');
-    expect(parsed.triples[0].predicate).toBe('pred://x');
-    expect(parsed.triples[0].object).toBe('value');
+    expect(parsed.triples[0].data.subject).toBe('urn:a');
+    expect(parsed.triples[0].data.predicate).toBe('pred://x');
+    expect(parsed.triples[0].data.object).toBe('value');
+    expect(parsed.triples[0].author).toBe(id.getDID());
   });
 
   it('snapshot proofs include the requested role', async () => {
@@ -189,76 +201,86 @@ describe('Graph snapshots', () => {
   });
 });
 
-describe('GraphStoreManager', () => {
-  it('creates a GraphStore with a private graph mounted in governance mode', async () => {
+describe('GraphManager', () => {
+  it('create() returns a Graph with trustLevel="local" and null did', async () => {
     const eph = new EphemeralIdentity();
     await eph.ensureReady();
-    const manager = new GraphStoreManager(store, async () => eph);
-    const gs = await manager.create('Test Workspace');
-    expect(typeof gs.privateContextId).toBe('string');
-    expect(gs.privateContextId.length).toBeGreaterThan(0);
-    const priv = gs.privateGraph();
-    expect(priv).toBeDefined();
-    expect(priv?.mountMode).toBe('governance');
-    expect(priv?.iri.startsWith('graph://')).toBe(true);   // content-hash form
-    expect(priv?.did).toBeNull();   // private graph is ungroupified
+    const manager = new GraphManager(store, async () => eph);
+    const g = await manager.create({ displayName: 'My Calendar' });
+    expect(g.iri.startsWith('graph://')).toBe(true);
+    expect(g.did).toBeNull();
+    expect(g.trustLevel).toBe('local');
   });
 
-  it('createContext returns an ungroupified context whose IRI advances with each write', async () => {
+  it('mutations on a created graph advance the IRI', async () => {
     const eph = new EphemeralIdentity();
     await eph.ensureReady();
-    const manager = new GraphStoreManager(store, async () => eph);
-    const gs = await manager.create('Workspace');
-    const ctx = await gs.createContext({ displayName: 'Calendar' });
-    const iri0 = ctx.iri;
-    expect(iri0.startsWith('graph://')).toBe(true);
-    expect(ctx.did).toBeNull();   // ungroupified by default
-
-    await ctx.addTriple(new Triple('urn:event:1', 'pred://x', 'value'));
-    const iri1 = ctx.iri;
-    expect(iri1).not.toBe(iri0);   // mutation produced a new IRI
-    expect(iri1.startsWith('graph://')).toBe(true);
+    const manager = new GraphManager(store, async () => eph);
+    const g = await manager.create({ displayName: 'Calendar' });
+    const iri0 = g.iri;
+    await g.addTriple(new Triple('urn:event:1', 'pred://x', 'value'));
+    expect(g.iri).not.toBe(iri0);
   });
 
-  it('participatesIn writes the context://participates_in triple', async () => {
+  it('fromSnapshot materialises a graph whose IRI matches the snapshot', async () => {
     const eph = new EphemeralIdentity();
     await eph.ensureReady();
-    const manager = new GraphStoreManager(store, async () => eph);
-    const gs = await manager.create('Workspace');
-    const parent = await gs.createContext({ displayName: 'Parent' });
-    const parentIriAtCreate = parent.iri;
-    const child = await gs.createContext({ displayName: 'Child', participatesIn: parentIriAtCreate });
-    const participation = await child.queryTriples({
-      predicate: 'context://participates_in',
-    });
-    expect(participation).toHaveLength(1);
-    expect(participation[0].data.object).toBe(parentIriAtCreate);
+    const manager = new GraphManager(store, async () => eph);
+
+    const source = await manager.create({ displayName: 'Source' });
+    await source.addTriple(new Triple('urn:a', 'pred://x', 'hello'));
+    const snap = await source.getAsSnapshot({ signBy: 'agent' });
+
+    const materialised = await manager.fromSnapshot(snap);
+    expect(materialised.iri).toBe(snap.graphIri);
+    expect(materialised.trustLevel).toBe('external');
   });
 
-  it('resolveContext finds a mounted context by id', async () => {
+  it('rejects lossy snapshot formats in fromSnapshot', async () => {
     const eph = new EphemeralIdentity();
     await eph.ensureReady();
-    const manager = new GraphStoreManager(store, async () => eph);
-    const gs = await manager.create('Workspace');
-    const ctx = await gs.createContext();
-    const found = await manager.resolveContext(ctx.id);
-    expect(found?.id).toBe(ctx.id);
+    const manager = new GraphManager(store, async () => eph);
+
+    const source = await manager.create({ displayName: 'Source' });
+    await source.addTriple(new Triple('urn:a', 'pred://x', 'hello'));
+    const lossy = await source.getAsSnapshot({ format: 'turtle', signBy: 'agent' });
+
+    await expect(manager.fromSnapshot(lossy)).rejects.toThrow(/NotSupportedError|lossy/);
   });
 });
 
-describe('GraphStore cross-context query', () => {
-  it('querySparql unions triples across mounted contexts', async () => {
+describe('Holonic SPARQL', () => {
+  it('queries across a default graph and named graphs', async () => {
     const eph = new EphemeralIdentity();
     await eph.ensureReady();
-    const manager = new GraphStoreManager(store, async () => eph);
-    const gs = await manager.create('Workspace');
-    const c1 = await gs.createContext({ displayName: 'A' });
-    const c2 = await gs.createContext({ displayName: 'B' });
-    await c1.addTriple(new Triple('urn:m1', 'pred://body', 'hello'));
-    await c2.addTriple(new Triple('urn:m2', 'pred://body', 'world'));
-    const r = await gs.querySparql('SELECT ?s WHERE { ?s <pred://body> ?o }');
-    const sources = r.bindings.map(b => b.s).sort();
-    expect(sources).toContain('urn:m1');
-    expect(sources).toContain('urn:m2');
+    const manager = new GraphManager(store, async () => eph);
+
+    const community = await manager.create({ displayName: 'Acme' });
+    const channel   = await manager.create({ displayName: '#general' });
+
+    // Write messages FIRST so channel.iri is stable before community
+    // references it. Graph IRIs are content-addressed and change on every
+    // write; cross-graph references must capture the post-mutation IRI.
+    await channel.addTriple(new Triple(
+      'urn:msg:1',
+      'urn:p:body',
+      'hello',
+    ));
+    await community.addTriple(new Triple(
+      'urn:community:acme',
+      'urn:p:hasChannel',
+      channel.iri,
+    ));
+
+    const r = await community.querySparql(`
+      SELECT ?body WHERE {
+        <urn:community:acme> <urn:p:hasChannel> ?ch .
+        GRAPH ?ch {
+          ?msg <urn:p:body> ?body .
+        }
+      }
+    `, { namedGraphs: [channel] });
+
+    expect(r.bindings.map(b => b.body)).toContain('hello');
   });
 });

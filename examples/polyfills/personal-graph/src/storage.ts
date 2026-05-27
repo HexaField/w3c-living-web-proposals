@@ -1,5 +1,5 @@
 /**
- * Per-context storage. Each context has its own IndexedDB record set,
+ * Per-graph storage. Each graph has its own IndexedDB record set,
  * keyed by an opaque internal id (NOT the graph IRI — the IRI is a
  * content hash that changes on every mutation, see [[PERSONAL-LINKED-DATA-GRAPHS]] §3.3).
  */
@@ -7,29 +7,18 @@
 import { Triple, type Reifier, type SignedTriple } from './types.js';
 
 const DB_VERSION = 1;
-const CONTEXTS_STORE = 'contexts';
+const GRAPHS_STORE = 'graphs';
 const TRIPLES_STORE = 'triples';
 const REIFIERS_STORE = 'reifiers';
-const GRAPH_STORES_STORE = 'graph_stores';
 
-export interface ContextRecord {
+export interface GraphRecord {
   id: string;
   displayName: string | null;
-  createdAt: string;
-  graphStoreUuid: string | null;
-}
-
-export interface GraphStoreRecord {
-  uuid: string;
-  name: string;
-  agentDid: string;
-  privateContextId: string;
-  mounts: Array<{ id: string; mode: string }>;
   createdAt: string;
 }
 
 interface StoredTripleRow {
-  contextId: string;
+  graphId: string;
   subject: string;
   predicate: string;
   object: string;
@@ -41,7 +30,7 @@ interface StoredTripleRow {
 
 interface StoredReifierRow {
   id: string;
-  contextId: string;
+  graphId: string;
   subject: string;
   predicate: string;
   object: string;
@@ -56,19 +45,16 @@ function openDB(dbName: string): Promise<IDBDatabase> {
     const request = indexedDB.open(dbName, DB_VERSION);
     request.onupgradeneeded = () => {
       const db = request.result;
-      if (!db.objectStoreNames.contains(CONTEXTS_STORE)) {
-        db.createObjectStore(CONTEXTS_STORE, { keyPath: 'id' });
+      if (!db.objectStoreNames.contains(GRAPHS_STORE)) {
+        db.createObjectStore(GRAPHS_STORE, { keyPath: 'id' });
       }
       if (!db.objectStoreNames.contains(TRIPLES_STORE)) {
         const s = db.createObjectStore(TRIPLES_STORE, { autoIncrement: true });
-        s.createIndex('contextId', 'contextId', { unique: false });
+        s.createIndex('graphId', 'graphId', { unique: false });
       }
       if (!db.objectStoreNames.contains(REIFIERS_STORE)) {
         const s = db.createObjectStore(REIFIERS_STORE, { keyPath: 'id' });
-        s.createIndex('contextId', 'contextId', { unique: false });
-      }
-      if (!db.objectStoreNames.contains(GRAPH_STORES_STORE)) {
-        db.createObjectStore(GRAPH_STORES_STORE, { keyPath: 'uuid' });
+        s.createIndex('graphId', 'graphId', { unique: false });
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -87,7 +73,7 @@ export class GraphStorage {
   private db: IDBDatabase | null = null;
   private readonly dbName: string;
 
-  constructor(dbName = 'living-web-graph-store') {
+  constructor(dbName = 'living-web-graphs') {
     this.dbName = dbName;
   }
 
@@ -103,85 +89,55 @@ export class GraphStorage {
     }
   }
 
-  // ── GraphStore records ──────────────────────────────────────────────────────
+  // ── Graph records ───────────────────────────────────────────────────────────
 
-  async saveGraphStore(record: GraphStoreRecord): Promise<void> {
+  async saveGraph(id: string, displayName: string | null): Promise<void> {
     const db = await this.getDB();
-    const tx = db.transaction([GRAPH_STORES_STORE], 'readwrite');
-    await reqPromise(tx.objectStore(GRAPH_STORES_STORE).put(record));
-  }
-
-  async loadGraphStore(uuid: string): Promise<GraphStoreRecord | undefined> {
-    const db = await this.getDB();
-    const tx = db.transaction([GRAPH_STORES_STORE], 'readonly');
-    return reqPromise(tx.objectStore(GRAPH_STORES_STORE).get(uuid)) as Promise<GraphStoreRecord | undefined>;
-  }
-
-  async listGraphStores(): Promise<GraphStoreRecord[]> {
-    const db = await this.getDB();
-    const tx = db.transaction([GRAPH_STORES_STORE], 'readonly');
-    return reqPromise(tx.objectStore(GRAPH_STORES_STORE).getAll()) as Promise<GraphStoreRecord[]>;
-  }
-
-  async removeGraphStore(uuid: string): Promise<boolean> {
-    const db = await this.getDB();
-    const existing = await this.loadGraphStore(uuid);
-    if (!existing) return false;
-    const tx = db.transaction([GRAPH_STORES_STORE], 'readwrite');
-    await reqPromise(tx.objectStore(GRAPH_STORES_STORE).delete(uuid));
-    return true;
-  }
-
-  // ── Context records ─────────────────────────────────────────────────────────
-
-  async saveContext(id: string, displayName: string | null, graphStoreUuid: string | null = null): Promise<void> {
-    const db = await this.getDB();
-    const record: ContextRecord = {
+    const record: GraphRecord = {
       id,
       displayName,
       createdAt: new Date().toISOString(),
-      graphStoreUuid,
     };
-    const tx = db.transaction([CONTEXTS_STORE], 'readwrite');
-    await reqPromise(tx.objectStore(CONTEXTS_STORE).put(record));
+    const tx = db.transaction([GRAPHS_STORE], 'readwrite');
+    await reqPromise(tx.objectStore(GRAPHS_STORE).put(record));
   }
 
-  async getContext(id: string): Promise<ContextRecord | undefined> {
+  async getGraph(id: string): Promise<GraphRecord | undefined> {
     const db = await this.getDB();
-    const tx = db.transaction([CONTEXTS_STORE], 'readonly');
-    return reqPromise(tx.objectStore(CONTEXTS_STORE).get(id)) as Promise<ContextRecord | undefined>;
+    const tx = db.transaction([GRAPHS_STORE], 'readonly');
+    return reqPromise(tx.objectStore(GRAPHS_STORE).get(id)) as Promise<GraphRecord | undefined>;
   }
 
-  async listContexts(): Promise<ContextRecord[]> {
+  async listGraphs(): Promise<GraphRecord[]> {
     const db = await this.getDB();
-    const tx = db.transaction([CONTEXTS_STORE], 'readonly');
-    return reqPromise(tx.objectStore(CONTEXTS_STORE).getAll()) as Promise<ContextRecord[]>;
+    const tx = db.transaction([GRAPHS_STORE], 'readonly');
+    return reqPromise(tx.objectStore(GRAPHS_STORE).getAll()) as Promise<GraphRecord[]>;
   }
 
-  async removeContext(id: string): Promise<boolean> {
+  async removeGraph(id: string): Promise<boolean> {
     const db = await this.getDB();
-    const existing = await this.getContext(id);
+    const existing = await this.getGraph(id);
     if (!existing) return false;
-    const tx = db.transaction([CONTEXTS_STORE], 'readwrite');
-    await reqPromise(tx.objectStore(CONTEXTS_STORE).delete(id));
+    const tx = db.transaction([GRAPHS_STORE], 'readwrite');
+    await reqPromise(tx.objectStore(GRAPHS_STORE).delete(id));
     await this.removeAllTriples(id);
     return true;
   }
 
-  // ── Triples & reifiers (keyed by context id) ────────────────────────────────
+  // ── Triples & reifiers (keyed by graph id) ──────────────────────────────────
 
-  async saveTriple(contextId: string, signed: SignedTriple, reifier: Reifier): Promise<void> {
+  async saveTriple(graphId: string, signed: SignedTriple, reifier: Reifier): Promise<void> {
     const db = await this.getDB();
     return new Promise((resolve, reject) => {
       const tx = db.transaction([TRIPLES_STORE, REIFIERS_STORE], 'readwrite');
-      tx.objectStore(TRIPLES_STORE).add(this.serializeTriple(contextId, signed));
-      tx.objectStore(REIFIERS_STORE).put(this.serializeReifier(contextId, reifier));
+      tx.objectStore(TRIPLES_STORE).add(this.serializeTriple(graphId, signed));
+      tx.objectStore(REIFIERS_STORE).put(this.serializeReifier(graphId, reifier));
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
   }
 
-  async saveTriples(contextId: string, signed: SignedTriple[], reifiers: Reifier[]): Promise<void> {
+  async saveTriples(graphId: string, signed: SignedTriple[], reifiers: Reifier[]): Promise<void> {
     if (signed.length !== reifiers.length) {
       throw new Error('saveTriples: signed.length must equal reifiers.length');
     }
@@ -191,21 +147,21 @@ export class GraphStorage {
       const triplesStore = tx.objectStore(TRIPLES_STORE);
       const reifiersStore = tx.objectStore(REIFIERS_STORE);
       for (let i = 0; i < signed.length; i++) {
-        triplesStore.add(this.serializeTriple(contextId, signed[i]));
-        reifiersStore.put(this.serializeReifier(contextId, reifiers[i]));
+        triplesStore.add(this.serializeTriple(graphId, signed[i]));
+        reifiersStore.put(this.serializeReifier(graphId, reifiers[i]));
       }
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
   }
 
-  async removeTriple(contextId: string, signed: SignedTriple): Promise<boolean> {
+  async removeTriple(graphId: string, signed: SignedTriple): Promise<boolean> {
     const db = await this.getDB();
     return new Promise((resolve, reject) => {
       const tx = db.transaction([TRIPLES_STORE], 'readwrite');
       const store = tx.objectStore(TRIPLES_STORE);
-      const index = store.index('contextId');
-      const request = index.openCursor(IDBKeyRange.only(contextId));
+      const index = store.index('graphId');
+      const request = index.openCursor(IDBKeyRange.only(graphId));
       let found = false;
       request.onsuccess = () => {
         const cursor = request.result;
@@ -223,13 +179,13 @@ export class GraphStorage {
     });
   }
 
-  async loadTriples(contextId: string): Promise<SignedTriple[]> {
+  async loadTriples(graphId: string): Promise<SignedTriple[]> {
     const db = await this.getDB();
     return new Promise((resolve, reject) => {
       const tx = db.transaction([TRIPLES_STORE], 'readonly');
       const store = tx.objectStore(TRIPLES_STORE);
-      const index = store.index('contextId');
-      const request = index.getAll(IDBKeyRange.only(contextId));
+      const index = store.index('graphId');
+      const request = index.getAll(IDBKeyRange.only(graphId));
       request.onsuccess = () => {
         const records = request.result as StoredTripleRow[];
         resolve(records.map(r => this.deserializeTriple(r)));
@@ -238,13 +194,13 @@ export class GraphStorage {
     });
   }
 
-  async loadReifiers(contextId: string): Promise<Reifier[]> {
+  async loadReifiers(graphId: string): Promise<Reifier[]> {
     const db = await this.getDB();
     return new Promise((resolve, reject) => {
       const tx = db.transaction([REIFIERS_STORE], 'readonly');
       const store = tx.objectStore(REIFIERS_STORE);
-      const index = store.index('contextId');
-      const request = index.getAll(IDBKeyRange.only(contextId));
+      const index = store.index('graphId');
+      const request = index.getAll(IDBKeyRange.only(graphId));
       request.onsuccess = () => {
         const records = request.result as StoredReifierRow[];
         resolve(records.map(r => this.deserializeReifier(r)));
@@ -253,14 +209,14 @@ export class GraphStorage {
     });
   }
 
-  private async removeAllTriples(contextId: string): Promise<void> {
+  private async removeAllTriples(graphId: string): Promise<void> {
     const db = await this.getDB();
     return new Promise((resolve, reject) => {
       const tx = db.transaction([TRIPLES_STORE, REIFIERS_STORE], 'readwrite');
       for (const storeName of [TRIPLES_STORE, REIFIERS_STORE]) {
         const store = tx.objectStore(storeName);
-        const index = store.index('contextId');
-        const req = index.openCursor(IDBKeyRange.only(contextId));
+        const index = store.index('graphId');
+        const req = index.openCursor(IDBKeyRange.only(graphId));
         req.onsuccess = () => {
           const cursor = req.result;
           if (cursor) {
@@ -274,9 +230,9 @@ export class GraphStorage {
     });
   }
 
-  private serializeTriple(contextId: string, signed: SignedTriple): StoredTripleRow {
+  private serializeTriple(graphId: string, signed: SignedTriple): StoredTripleRow {
     return {
-      contextId,
+      graphId,
       subject: signed.data.subject,
       predicate: signed.data.predicate,
       object: signed.data.object,
@@ -296,10 +252,10 @@ export class GraphStorage {
     };
   }
 
-  private serializeReifier(contextId: string, r: Reifier): StoredReifierRow {
+  private serializeReifier(graphId: string, r: Reifier): StoredReifierRow {
     return {
       id: r.id,
-      contextId,
+      graphId,
       subject: r.triple.subject,
       predicate: r.triple.predicate,
       object: r.triple.object,

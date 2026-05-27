@@ -40,7 +40,7 @@ export function renderApp(root: HTMLElement, state: AppState): void {
     titleInput.value = state.docTitle;
     titleInput.addEventListener('change', () => {
       state.docTitle = titleInput.value;
-      state.bc.postMessage({ type: 'doc-title-change', contextIri: state.context.iri, did: state.did, title: titleInput.value });
+      state.bc.postMessage({ type: 'doc-title-change', contextIri: state.graph.iri, did: state.did, title: titleInput.value });
     });
     if (!state.isOwner) titleInput.readOnly = true;
 
@@ -55,7 +55,7 @@ export function renderApp(root: HTMLElement, state: AppState): void {
     shareBtn.className = 'share-btn';
     shareBtn.textContent = '🔗 Share';
     shareBtn.addEventListener('click', () => {
-      navigator.clipboard?.writeText(state.context.iri);
+      navigator.clipboard?.writeText(state.graph.iri);
       shareBtn.textContent = '✓ Copied!';
       setTimeout(() => { shareBtn.textContent = '🔗 Share'; }, 2000);
     });
@@ -204,7 +204,7 @@ export function renderApp(root: HTMLElement, state: AppState): void {
           }
         });
 
-        // Comment on block via right-click context
+        // Comment on block via right-click graph
         blockEl.addEventListener('contextmenu', (e: MouseEvent) => {
           if (state.myRole === 'viewer') return;
           e.preventDefault();
@@ -279,7 +279,7 @@ export function renderApp(root: HTMLElement, state: AppState): void {
           };
           comment.replies.push(reply);
           state.bc.postMessage({
-            type: 'doc-new-reply', contextIri: state.context.iri,
+            type: 'doc-new-reply', contextIri: state.graph.iri,
             did: state.did, commentId: comment.id, reply,
           });
           render();
@@ -292,7 +292,7 @@ export function renderApp(root: HTMLElement, state: AppState): void {
           resolveBtn.addEventListener('click', () => {
             comment.resolved = true;
             state.bc.postMessage({
-              type: 'doc-resolve-comment', contextIri: state.context.iri, commentId: comment.id,
+              type: 'doc-resolve-comment', contextIri: state.graph.iri, commentId: comment.id,
             });
             render();
           });
@@ -345,7 +345,7 @@ export function renderApp(root: HTMLElement, state: AppState): void {
         };
         state.comments.push(comment);
         state.bc.postMessage({
-          type: 'doc-new-comment', contextIri: state.context.iri,
+          type: 'doc-new-comment', contextIri: state.graph.iri,
           did: state.did, comment,
         });
         state.governanceLogs.push({ text: `Comment by ${state.displayName} ACCEPTED`, accepted: true, time: Date.now() });

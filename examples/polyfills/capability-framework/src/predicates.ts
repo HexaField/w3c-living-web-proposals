@@ -3,7 +3,7 @@
  *
  * `governance://` is the topical namespace.
  * `context://participates_in` / `context://accepts_participation` express the
- * mutual nesting of contexts (defined by Personal Linked-Data Graphs).
+ * mutual nesting of graphs (defined by Personal Linked-Data Graphs).
  * `did-document://*` predicates govern delegate management on did:graph DIDs.
  */
 
@@ -53,7 +53,7 @@ export const GOV = {
   DEFAULT_CAPABILITY_CAVEATS: 'governance://default_capability_caveats',
 } as const;
 
-/** Context-nesting predicates (defined by Personal Linked-Data Graphs). */
+/** Graph-nesting predicates (defined by Personal Linked-Data Graphs). */
 export const CONTEXT = {
   PARTICIPATES_IN: 'context://participates_in',
   ACCEPTS_PARTICIPATION: 'context://accepts_participation',

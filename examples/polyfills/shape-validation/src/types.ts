@@ -48,7 +48,7 @@ export interface ShapeInfo {
   name: string;
   targetClass: string;
   definitionAddress: string;
-  /** did:graph of the context where this shape is registered. */
+  /** did:graph of the graph where this shape is registered. */
   sourceContextDid: string;
   properties: PropertyInfo[];
 }

@@ -36,12 +36,12 @@ function renderGraphs(graphs: StatusResponse['graphs']) {
   ).join('');
 }
 
-function renderMountedContexts(contexts: StatusResponse['mountedContexts']) {
-  if (contexts.length === 0) {
-    mountedContextsList.innerHTML = '<p class="empty">No mounted contexts</p>';
+function renderMountedContexts(graphs: StatusResponse['mountedContexts']) {
+  if (graphs.length === 0) {
+    mountedContextsList.innerHTML = '<p class="empty">No mounted graphs</p>';
     return;
   }
-  mountedContextsList.innerHTML = contexts.map(c =>
+  mountedContextsList.innerHTML = graphs.map(c =>
     `<div class="graph-item">
       <span class="graph-name">${c.displayName ?? c.graphDid}</span>
       <span class="graph-meta">${c.peerCount} peers · ${c.syncState}</span>

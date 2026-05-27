@@ -17,10 +17,10 @@ import { installShapeExtension } from '@living-web/shape-validation';
 import { PersonalGraph } from '@living-web/personal-graph';
 installShapeExtension(PersonalGraph);
 
-// 04 + 05 + 08 — Context sync + sync module + default sync module
-// Importing the default-sync-module polyfill installs the Context sync
+// 04 + 05 + 08 — Graph sync + sync module + default sync module
+// Importing the default-sync-module polyfill installs the Graph sync
 // extension and registers the BroadcastChannel-based module as the active
-// runtime. Tests use `Context.publish()` / peers() / signals on contexts
+// runtime. Tests use `Graph.publish()` / peers() / signals on graphs
 // produced by `navigator.graph`.
 import '@living-web/default-sync-module/polyfill';
 

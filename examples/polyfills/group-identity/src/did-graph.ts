@@ -9,7 +9,7 @@
  * INSIDE the graph it identifies. This module exposes a resolver interface
  * that takes a triple subject as input; the group-identity polyfill at
  * install time provides the implementation (drawing triples from locally
- * mounted contexts in personal-graph's GraphStores).
+ * mounted graphs in personal-graph's GraphStores).
  */
 
 import {
@@ -33,7 +33,7 @@ export function isGraphDID(did: string): boolean {
   return typeof did === 'string' && did.startsWith('did:graph:');
 }
 
-/** Predicates the resolver reads from a graph's context. */
+/** Predicates the resolver reads from a graph's graph. */
 export const DID_DOC_PREDICATES = {
   type: 'did://verificationMethod/type',
   controller: 'did://verificationMethod/controller',
@@ -175,9 +175,9 @@ function stripLiteral(value: string): string {
 }
 
 /**
- * Produce the seed triples that should be written into a freshly created context.
+ * Produce the seed triples that should be written into a freshly created graph.
  * The caller (personal-graph's createContext) writes these as the first triples
- * in the new context.
+ * in the new graph.
  */
 export function seedDIDDocumentTriples(graphDid: string): GraphTriple[] {
   const identifier = graphDid.slice('did:graph:'.length);

@@ -1,5 +1,5 @@
 /**
- * Graph-sync types — ContextDiff + sync spaces + per-context subscription.
+ * Graph-sync types — GraphDiff + sync spaces + per-graph subscription.
  */
 
 import type { SignedTriple } from '@living-web/personal-graph';
@@ -25,10 +25,10 @@ export interface CapabilityProof {
 }
 
 /**
- * ContextDiff — the unit of gossip. Scoped to a specific did:graph context.
+ * GraphDiff — the unit of gossip. Scoped to a specific did:graph graph.
  * Immutable once constructed.
  */
-export class ContextDiff {
+export class GraphDiff {
   readonly graphDid: string;
   readonly revision: string;
   readonly additions: readonly SignedTriple[];
@@ -80,7 +80,7 @@ export interface PublishOptions {
   customSpace?: string;
 }
 
-export interface PublishedContext {
+export interface PublishedGraph {
   graphDid: string;
   spaceUri: string;
   moduleHash: string;
@@ -105,8 +105,8 @@ export interface SyncModuleInfo {
 // Events ------------------------------------------------------------------
 
 export class DiffEvent extends Event {
-  readonly diff: ContextDiff;
-  constructor(diff: ContextDiff) {
+  readonly diff: GraphDiff;
+  constructor(diff: GraphDiff) {
     super('diff');
     this.diff = diff;
   }

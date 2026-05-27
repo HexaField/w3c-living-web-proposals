@@ -1,12 +1,12 @@
 /**
- * Context governance integration — binds a governance engine to a Context.
+ * Graph governance integration — binds a governance engine to a Graph.
  *
- * Governance applies per-context (per-graph DID). The `rootCapabilityId` is
- * read from the context's `governance://root_capability` triple, or set
+ * Governance applies per-graph (per-graph DID). The `rootCapabilityId` is
+ * read from the graph's `governance://root_capability` triple, or set
  * explicitly by the caller.
  */
 
-import { Context } from '@living-web/personal-graph';
+import { Graph } from '@living-web/personal-graph';
 import { GraphGovernanceEngine } from './engine.js';
 import { GOV } from './predicates.js';
 import { resetCaveatCounters } from './caveats.js';
@@ -20,9 +20,9 @@ import type {
 } from './types.js';
 
 export interface GovernanceOptions {
-  /** Root capability id; if absent, looked up from the context's triples. */
+  /** Root capability id; if absent, looked up from the graph's triples. */
   rootCapabilityId?: string;
-  /** Initial enforcement mode; defaults to read from the context (open if absent). */
+  /** Initial enforcement mode; defaults to read from the graph (open if absent). */
   enforcementMode?: EnforcementMode;
   /** Constraint-kind handlers to register on the engine (in addition to the built-in capability check). */
   constraintKinds?: ConstraintHandler[];
@@ -44,22 +44,22 @@ export interface GovernanceLayer {
   resetCounters: typeof resetCaveatCounters;
 }
 
-export function createGovernanceLayer(context: Context, opts: GovernanceOptions = {}): GovernanceLayer {
+export function createGovernanceLayer(graph: Graph, opts: GovernanceOptions = {}): GovernanceLayer {
   // Long-lived governance requires a sovereign identity for the graph.
-  // A context's IRI is a snapshot hash — it changes whenever any triple
+  // A graph's IRI is a snapshot hash — it changes whenever any triple
   // (including the ZCAP triples we're about to write!) changes. So we'd
   // have no stable resource to anchor capabilities to. Require did:graph
-  // from [[GROUP-IDENTITY]]: groupify the context before setting up
+  // from [[GROUP-IDENTITY]]: groupify the graph before setting up
   // governance.
-  if (!context.did) {
+  if (!graph.did) {
     throw new DOMException(
-      `createGovernanceLayer requires a groupified context (no did:graph on ${context.id}). ` +
+      `createGovernanceLayer requires a groupified graph (no did:graph on ${graph.id}). ` +
       `Capabilities target the graph's sovereign DID, not its current snapshot IRI — call ` +
       `store.groupify() or store.createGroup() first.`,
       'InvalidStateError',
     );
   }
-  const graphDid = context.did;
+  const graphDid = graph.did;
   const expressionStore = new Map<string, unknown>();
 
   const ctx: ValidationContext = {
@@ -67,7 +67,7 @@ export function createGovernanceLayer(context: Context, opts: GovernanceOptions 
     rootCapabilityId: opts.rootCapabilityId ?? null,
     enforcementMode: opts.enforcementMode ?? 'open',
     queryTriples: async (q) => {
-      const results = await context.queryTriples({
+      const results = await graph.queryTriples({
         subject: q.subject ?? undefined,
         predicate: q.predicate ?? undefined,
         object: q.object ?? undefined,
@@ -133,7 +133,7 @@ export function createGovernanceLayer(context: Context, opts: GovernanceOptions 
     },
 
     async setEnforcementMode(mode) {
-      await context.addTriple({
+      await graph.addTriple({
         subject: graphDid,
         predicate: GOV.ENFORCEMENT_MODE,
         object: `"${mode}"`,

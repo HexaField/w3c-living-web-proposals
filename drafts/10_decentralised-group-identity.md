@@ -9,7 +9,7 @@
 
 ## Abstract
 
-This specification defines the `did:graph` DID method and the **DID-document delegate model** for shared signing authority, and uses both to define decentralised collective identity on the web. Contexts as defined by [[PERSONAL-LINKED-DATA-GRAPHS]] are identified by `graph://<content-hash>` IRIs — content-derived addresses that change with every mutation. The IRI alone therefore identifies a *snapshot*, never an evolving graph: by construction, the same address cannot ever name two different contents, which is the substrate's hard guarantee of snapshot-level immutability and an implicit version-control discipline. **`did:graph` is the resolution.** A `did:graph:...` gives a graph **sovereign identity and provenance**: a single content-independent identifier that survives all changes to the graph's triples and to its delegate set, anchored cryptographically to a stable initial key and resolved through the graph's own DID-document triples. This specification defines that DID method, the operation (**groupification**) by which an existing context takes one on, and the DID-document delegate model — multiple verification methods partitioned into the W3C-defined capability sections (`verificationMethod`, `capabilityInvocation`, `capabilityDelegation`, `assertionMethod`, `authentication`), where a signature by any current method in the relevant section counts as a signature *by the DID*. Multisig, threshold signatures, and aggregate-key schemes are explicit non-goals — shared signing authority is the delegate set. Built on this substrate, a **group** is a groupified context, with two distinct concerns kept structurally separate: **participation** (who is *part of* the group, declared from below via `context://participates_in`) and **signing authority** (who can currently *sign as* the group, declared in the group's DID document as `capabilityInvocation` delegates). Groups remain isomorphic to individuals (a groupified context with one delegate is structurally identical to one with many) and nestable to arbitrary depth (groups may participate in other groups). This specification plugs into the resolver-registry extension point of [[DECENTRALISED-IDENTITY]] §4.2 and extends its `DIDCredential` surface.
+This specification defines the `did:graph` DID method and the **DID-document delegate model** for shared signing authority, and uses both to define decentralised collective identity on the web. Graphs as defined by [[PERSONAL-LINKED-DATA-GRAPHS]] are identified by `graph://<content-hash>` IRIs — content-derived addresses that change with every mutation. The IRI alone therefore identifies a *snapshot*, never an evolving graph: by construction, the same address cannot ever name two different contents, which is the substrate's hard guarantee of snapshot-level immutability and an implicit version-control discipline. **`did:graph` is the resolution.** A `did:graph:...` gives a graph **sovereign identity and provenance**: a single content-independent identifier that survives all changes to the graph's triples and to its delegate set, anchored cryptographically to a stable initial key and resolved through the graph's own DID-document triples. This specification defines that DID method, the operation (**groupification**) by which an existing graph takes one on, and the DID-document delegate model — multiple verification methods partitioned into the W3C-defined capability sections (`verificationMethod`, `capabilityInvocation`, `capabilityDelegation`, `assertionMethod`, `authentication`), where a signature by any current method in the relevant section counts as a signature *by the DID*. Multisig, threshold signatures, and aggregate-key schemes are explicit non-goals — shared signing authority is the delegate set. Built on this substrate, a **group** is a groupified graph, with two distinct concerns kept structurally separate: **participation** (who is *part of* the group, declared from below via `context://participates_in`) and **signing authority** (who can currently *sign as* the group, declared in the group's DID document as `capabilityInvocation` delegates). Groups remain isomorphic to individuals (a groupified graph with one delegate is structurally identical to one with many) and nestable to arbitrary depth (groups may participate in other groups). This specification plugs into the resolver-registry extension point of [[DECENTRALISED-IDENTITY]] §4.2 and extends its `DIDCredential` surface.
 
 ---
 
@@ -47,25 +47,25 @@ This document is a draft Community Group Report. It has no official W3C standing
 
 The web has identity for individuals via DIDs ([[DID-CORE]], [[DECENTRALISED-IDENTITY]]). It also needs identity for *collectives* — teams, communities, organisations, families, coalitions — without picking a custodian and without bolting on multisig or threshold cryptography. It also needs, more fundamentally, **identity for graphs that mutate**.
 
-Contexts as defined by [[PERSONAL-LINKED-DATA-GRAPHS]] are content-addressed: a context's IRI is the SHA-256 of its current triples. That is a precise, verifiable address for *one state* of the graph — and it is, by design, the wrong address for almost anything else. The moment a triple is added or removed the IRI changes, because by construction the same content-hash cannot name two different contents. This is the substrate's hard guarantee of snapshot-level immutability: every state is its own immutable artifact, addressed by its hash, never overwritten. It is also a substrate-level invocation of version control: a graph naturally becomes a sequence of states, each with its own IRI, none renaming the others.
+Graphs as defined by [[PERSONAL-LINKED-DATA-GRAPHS]] are content-addressed: a graph's IRI is the SHA-256 of its current triples. That is a precise, verifiable address for *one state* of the graph — and it is, by design, the wrong address for almost anything else. The moment a triple is added or removed the IRI changes, because by construction the same content-hash cannot name two different contents. This is the substrate's hard guarantee of snapshot-level immutability: every state is its own immutable artifact, addressed by its hash, never overwritten. It is also a substrate-level invocation of version control: a graph naturally becomes a sequence of states, each with its own IRI, none renaming the others.
 
-This guarantee leaves a real problem: how do you refer to "the graph" as such — the evolving entity that has gone through many states and will go through many more — when no single IRI can serve that purpose? Conventional answers are mutable pointers maintained by a trusted server (a URL, a database row) or naming conventions enforced by an application; both reintroduce the centralisation contexts were meant to avoid.
+This guarantee leaves a real problem: how do you refer to "the graph" as such — the evolving entity that has gone through many states and will go through many more — when no single IRI can serve that purpose? Conventional answers are mutable pointers maintained by a trusted server (a URL, a database row) or naming conventions enforced by an application; both reintroduce the centralisation graphs were meant to avoid.
 
-This specification's answer is `did:graph`. A `did:graph:...` is a DID derived from a fresh Ed25519 keypair generated at groupification time, attached to a host context via a triple in that context (`group://didIdentity`). The DID is **sovereign**: it is not derived from anyone's authority outside the graph, it does not change when the graph's content changes, and it carries its own provenance — the graph's DID document lives as triples inside the graph itself, so resolving the DID and verifying its signers happens against the same data the agent already trusts. A `did:graph` is the right answer to "is this the same graph as before?" exactly when the IRI is the right answer to "do these triples match this address?". The two layers are complementary by construction; neither subsumes the other.
+This specification's answer is `did:graph`. A `did:graph:...` is a DID derived from a fresh Ed25519 keypair generated at groupification time, attached to a host graph via a triple in that graph (`group://didIdentity`). The DID is **sovereign**: it is not derived from anyone's authority outside the graph, it does not change when the graph's content changes, and it carries its own provenance — the graph's DID document lives as triples inside the graph itself, so resolving the DID and verifying its signers happens against the same data the agent already trusts. A `did:graph` is the right answer to "is this the same graph as before?" exactly when the IRI is the right answer to "do these triples match this address?". The two layers are complementary by construction; neither subsumes the other.
 
 This specification therefore introduces:
 
-- The **`did:graph` method** — a DID derived from an Ed25519 keypair, with its DID document composed from triples inside a host context.
+- The **`did:graph` method** — a DID derived from an Ed25519 keypair, with its DID document composed from triples inside a host graph.
 - The **DID-document delegate model** — a DID document MAY list multiple verification methods, partitioned into the W3C-defined capability sections. A signature by any current method in the relevant section is a signature *by the DID*. There is no aggregation, no quorum, no joint key — verification is a single Ed25519 check.
-- **Groupification** — the operation by which an existing context takes on a `did:graph`. The context's IRI continues to track snapshots (and continues to change); the DID is added, in place, and from that moment forward gives the graph a stable, content-independent identity.
+- **Groupification** — the operation by which an existing graph takes on a `did:graph`. The graph's IRI continues to track snapshots (and continues to change); the DID is added, in place, and from that moment forward gives the graph a stable, content-independent identity.
 
 This specification answers the collective-identity need by introducing one DID method, one delegate model, and one upgrade operation:
 
-- The **`did:graph` method** — a DID whose identifier is derived from a fresh Ed25519 keypair and whose DID document lives as triples inside an existing graph-backed context. The DID does not own the graph; it *wraps* it. The graph keeps its IRI; the DID gives it shared signing authority.
+- The **`did:graph` method** — a DID whose identifier is derived from a fresh Ed25519 keypair and whose DID document lives as triples inside an existing graph-backed graph. The DID does not own the graph; it *wraps* it. The graph keeps its IRI; the DID gives it shared signing authority.
 - The **DID-document delegate model** — a DID document MAY list multiple verification methods, partitioned into the W3C-defined capability sections. A signature by any current method in the relevant section is a signature *by the DID*. There is no aggregation, no quorum, no joint key — verification is a single Ed25519 check.
-- **Groupification** — the operation that takes an ungroupified context, mints a fresh `did:graph` keypair, writes the seed DID-document triples plus the `group://didIdentity` binding into the context, and (atomically) makes the context addressable as a collective signer.
+- **Groupification** — the operation that takes an ungroupified graph, mints a fresh `did:graph` keypair, writes the seed DID-document triples plus the `group://didIdentity` binding into the graph, and (atomically) makes the graph addressable as a collective signer.
 
-Built on these primitives, a **group** is just a groupified context. Both individuals (via `did:key`) and collectives (via a context's groupified `did:graph`) hold DIDs, sign, hold capabilities, and participate in larger contexts.
+Built on these primitives, a **group** is just a groupified graph. Both individuals (via `did:key`) and collectives (via a graph's groupified `did:graph`) hold DIDs, sign, hold capabilities, and participate in larger graphs.
 
 This specification is therefore three things at once:
 
@@ -79,15 +79,15 @@ In conventional systems these are conflated (a "member" is implicitly a "signer"
 
 ### 1.2 Design Principles
 
-**Principle 0: Groupification is the substrate's mechanism for sovereign identity, additive, one-way, and necessary for any reference that must survive content change.** A context can exist with only its `graph://<content-hash>` IRI (Spec 02) — but the IRI is a snapshot address that changes with every mutation, so an ungroupified context can be referenced only as a specific frozen state (an immutable artifact, a one-shot publication, a content-addressed cache key). Any application that mutates a graph and needs others to keep referencing the same graph — every sync subscription, every long-lived ZCAP, every durable participation link — MUST groupify. Groupification adds the DID layer in place: it does not change the current IRI, does not move existing triples, and does not invalidate anyone's prior authorship. A context can be groupified at any time after creation; once groupified it cannot be un-groupified without forking.
+**Principle 0: Groupification is the substrate's mechanism for sovereign identity, additive, one-way, and necessary for any reference that must survive content change.** A graph can exist with only its `graph://<content-hash>` IRI (Spec 02) — but the IRI is a snapshot address that changes with every mutation, so an ungroupified graph can be referenced only as a specific frozen state (an immutable artifact, a one-shot publication, a content-addressed cache key). Any application that mutates a graph and needs others to keep referencing the same graph — every sync subscription, every long-lived ZCAP, every durable participation link — MUST groupify. Groupification adds the DID layer in place: it does not change the current IRI, does not move existing triples, and does not invalidate anyone's prior authorship. A graph can be groupified at any time after creation; once groupified it cannot be un-groupified without forking.
 
 **Principle 1: Shared authority lives in the DID document, not in the identifier.** The `did:graph` identifier is single-key by construction; the delegate set in the DID document is what changes over time. The DID itself never moves.
 
-**Principle 2: A group of one is structurally identical to a group of many.** A personal `did:key` and a collective `did:graph` are both DIDs. A groupified context with exactly one `capabilityInvocation` delegate is structurally identical to one with one hundred delegates, except for the size of the delegate set. The transition is membership growth, not a mode switch. See [§11](#11-isomorphism-individual--group-of-one).
+**Principle 2: A group of one is structurally identical to a group of many.** A personal `did:key` and a collective `did:graph` are both DIDs. A groupified graph with exactly one `capabilityInvocation` delegate is structurally identical to one with one hundred delegates, except for the size of the delegate set. The transition is membership growth, not a mode switch. See [§11](#11-isomorphism-individual--group-of-one).
 
 **Principle 3: Identity persists independent of participation and delegate set.** A `did:graph` persists across changes in both who participates and who signs. A team that replaces every member over a decade is still the same team — its `did:graph:...` is unchanged. The underlying graph IRI is similarly stable.
 
-**Principle 4: Groups can participate in groups, to arbitrary depth.** A group's underlying context MAY declare `context://participates_in <larger-graph-iri>` in its own context. The substrate provides participation-from-below for the entire nesting structure. See [§6.3](#63-context-nesting).
+**Principle 4: Groups can participate in groups, to arbitrary depth.** A group's underlying graph MAY declare `context://participates_in <larger-graph-iri>` in its own graph. The substrate provides participation-from-below for the entire nesting structure. See [§6.3](#63-graph-nesting).
 
 ### 1.3 Use Cases
 
@@ -105,9 +105,9 @@ All of these use the same data model and the same API. The differences are scale
 ### 1.4 Relationship to Other Specifications
 
 - [[DECENTRALISED-IDENTITY]] defines the `DIDCredential` interface, the signing API, the resolver-registry extension point, and the REQUIRED `did:key` method. This specification registers `did:graph` into that registry and extends `DIDCredential` with the delegate-management API.
-- [[PERSONAL-LINKED-DATA-GRAPHS]] supplies the host context (identified by its `graph://<content-hash>` IRI) whose triples carry a `did:graph` DID document once the context has been groupified.
-- [[CAPABILITY-FRAMEWORK]] defines the ZCAPs that govern changes to a `did:graph` DID document and to participation acceptance. ZCAPs target contexts by IRI; this specification makes a context's `did:graph` an equivalent alias for capability purposes.
-- [[CONTEXT-SYNC]] is the path by which a groupified context's DID document can be resolved from an external source when the context is not locally mounted.
+- [[PERSONAL-LINKED-DATA-GRAPHS]] supplies the host graph (identified by its `graph://<content-hash>` IRI) whose triples carry a `did:graph` DID document once the graph has been groupified.
+- [[CAPABILITY-FRAMEWORK]] defines the ZCAPs that govern changes to a `did:graph` DID document and to participation acceptance. ZCAPs target graphs by IRI; this specification makes a graph's `did:graph` an equivalent alias for capability purposes.
+- [[CONTEXT-SYNC]] is the path by which a groupified graph's DID document can be resolved from an external source when the graph is not locally mounted.
 
 ---
 
@@ -120,7 +120,7 @@ A conforming implementation MUST:
 1. Implement the `did:graph` method ([§4](#4-the-didgraph-method)), including identifier construction, DID-document-as-triples projection, document-update predicates, resolution, and deactivation.
 2. Implement the DID-document delegate semantics ([§5](#5-did-document-delegates)) for `did:graph` DIDs.
 3. Register `did:graph` into the [[DECENTRALISED-IDENTITY]] §4.2 resolver registry, including both creation and resolution handlers.
-4. Treat a "group" as a Context with a `did:graph:...` DID, per [[PERSONAL-LINKED-DATA-GRAPHS]].
+4. Treat a "group" as a Graph with a `did:graph:...` DID, per [[PERSONAL-LINKED-DATA-GRAPHS]].
 5. Use `context://participates_in` (declared from below) and the corresponding `context://accepts_participation` (declared from above) as the canonical participation relation ([§6.2](#62-participation)).
 6. Use DID-document delegates as the canonical mechanism for shared signing authority ([§7.2](#72-signing-authority-did-document-delegates)).
 7. NOT define separate code paths or data stores for "individual" and "group" identity. The isomorphism property ([§11](#11-isomorphism-individual--group-of-one)) MUST hold.
@@ -130,7 +130,7 @@ A conforming implementation MUST NOT:
 - Define multisig, threshold signing, or aggregate-key schemes for the group DID itself.
 - Conflate participation with signing authority.
 
-A conforming implementation MAY provide convenience APIs that look like a `Group` interface, provided they map to the underlying Context + DID + governance correctly.
+A conforming implementation MAY provide convenience APIs that look like a `Group` interface, provided they map to the underlying Graph + DID + governance correctly.
 
 ---
 
@@ -139,10 +139,10 @@ A conforming implementation MAY provide convenience APIs that look like a `Group
 <dl>
 
 <dt>did:graph</dt>
-<dd>A DID method (defined in <a href="#4-the-didgraph-method">§4</a>) whose method-specific identifier is a multibase-encoded Ed25519 public key and whose DID document is composed from triples inside a host context. The DID does not own or replace the context's <code>graph://&lt;content-hash&gt;</code> IRI — it wraps it via a <code>group://didIdentity</code> binding.</dd>
+<dd>A DID method (defined in <a href="#4-the-didgraph-method">§4</a>) whose method-specific identifier is a multibase-encoded Ed25519 public key and whose DID document is composed from triples inside a host graph. The DID does not own or replace the graph's <code>graph://&lt;content-hash&gt;</code> IRI — it wraps it via a <code>group://didIdentity</code> binding.</dd>
 
 <dt>Groupification</dt>
-<dd>The (one-way) operation that takes an existing ungroupified context (Spec 02) and attaches a fresh <code>did:graph</code> identity to it: generate a keypair, mint the DID, write the seed DID-document triples + the <code>group://didIdentity</code> binding into the context. After groupification the context has both its IRI (unchanged) and a DID (newly added).</dd>
+<dd>The (one-way) operation that takes an existing ungroupified graph (Spec 02) and attaches a fresh <code>did:graph</code> identity to it: generate a keypair, mint the DID, write the seed DID-document triples + the <code>group://didIdentity</code> binding into the graph. After groupification the graph has both its IRI (unchanged) and a DID (newly added).</dd>
 
 <dt>DID-Document Delegate</dt>
 <dd>An entry in a <code>did:graph</code> DID document's <code>verificationMethod</code> list, referenced from one or more capability sections (<code>capabilityInvocation</code>, <code>capabilityDelegation</code>, <code>assertionMethod</code>, <code>authentication</code>). A signature produced by a current delegate's key counts as a signature by the DID for that section. See <a href="#5-did-document-delegates">§5</a>.</dd>
@@ -151,19 +151,19 @@ A conforming implementation MAY provide convenience APIs that look like a `Group
 <dd>The Ed25519 keypair generated at groupification, encoded into the resulting <code>did:graph</code> identifier. Its public-key fragment becomes the first <code>verificationMethod</code> entry; its holder is the first delegate in every capability section.</dd>
 
 <dt>Group</dt>
-<dd>A <em>groupified</em> context (a context with both a graph IRI and a <code>did:graph:...</code> DID), treated as a collective identity. "Group" is a usage term, not a separate data type. See [[PERSONAL-LINKED-DATA-GRAPHS]] §3.3 for the underlying data structure.</dd>
+<dd>A <em>groupified</em> graph (a graph with both a graph IRI and a <code>did:graph:...</code> DID), treated as a collective identity. "Group" is a usage term, not a separate data type. See [[PERSONAL-LINKED-DATA-GRAPHS]] §3.3 for the underlying data structure.</dd>
 
 <dt>Group DID</dt>
 <dd>A <code>did:graph:...</code> DID identifying the signing identity of a group. The DID persists across changes in participation and delegate set; the wrapped graph IRI is similarly stable.</dd>
 
 <dt>Participant</dt>
-<dd>An agent (or another group) that has declared <code>context://participates_in &lt;group-did&gt;</code> in its own context, where the group has mutually declared <code>context://accepts_participation</code>. Participation is about <em>being part of</em>, not about authority.</dd>
+<dd>An agent (or another group) that has declared <code>context://participates_in &lt;group-did&gt;</code> in its own graph, where the group has mutually declared <code>context://accepts_participation</code>. Participation is about <em>being part of</em>, not about authority.</dd>
 
 <dt>Signer</dt>
-<dd>A synonym for "DID-document delegate" used in the context of a group. A signer's key produces signatures that count as <em>the group's</em> signatures for the granted section. Signers are about <em>signing as</em>, not about being a participant. The two roles overlap by convention but are not identical.</dd>
+<dd>A synonym for "DID-document delegate" used in the graph of a group. A signer's key produces signatures that count as <em>the group's</em> signatures for the granted section. Signers are about <em>signing as</em>, not about being a participant. The two roles overlap by convention but are not identical.</dd>
 
-<dt>Context Nesting</dt>
-<dd>The recursive composition where a group's <code>did:graph</code> participates in a larger group's context. Sovereignty flows from below: the child declares participation; the parent confirms acceptance.</dd>
+<dt>Graph Nesting</dt>
+<dd>The recursive composition where a group's <code>did:graph</code> participates in a larger group's graph. Sovereignty flows from below: the child declares participation; the parent confirms acceptance.</dd>
 
 <dt>Transitive Participation</dt>
 <dd>The set of all individual (non-group) agents reachable by recursively resolving group participations. Implementations MUST detect cycles.</dd>
@@ -187,17 +187,17 @@ The `did:graph` method-specific identifier uses the same multibase encoding as `
 did:graph:z6Mkh...   ← initial pubkey, multibase Ed25519
 ```
 
-The key generated at groupification is the **initial key**: it becomes the first entry in the host context's DID document, and its holder is the first delegate in every capability section. The DID identifier is single-key by construction. There is no multihash-of-keys, no aggregate key, no derived identifier. **Shared authority lives in the DID document, not in the identifier.**
+The key generated at groupification is the **initial key**: it becomes the first entry in the host graph's DID document, and its holder is the first delegate in every capability section. The DID identifier is single-key by construction. There is no multihash-of-keys, no aggregate key, no derived identifier. **Shared authority lives in the DID document, not in the identifier.**
 
-The `did:graph` identifier is *not* the host context's IRI — the IRI is a content hash from [[PERSONAL-LINKED-DATA-GRAPHS]] §3.3 and is independent of the key material. The binding between the two is recorded as a triple inside the context ([§4.3](#43-the-binding-triple)).
+The `did:graph` identifier is *not* the host graph's IRI — the IRI is a content hash from [[PERSONAL-LINKED-DATA-GRAPHS]] §3.3 and is independent of the key material. The binding between the two is recorded as a triple inside the graph ([§4.3](#43-the-binding-triple)).
 
 ### 4.2 Groupification
 
-**Groupification** is the operation that attaches a `did:graph` to an existing context. It is a one-way upgrade: a context can be groupified at most once. After groupification the context retains its `graph://<content-hash>` IRI; nothing about its existing triples, authorship, or governance changes — only new triples are added.
+**Groupification** is the operation that attaches a `did:graph` to an existing graph. It is a one-way upgrade: a graph can be groupified at most once. After groupification the graph retains its `graph://<content-hash>` IRI; nothing about its existing triples, authorship, or governance changes — only new triples are added.
 
 The algorithm:
 
-1. Let `ctx` be the target context. Reject with `"InvalidStateError"` if `ctx` already has a `group://didIdentity` triple (already groupified).
+1. Let `ctx` be the target graph. Reject with `"InvalidStateError"` if `ctx` already has a `group://didIdentity` triple (already groupified).
 2. Generate a fresh Ed25519 keypair `(sk, pk)`.
 3. Derive `did = "did:graph:" + multibase_ed25519(pk)` per [§4.1](#41-identifier-format).
 4. Write the **binding triple** ([§4.3](#43-the-binding-triple)) into `ctx`:
@@ -206,30 +206,30 @@ The algorithm:
 5. Write the **seed DID-document triples** ([§4.4](#44-did-document-storage)) into `ctx`, granting the creator's method all four capability sections.
 6. Persist the private key `sk` via [[DECENTRALISED-IDENTITY]] §5.1 storage, as a delegate credential for `did` (methodId = `did + "#" + multibase_ed25519(pk)`).
 7. Optionally write `initialDelegates` per the caller's options, using the same `did-document://*` write predicates as ongoing delegate management ([§4.5](#45-document-updates)).
-8. Return the `did` and the credential. The host context is now groupified.
+8. Return the `did` and the credential. The host graph is now groupified.
 
-Groupification MUST be authorised by a `groupifyContext` ZCAP on the context, or by the creator at context-creation time (the root capability granted at creation includes `groupifyContext`).
+Groupification MUST be authorised by a `groupifyContext` ZCAP on the graph, or by the creator at graph-creation time (the root capability granted at creation includes `groupifyContext`).
 
 ### 4.3 The Binding Triple
 
-The `group://didIdentity` predicate records the binding from a graph IRI to its DID identity. It is the canonical answer to "does this context have a did:graph?".
+The `group://didIdentity` predicate records the binding from a graph IRI to its DID identity. It is the canonical answer to "does this graph have a did:graph?".
 
 ```turtle
-# Inside the host context (whose IRI is graph://<content-hash>):
+# Inside the host graph (whose IRI is graph://<content-hash>):
 <graph://<content-hash>>  group://didIdentity  <did:graph:z6Mkh...> .
 <did:graph:z6Mkh...>      group://wrapsGraph   <graph://<content-hash>> .
 ```
 
-A context has at most one `group://didIdentity` triple. Multiple `did:graph` identities for one host context are NOT permitted (the operation is one-way; to bind a second DID, fork into a new context). The reverse predicate `group://wrapsGraph` is written for resolver convenience and MUST be kept consistent.
+A graph has at most one `group://didIdentity` triple. Multiple `did:graph` identities for one host graph are NOT permitted (the operation is one-way; to bind a second DID, fork into a new graph). The reverse predicate `group://wrapsGraph` is written for resolver convenience and MUST be kept consistent.
 
-A consumer checking whether a context is groupified MAY query its triples for `<ctx.iri> group://didIdentity ?did`. A resolver receiving a `did:graph:...` MAY find its host context by querying for `<did> group://wrapsGraph ?iri` across mounted stores.
+A consumer checking whether a graph is groupified MAY query its triples for `<ctx.iri> group://didIdentity ?did`. A resolver receiving a `did:graph:...` MAY find its host graph by querying for `<did> group://wrapsGraph ?iri` across mounted stores.
 
 ### 4.4 DID Document Storage
 
-The DID document for a `did:graph` DID is composed from the following triples inside the host context:
+The DID document for a `did:graph` DID is composed from the following triples inside the host graph:
 
 ```turtle
-# Inside the host context (whose IRI is graph://<content-hash>):
+# Inside the host graph (whose IRI is graph://<content-hash>):
 <graph://<content-hash>>  group://didIdentity  <did:graph:z6Mkh...> .
 
 <did:graph:z6Mkh...>
@@ -256,20 +256,20 @@ User agents MUST be able to project these triples into a standard JSON-LD DID do
 
 ### 4.5 Document Updates
 
-Adding, removing, or moving a method between capability sections of a `did:graph` DID document is a write to the host context and is therefore subject to that context's governance ([[CAPABILITY-FRAMEWORK]]). The canonical predicates for governed changes are:
+Adding, removing, or moving a method between capability sections of a `did:graph` DID document is a write to the host graph and is therefore subject to that graph's governance ([[CAPABILITY-FRAMEWORK]]). The canonical predicates for governed changes are:
 
 - `did-document://add-method` — add a new `verificationMethod` entry.
 - `did-document://remove-method` — remove an entry; cryptographically invalidates future signatures by that method.
 - `did-document://grant-section` — add a method to a capability section.
 - `did-document://revoke-section` — remove a method from a section without removing it from `verificationMethod`.
 
-Each operation is a triple write authorised by a ZCAP whose `resource` is the host context's IRI (or, equivalently, its `did:graph`). There is no separate "DID document update" wire format — the DID document *is* triples in the host context, and updating it is just authoring triples.
+Each operation is a triple write authorised by a ZCAP whose `resource` is the host graph's IRI (or, equivalently, its `did:graph`). There is no separate "DID document update" wire format — the DID document *is* triples in the host graph, and updating it is just authoring triples.
 
 ### 4.6 Resolution
 
 `did:graph` resolution is registered into [[DECENTRALISED-IDENTITY]] §7.1 and proceeds as follows:
 
-1. Locate the host context: across mounted GraphStores (per [[PERSONAL-LINKED-DATA-GRAPHS]] §3.4), find the context whose triples contain `<this-did> group://wrapsGraph ?iri` (equivalently `<?iri> group://didIdentity <this-did>`). If found, query that context's triples for the canonical DID-document predicates ([§4.4](#44-did-document-storage)) and project them into a DID document. Set `trustLevel` to `"local"` for `write` or `governance` mounts, or `"mounted-read"` for `read` mounts.
+1. Locate the host graph: across graphs the local `GraphManager` (per [[PERSONAL-LINKED-DATA-GRAPHS]] §3.4) knows about, find the graph whose triples contain `<this-did> group://wrapsGraph ?iri` (equivalently `<?iri> group://didIdentity <this-did>`). If found, query that graph's triples for the canonical DID-document predicates ([§4.4](#44-did-document-storage)) and project them into a DID document. Set `trustLevel` to `"local"` for `write` or `governance` mounts, or `"mounted-read"` for `read` mounts.
 2. Otherwise, attempt to fetch a snapshot via known sync spaces ([[CONTEXT-SYNC]]). On success:
    - Mount it read-only with `trustLevel: "external"`.
    - Verify the snapshot contains the expected `group://wrapsGraph` binding to its own IRI.
@@ -281,7 +281,7 @@ Resolution never blocks on remote authority — there is no registrar, no ledger
 
 ### 4.7 Deactivation
 
-A `did:graph` DID is deactivated by writing `<did> did://deactivated true` into the host context via the governance flow. Historical signatures remain verifiable against the DID document state at the time of signing. The underlying graph IRI continues to identify the context regardless — deactivation only removes the *signing* identity, not the data.
+A `did:graph` DID is deactivated by writing `<did> did://deactivated true` into the host graph via the governance flow. Historical signatures remain verifiable against the DID document state at the time of signing. The underlying graph IRI continues to identify the graph regardless — deactivation only removes the *signing* identity, not the data.
 
 ---
 
@@ -362,8 +362,8 @@ partial dictionary DIDCredentialCreationOptions {
 };
 
 dictionary GraphDIDCreationOptions {
-  USVString hostGraphIri;                 // graph IRI of an existing context to groupify;
-                                          // if absent, a fresh context is minted alongside
+  USVString hostGraphIri;                 // graph IRI of an existing graph to groupify;
+                                          // if absent, a fresh graph is minted alongside
   sequence<USVString> initialDelegates;   // DIDs to add as capabilityInvocation delegates
                                           // (in addition to the creator)
 };
@@ -383,7 +383,7 @@ enum DIDCapabilitySection {
 };
 ```
 
-For a `did:graph` credential, `addDelegate()` translates into the corresponding `did-document://add-method` triple write against the host context and SHALL reject with `"NotAllowedError"` if the credential does not hold a `capabilityDelegation` delegate permitting the change. `removeDelegate()`, `grantSection()`, and `revokeSection()` translate into the corresponding `did-document://*` writes and follow the same authorisation rule.
+For a `did:graph` credential, `addDelegate()` translates into the corresponding `did-document://add-method` triple write against the host graph and SHALL reject with `"NotAllowedError"` if the credential does not hold a `capabilityDelegation` delegate permitting the change. `removeDelegate()`, `grantSection()`, and `revokeSection()` translate into the corresponding `did-document://*` writes and follow the same authorisation rule.
 
 `signGraph(graphIri)` produces a signed assertion of a graph's current state — the canonical way to attest "I observed graph G at state-hash H at time T." The method MUST:
 
@@ -395,10 +395,10 @@ When the credential's DID is the graph's own `did:graph:...`, the resulting sign
 
 The `DIDCredentialCreationOptions.method` value `"graph"` dispatches to this specification's creation handler. For `method = "graph"`, the user agent MUST:
 
-1. If `graphOptions.hostGraphIri` is provided, perform groupification ([§4.2](#42-groupification)) on the existing context.
-2. Otherwise, create a fresh context via [[PERSONAL-LINKED-DATA-GRAPHS]] §4.1 and immediately groupify it.
+1. If `graphOptions.hostGraphIri` is provided, perform groupification ([§4.2](#42-groupification)) on the existing graph.
+2. Otherwise, create a fresh graph via [[PERSONAL-LINKED-DATA-GRAPHS]] §4.1 and immediately groupify it.
 3. Persist the initial private key in platform secure storage ([[DECENTRALISED-IDENTITY]] §5.1).
-4. Write any `initialDelegates` to the DID document via the host context's governance.
+4. Write any `initialDelegates` to the DID document via the host graph's governance.
 5. Return a `DIDCredential` with `method = "graph"` and `methodId` set to the creator's verification-method id.
 
 The credential's `displayName` prompt MUST make clear that the identity *belongs to a graph*, not to the user personally.
@@ -407,7 +407,7 @@ The credential's `displayName` prompt MUST make clear that the identity *belongs
 
 [[DECENTRALISED-IDENTITY]] §5.3.3 (Revocation) is refined for `did:graph` credentials:
 
-The user holds a *delegate key* on the graph DID. Deleting the local credential prevents the user from signing as the graph going forward but does not affect other delegates, and it does not remove the host context's binding triples — the graph remains groupified. Removing the delegate's *entry* from the graph's DID document is a separate, governance-controlled operation ([§5.3](#53-delegate-lifecycle)).
+The user holds a *delegate key* on the graph DID. Deleting the local credential prevents the user from signing as the graph going forward but does not affect other delegates, and it does not remove the host graph's binding triples — the graph remains groupified. Removing the delegate's *entry* from the graph's DID document is a separate, governance-controlled operation ([§5.3](#53-delegate-lifecycle)).
 
 For `did:key`, only `Add` (at creation) and `Remove` (via credential deletion) apply; `did:key` documents are immutable beyond their initial form. This contrast is the architectural point of `did:graph`: shared, evolvable authority through DID-document writes.
 
@@ -417,7 +417,7 @@ For `did:key`, only `Add` (at creation) and `Remove` (via credential deletion) a
 
 ### 6.1 Group Identity
 
-A group is a groupified context — it has both a `graph://<content-hash>` IRI (its data identity, per [[PERSONAL-LINKED-DATA-GRAPHS]]) and a `did:graph:...` DID (its signing identity, per [§4](#4-the-didgraph-method)), bound by a `group://didIdentity` triple. The DID document — itself triples inside the host context, per [§4.4](#44-did-document-storage) — declares the group's current delegates.
+A group is a groupified graph — it has both a `graph://<content-hash>` IRI (its data identity, per [[PERSONAL-LINKED-DATA-GRAPHS]]) and a `did:graph:...` DID (its signing identity, per [§4](#4-the-didgraph-method)), bound by a `group://didIdentity` triple. The DID document — itself triples inside the host graph, per [§4.4](#44-did-document-storage) — declares the group's current delegates.
 
 Beyond the standard `did:graph` data model, a group MAY carry:
 
@@ -429,46 +429,46 @@ Beyond the standard `did:graph` data model, a group MAY carry:
              group://creator      <did:key:z6MkCreator...> .
 ```
 
-These predicates are stored as triples inside the group's own context.
+These predicates are stored as triples inside the group's own graph.
 
 ### 6.2 Participation
 
-Participation is declared **from below**: a participant context (which MAY be an individual's personal context or another group's context — groupified or not) authors a triple in *its own* graph naming the parent context by either its IRI or, if groupified, its DID:
+Participation is declared **from below**: a participant graph (which MAY be an individual's personal graph or another group's graph — groupified or not) authors a triple in *its own* graph naming the parent graph by either its IRI or, if groupified, its DID:
 
 ```turtle
-# Inside the participant's context (e.g., graph://<alice-personal-hash>):
+# Inside the participant's graph (e.g., graph://<alice-personal-hash>):
 <graph://<alice-personal-hash>>  context://participates_in  <did:graph:engineering-team> .
 ```
 
-The group context confirms acceptance from above:
+The group graph confirms acceptance from above:
 
 ```turtle
-# Inside the group's context (graph://<engineering-team-hash>, groupified as did:graph:engineering-team):
+# Inside the group's graph (graph://<engineering-team-hash>, groupified as did:graph:engineering-team):
 <did:graph:engineering-team>  context://accepts_participation  <graph://<alice-personal-hash>> .
 ```
 
 Either side MAY use the IRI or the DID alias to name the other. Both directions are REQUIRED. Unilateral participation claims (where the child declares but the parent does not accept, or vice versa) are ignored for scope inheritance ([[CAPABILITY-FRAMEWORK]] §6.1).
 
-The acceptance MUST be authored by a delegate in the group's `capabilityDelegation` section AND requires an `acceptParticipation` ZCAP on the group's context.
+The acceptance MUST be authored by a delegate in the group's `capabilityDelegation` section AND requires an `acceptParticipation` ZCAP on the group's graph.
 
 The participation triple lives in the participant's graph. The acceptance triple lives in the group's graph. The participant always controls whether they participate (they can remove their own triple). The group controls whether to accept (it can withdraw its acceptance).
 
-### 6.3 Context Nesting
+### 6.3 Graph Nesting
 
-A group is itself a context, so it can participate in other groups (and ungroupified contexts may also participate up the chain — they simply can't sign as their own collective identity). A team participates in a project; the project participates in a department; the department participates in a company:
+A group is itself a graph, so it can participate in other groups (and ungroupified graphs may also participate up the chain — they simply can't sign as their own collective identity). A team participates in a project; the project participates in a department; the department participates in a company:
 
 ```turtle
-# In did:graph:engineering-team's host context:
+# In did:graph:engineering-team's host graph:
 <did:graph:engineering-team>  context://participates_in  <did:graph:project-alpha> .
 
-# In did:graph:project-alpha's host context:
+# In did:graph:project-alpha's host graph:
 <did:graph:project-alpha>     context://participates_in  <did:graph:r-and-d> .
 
-# In did:graph:r-and-d's host context:
+# In did:graph:r-and-d's host graph:
 <did:graph:r-and-d>           context://participates_in  <did:graph:acme-corp> .
 ```
 
-Each layer is its own context with its own delegates and its own governance. Nesting is detected by walking `context://participates_in` links upward; the runtime MUST enforce a maximum nesting depth (RECOMMENDED: 16) and MUST detect cycles.
+Each layer is its own graph with its own delegates and its own governance. Nesting is detected by walking `context://participates_in` links upward; the runtime MUST enforce a maximum nesting depth (RECOMMENDED: 16) and MUST detect cycles.
 
 An individual who participates in `engineering-team` is NOT automatically a participant of `acme-corp`. Membership is not transitive by default. Capability delegation flows differently (see [§10](#10-governance-integration)).
 
@@ -476,9 +476,9 @@ An individual who participates in `engineering-team` is NOT automatically a part
 
 An individual's identity IS structurally a group with exactly one delegate (themselves). When `navigator.credentials.create({ did: { method: "key", ... } })` runs, the resulting `did:key` is a one-delegate DID and the single agent who controls the key is the sole signer.
 
-A context can be groupified with zero `initialDelegates`, in which case the creator is the sole delegate — structurally identical to an identity holding a single `did:key`, just backed by a graph so additional delegates can later be added. If the holder of a personal identity wants the ability to add delegates later (e.g., to designate a secondary identity to sign on its behalf), they MAY groupify their personal context instead of relying on a `did:key`. The application API is the same.
+A graph can be groupified with zero `initialDelegates`, in which case the creator is the sole delegate — structurally identical to an identity holding a single `did:key`, just backed by a graph so additional delegates can later be added. If the holder of a personal identity wants the ability to add delegates later (e.g., to designate a secondary identity to sign on its behalf), they MAY groupify their personal graph instead of relying on a `did:key`. The application API is the same.
 
-This means there is no separate "create a group" flow that conjures something new. Inviting a collaborator is delegate addition (and optionally participation acceptance) on an already-groupified context. Promoting an ungroupified context to a group is a single `groupify()` call.
+This means there is no separate "create a group" flow that conjures something new. Inviting a collaborator is delegate addition (and optionally participation acceptance) on an already-groupified graph. Promoting an ungroupified graph to a group is a single `groupify()` call.
 
 ---
 
@@ -492,7 +492,7 @@ This section is normative.
 
 **Question answered:** "Who is part of this group?"
 
-**Recorded in:** Triples in participant contexts (`context://participates_in`) plus reciprocal acceptance in the group context (`context://accepts_participation`).
+**Recorded in:** Triples in participant graphs (`context://participates_in`) plus reciprocal acceptance in the group graph (`context://accepts_participation`).
 
 **Authority required:** The participant declares; the group accepts via an `acceptParticipation` ZCAP held by a `capabilityDelegation` delegate.
 
@@ -518,7 +518,7 @@ Consider a company. The CEO can sign contracts on the company's behalf — they 
 
 Concretely:
 
-- **Participation answers governance scope.** What rules apply to your writes? You inherit them from the contexts you participate in.
+- **Participation answers governance scope.** What rules apply to your writes? You inherit them from the graphs you participate in.
 - **Signing authority answers attribution.** When a signature is presented, who counts as the signer? Any current delegate.
 
 The two overlap by convention (a participant who is also a `capabilityInvocation` delegate is common). But the substrate keeps them in different sections of the data model so they can be managed independently.
@@ -555,14 +555,14 @@ But this is governance-layer composition, not a built-in cryptographic feature o
 
 ### 8.1 The Group Convenience Interface
 
-The `Group` interface is a thin convenience wrapper over `Context` + `DIDCredential`. It exists for ergonomics; everything it does can be done directly via the underlying APIs ([§5.4](#54-extending-didcredential-for-didgraph)).
+The `Group` interface is a thin convenience wrapper over `Graph` + `DIDCredential`. It exists for ergonomics; everything it does can be done directly via the underlying APIs ([§5.4](#54-extending-didcredential-for-didgraph)).
 
 ```webidl
 [Exposed=Window, SecureContext]
 interface Group {
   readonly attribute USVString did;          // did:graph:... (the signing identity)
-  readonly attribute USVString iri;          // graph://<content-hash> (the host context's IRI)
-  readonly attribute Context context;        // the host context
+  readonly attribute USVString iri;          // graph://<content-hash> (the host graph's IRI)
+  readonly attribute Graph graph;        // the host graph
   readonly attribute DOMString? name;
   readonly attribute DOMString? description;
   readonly attribute DOMString created;      // RFC 3339
@@ -609,7 +609,7 @@ dictionary DelegateOptions {
 
 #### 8.1.1 invite(participantDid)
 
-Adds an `accepts_participation` triple in the group's context. Requires the caller to hold an `acceptParticipation` ZCAP. The named participant must then add its own `participates_in` triple in its own context to complete participation.
+Adds an `accepts_participation` triple in the group's graph. Requires the caller to hold an `acceptParticipation` ZCAP. The named participant must then add its own `participates_in` triple in its own graph to complete participation.
 
 #### 8.1.2 revokeParticipation(participantDid)
 
@@ -617,7 +617,7 @@ Removes the group's acceptance triple. Requires an `acceptParticipation` ZCAP.
 
 #### 8.1.3 participants() / transitiveParticipants()
 
-`participants()` returns the direct participant set. `transitiveParticipants()` recursively resolves all individual participants of nested participating groups, with cycle detection per [§6.3](#63-context-nesting).
+`participants()` returns the direct participant set. `transitiveParticipants()` recursively resolves all individual participants of nested participating groups, with cycle detection per [§6.3](#63-graph-nesting).
 
 #### 8.1.4 addSigner / removeSigner
 
@@ -625,18 +625,18 @@ Wraps [§5.4](#54-extending-didcredential-for-didgraph)'s delegate management. M
 
 #### 8.1.5 delegateCapability
 
-Issues a ZCAP whose `resource` is this group's host context (referenced by IRI or by `did:graph` alias), or another resource the group has authority over. Signed by a current `capabilityDelegation` delegate. Optionally `transitiveToParticipants` carries the `context://capability_transitive: true` predicate so the capability MAY be invoked by participants of the named invoker group.
+Issues a ZCAP whose `resource` is this group's host graph (referenced by IRI or by `did:graph` alias), or another resource the group has authority over. Signed by a current `capabilityDelegation` delegate. Optionally `transitiveToParticipants` carries the `context://capability_transitive: true` predicate so the capability MAY be invoked by participants of the named invoker group.
 
-### 8.2 GraphStore Extension
+### 8.2 GraphManager Extension
 
-A group is created inside, and mounted into, a specific `GraphStore` ([[PERSONAL-LINKED-DATA-GRAPHS]] §3.4). The group's host context joins that store's mount table.
+A group is created via the user agent's `GraphManager` (`navigator.graph`, defined in [[PERSONAL-LINKED-DATA-GRAPHS]] §3.4).
 
 ```webidl
-partial interface GraphStore {
-  /** Create a fresh context AND groupify it in one step. */
+partial interface GraphManager {
+  /** Create a fresh graph AND groupify it in one step. */
   [NewObject] Promise<Group> createGroup(optional GroupCreationOptions options);
 
-  /** Groupify an existing ungroupified context. One-way upgrade. */
+  /** Groupify an existing ungroupified graph. One-way upgrade. */
   [NewObject] Promise<Group> groupify(USVString graphIri, optional GroupifyOptions options);
 
   /** Open a group by its IRI or its did:graph alias. */
@@ -664,15 +664,15 @@ dictionary GroupifyOptions {
 
 #### 8.2.1 createGroup
 
-Creates a fresh context via [[PERSONAL-LINKED-DATA-GRAPHS]] §4.1, immediately groupifies it via [§4.2](#42-groupification), mounts it in `"governance"` mode, populates the standard `group://` metadata, and optionally configures sync ([[CONTEXT-SYNC]]) and governance ([[CAPABILITY-FRAMEWORK]]). Returns a `Group` convenience handle. This is the one-call convenience path for new collective identities.
+Creates a fresh graph via [[PERSONAL-LINKED-DATA-GRAPHS]] §4.1, immediately groupifies it via [§4.2](#42-groupification), populates the standard `group://` metadata, and optionally configures sync ([[CONTEXT-SYNC]]) and governance ([[CAPABILITY-FRAMEWORK]]). Returns a `Group` convenience handle. This is the one-call convenience path for new collective identities.
 
 #### 8.2.2 groupify
 
-Performs [§4.2](#42-groupification) on an *existing* ungroupified context. Requires the caller to hold a `groupifyContext` ZCAP on the context (the root capability minted at creation includes this). Rejects with `"InvalidStateError"` if the context is already groupified. After this call, `context.did` returns a `did:graph:...` and a `Group` handle is returned.
+Performs [§4.2](#42-groupification) on an *existing* ungroupified graph. Requires the caller to hold a `groupifyContext` ZCAP on the graph (the root capability minted at creation includes this). Rejects with `"InvalidStateError"` if the graph is already groupified. After this call, `graph.did` returns a `did:graph:...` and a `Group` handle is returned.
 
 #### 8.2.3 openGroup
 
-Mounts an existing group's context (per [[PERSONAL-LINKED-DATA-GRAPHS]] §4.2) and returns the convenience handle. The argument MAY be either the host context's IRI or its `did:graph` alias.
+Opens an existing group's host graph (via [[CONTEXT-SYNC]] mount with `mode: "read"`, "write", or "governance" as appropriate) and returns the convenience handle. The argument MAY be either the host graph's IRI or its `did:graph` alias.
 
 ---
 
@@ -690,26 +690,26 @@ const team = await navigator.graph.createGroup({
 
 Behind the scenes:
 
-1. A fresh context is minted via [[PERSONAL-LINKED-DATA-GRAPHS]] §4.1, yielding a `graph://<content-hash>` IRI.
-2. A new `did:graph` keypair is generated and the context is groupified ([§4.2](#42-groupification)): the binding triples and seed DID-document triples are written. The creator becomes the first delegate.
+1. A fresh graph is minted via [[PERSONAL-LINKED-DATA-GRAPHS]] §4.1, yielding a `graph://<content-hash>` IRI.
+2. A new `did:graph` keypair is generated and the graph is groupified ([§4.2](#42-groupification)): the binding triples and seed DID-document triples are written. The creator becomes the first delegate.
 3. `initialDelegates` are added via `did-document://add-method` and `did-document://grant-section` writes (subject to `updateDIDDocument` ZCAP, which the creator holds via the root capability).
 4. The group's metadata is written.
-5. The context is mounted in `"governance"` mode.
+5. The graph is mounted in `"governance"` mode.
 6. The `Group` convenience handle is returned.
 
-To groupify an *existing* ungroupified context, use `store.groupify(graphIri)` instead — the IRI stays the same; the DID and DID document are added in place.
+To groupify an *existing* ungroupified graph, use `navigator.graph.groupify(graphIri)` instead — the IRI stays the same; the DID and DID document are added in place.
 
 ### 9.2 Inviting a Participant
 
-The group's acceptance triple is written first; the participant then completes participation in their own context.
+The group's acceptance triple is written first; the participant then completes participation in their own graph.
 
 ```javascript
-// In the group's GraphStore (with acceptParticipation capability):
+// On the group's side (with acceptParticipation capability):
 await team.invite("graph://<alice-personal-hash>");
 
 // Out of band, Alice receives the invitation.
-// In Alice's GraphStore:
-const alicePersonal = await me.getContext(me.privateGraphIri);
+// On Alice's side:
+const alicePersonal = await navigator.graph.create({ displayName: "Alice (personal)" });
 await alicePersonal.addTriple({
   subject: alicePersonal.iri,
   predicate: "context://participates_in",
@@ -750,9 +750,9 @@ A group with zero participants is valid. A group with zero `capabilityInvocation
 
 ## 10. Governance Integration
 
-### 10.1 Group as Governance Context
+### 10.1 Group as Governance Graph
 
-A group's host context is governed like any other context: its root capability is minted at creation, ZCAPs target the context (by IRI or by `did:graph` alias) as resource, scope inheritance follows participation links.
+A group's host graph is governed like any other graph: its root capability is minted at creation, ZCAPs target the graph (by IRI or by `did:graph` alias) as resource, scope inheritance follows participation links.
 
 The creator holds the root capability initially. Delegating it (e.g., to a separate "Governance Council" group's DID) shifts the locus of authority — and once delegated, the creator has no special standing.
 
@@ -794,7 +794,7 @@ This is OFF by default. Most capabilities should be delegate-bound rather than p
 
 ### 10.4 Membership Governance
 
-The rules governing who can be invited and how participation is accepted live as governance triples in the group's context:
+The rules governing who can be invited and how participation is accepted live as governance triples in the group's graph:
 
 ```turtle
 <group-did>
@@ -818,32 +818,32 @@ An individual's identity and a group's identity are the same kind of thing at th
 
 When a user creates a `did:key` ([[DECENTRALISED-IDENTITY]] §4.1), they have an identity with exactly one verification method.
 
-When a user creates a `did:graph` with `initialDelegates: []` ([§9.1](#91-creation)), they have a groupified context with exactly one delegate (themselves) and no participants.
+When a user creates a `did:graph` with `initialDelegates: []` ([§9.1](#91-creation)), they have a groupified graph with exactly one delegate (themselves) and no participants.
 
 The two are structurally identical for the purposes of "an entity that can sign and hold capabilities." The difference is that `did:graph` supports adding more delegates later via DID-document updates; `did:key` is locked to its single derived method.
 
 ### 11.2 "Upgrade to Group" Is a Single Triple Write
 
-A context that begins ungroupified (Spec 02) can be promoted to a group with a single `groupify()` call: no migration, no data move, no IRI change. The host context's IRI is unchanged; the data already in it is unchanged. Only new triples are added — the binding + DID document.
+A graph that begins ungroupified (Spec 02) can be promoted to a group with a single `groupify()` call: no migration, no data move, no IRI change. The host graph's IRI is unchanged; the data already in it is unchanged. Only new triples are added — the binding + DID document.
 
 Inviting an additional collaborator once groupified is two further operations on existing structures:
 
 - Adding a delegate to the existing `did:graph`'s DID document (so the collaborator can sign as the group).
 - Issuing an invitation (writing `accepts_participation`) so the collaborator can declare participation.
 
-Neither operation creates a new identity or moves data. The DID is unchanged. The host context is unchanged. Only the membership counts change.
+Neither operation creates a new identity or moves data. The DID is unchanged. The host graph is unchanged. Only the membership counts change.
 
 ### 11.3 Why This Matters
 
 Many collaboration systems have a seam between "personal" and "shared." You have a personal account; you "create an organisation" which is a different kind of entity. These seams cause accidental complexity — migration paths, permission-model mismatches, two sets of APIs.
 
-This specification eliminates the seam. The substrate has one identity primitive (the DID, via [[DECENTRALISED-IDENTITY]]) and one data primitive (the Context, via [[PERSONAL-LINKED-DATA-GRAPHS]]). Both work for one and for billions.
+This specification eliminates the seam. The substrate has one identity primitive (the DID, via [[DECENTRALISED-IDENTITY]]) and one data primitive (the Graph, via [[PERSONAL-LINKED-DATA-GRAPHS]]). Both work for one and for billions.
 
 ### 11.4 Formal Statement
 
-Let I be an individual's identity (a `did:key` or a groupified context with a single delegate). Let G be a collective's identity (a groupified context with multiple delegates). The following MUST hold:
+Let I be an individual's identity (a `did:key` or a groupified graph with a single delegate). Let G be a collective's identity (a groupified graph with multiple delegates). The following MUST hold:
 
-1. I and G are both represented as DIDs with DID documents and (for `did:graph`) backing host contexts.
+1. I and G are both represented as DIDs with DID documents and (for `did:graph`) backing host graphs.
 2. All operations defined in this specification's API ([§8](#8-api)) that are valid on G are also valid on I (subject to capability checks).
 3. The return types and semantics of operations are identical.
 4. No API method, predicate, or governance rule distinguishes I from G based on participant count or delegate count.
@@ -869,10 +869,10 @@ The substrate makes this a natural consequence of composition: identity ([[DECEN
 
 ### 12.2 Delegation as a Signed Triple
 
-A delegation is a triple in the delegator's context:
+A delegation is a triple in the delegator's graph:
 
 ```turtle
-# In Alice's personal context (graph://<alice-personal-hash>, optionally groupified):
+# In Alice's personal graph (graph://<alice-personal-hash>, optionally groupified):
 <graph://<alice-personal-hash>>
   vote://delegates_to    <did:graph:energy-experts> ;
   vote://delegates_topic <topic://climate-energy> ;
@@ -900,7 +900,7 @@ The resulting ballot is signed by a current `capabilityInvocation` delegate of t
 Delegated voting is not a feature added to this substrate. It is the result of:
 
 - Identity at every scale, via DIDs.
-- Per-context governance (ZCAPs, immanent rules).
+- Per-graph governance (ZCAPs, immanent rules).
 - Structured reasoning as data (triples — delegate reasoning is queryable).
 - Nesting (parts forming wholes forming parts).
 
@@ -942,7 +942,7 @@ Capabilities delegated to a group DID with `context://capability_transitive: tru
 
 DID-document writes are governance-controlled via `did-document://*` predicates ([§4.3](#43-document-updates), [[CAPABILITY-FRAMEWORK]] §10). An agent without `updateDIDDocument` capability cannot modify the document.
 
-For `did:graph`, the DID document is triple data in the underlying context. Its integrity depends on the context's own integrity (sync-layer governance, capability proofs, snapshot signatures). A user agent MUST refuse to honour signatures by methods listed in a DID document fetched from an `"external"` source if the source snapshot's authorship cannot be verified.
+For `did:graph`, the DID document is triple data in the underlying graph. Its integrity depends on the graph's own integrity (sync-layer governance, capability proofs, snapshot signatures). A user agent MUST refuse to honour signatures by methods listed in a DID document fetched from an `"external"` source if the source snapshot's authorship cannot be verified.
 
 ### 13.6 Group Impersonation
 
@@ -958,23 +958,23 @@ Deep nesting can cause resource exhaustion. Implementations MUST enforce a maxim
 
 ### 14.1 Participation Visibility
 
-`accepts_participation` triples are in the group's context; `participates_in` triples are in the participant's context. Both are visible to anyone with read access to the respective contexts.
+`accepts_participation` triples are in the group's graph; `participates_in` triples are in the participant's graph. Both are visible to anyone with read access to the respective graphs.
 
 ### 14.2 Delegate-Set Disclosure
 
-The group's DID document is part of its context. Anyone with read access to the context sees the current delegates. A DID document discloses *who can sign as the group* — if delegate keys are tied to individual identities, the document leaks the signing-membership. Communities that need delegate-set privacy SHOULD use rotated, single-use delegate keys not tied to long-term individual DIDs and treat the DID document as public.
+The group's DID document is part of its graph. Anyone with read access to the graph sees the current delegates. A DID document discloses *who can sign as the group* — if delegate keys are tied to individual identities, the document leaks the signing-membership. Communities that need delegate-set privacy SHOULD use rotated, single-use delegate keys not tied to long-term individual DIDs and treat the DID document as public.
 
-### 14.3 Per-Context Identity
+### 14.3 Per-Graph Identity
 
-An agent SHOULD use different `did:key`s when participating in different groups, to prevent cross-context correlation. The substrate makes this cheap.
+An agent SHOULD use different `did:key`s when participating in different groups, to prevent cross-graph correlation. The substrate makes this cheap.
 
 ### 14.4 Nesting Structure Leakage
 
-Context nesting reveals organisational structure. If A participates in B which participates in C, the chain reveals a hierarchy to anyone reading these contexts. For high-privacy needs, nesting MAY be implemented via a separate (sync-isolated) context.
+Graph nesting reveals organisational structure. If A participates in B which participates in C, the chain reveals a hierarchy to anyone reading these graphs. For high-privacy needs, nesting MAY be implemented via a separate (sync-isolated) graph.
 
 ### 14.5 Delegated Vote Deliberation
 
-When a delegate is a group, that group's internal deliberation may include sensitive opinions of participants. Communities that need internal-deliberation privacy SHOULD use a Privacy-Tiered or Fully Partitioned sync topology ([[CONTEXT-SYNC]] §7.2) for the deliberation context.
+When a delegate is a group, that group's internal deliberation may include sensitive opinions of participants. Communities that need internal-deliberation privacy SHOULD use a Privacy-Tiered or Fully Partitioned sync topology ([[CONTEXT-SYNC]] §7.2) for the deliberation graph.
 
 ---
 
@@ -1008,24 +1008,21 @@ const me = await navigator.credentials.create({
 });
 console.log(me.did);      // "did:key:z6Mk..."
 
-// Or: create a context (ungroupified) and groupify it later if you ever
-// want to add signing delegates. Ungroupified contexts are perfectly fine
+// Or: create a graph (ungroupified) and groupify it later if you ever
+// want to add signing delegates. Ungroupified graphs are perfectly fine
 // for personal data.
-const store = await navigator.graph.create("Alice");
-const personal = await store.createContext({ displayName: "Alice (personal)" });
+const personal = await navigator.graph.create({ displayName: "Alice (personal)" });
 console.log(personal.iri);   // "graph://<hash>..."
 console.log(personal.did);   // null — ungroupified
 
 // Later, if you want to add a software-agent delegate:
-const personalGroup = await store.groupify(personal.iri);
+const personalGroup = await navigator.graph.groupify(personal.iri);
 console.log(personalGroup.did);  // "did:graph:z6Mk..." — now has signing identity
 ```
 
 ### 15.3 Create a Team via the Group Convenience API
 
 ```javascript
-const me = await navigator.graph.create("Workspace");
-
 const team = await navigator.graph.createGroup({
   displayName: "Project Alpha",
   description: "Core development team",
@@ -1088,17 +1085,16 @@ console.log(sig.data);
 // { graphIri: "graph://<content-hash>...", stateHash: "sha256-..." }
 ```
 
-### 15.7 Groupify an Existing Ungroupified Context
+### 15.7 Groupify an Existing Ungroupified Graph
 
 ```javascript
-// Alice has been collecting notes in a personal context.
-const store = await navigator.graph.create("Alice");
-const notes = await store.createContext({ displayName: "Notes" });
+// Alice has been collecting notes in a personal graph.
+const notes = await navigator.graph.create({ displayName: "Notes" });
 await notes.addTriple(new Triple("urn:note:1", "schema://text", "first note"));
 
 // Later, she wants to share these with a co-author and let either of them
-// sign on the notes' behalf. Promote the context to a group:
-const notesGroup = await store.groupify(notes.iri, {
+// sign on the notes' behalf. Promote the graph to a group:
+const notesGroup = await navigator.graph.groupify(notes.iri, {
   initialDelegates: ["did:key:z6MkBob..."],
 });
 
@@ -1152,8 +1148,8 @@ await moderators.addSigner(
 ### 15.10 Delegate a Vote to a Group
 
 ```javascript
-// In Alice's personal context: delegate her energy-policy vote to a working group.
-const alicePersonal = await me.getContext(me.privateGraphIri);
+// In Alice's personal graph: delegate her energy-policy vote to a working group.
+const alicePersonal = await navigator.graph.create({ displayName: "Alice (personal)" });
 
 await alicePersonal.addTriple({
   subject: alicePersonal.iri,
@@ -1195,8 +1191,8 @@ console.log(doc.trustLevel);   // "local" | "mounted-read" | "external" | "cache
 | `did-document://remove-method` | `did:graph` DID | (governance op) | Removes a method entirely. |
 | `did-document://grant-section` | `did:graph` DID | (governance op) | Adds a method to a capability section. |
 | `did-document://revoke-section` | `did:graph` DID | (governance op) | Removes a method from a capability section. |
-| `group://didIdentity` | Graph IRI | `did:graph` DID | Binds a host context's IRI to its (optional) DID identity. Present iff the context has been groupified. |
-| `group://wrapsGraph` | `did:graph` DID | Graph IRI | Reverse of `group://didIdentity`. Lets the resolver find a DID's host context by querying the DID. |
+| `group://didIdentity` | Graph IRI | `did:graph` DID | Binds a host graph's IRI to its (optional) DID identity. Present iff the graph has been groupified. |
+| `group://wrapsGraph` | `did:graph` DID | Graph IRI | Reverse of `group://didIdentity`. Lets the resolver find a DID's host graph by querying the DID. |
 | `group://name` | Group DID | Literal string | Human-readable group name |
 | `group://description` | Group DID | Literal string | Group description |
 | `group://avatar` | Group DID | URI | URI of the group's avatar |
@@ -1206,8 +1202,8 @@ console.log(doc.trustLevel);   // "local" | "mounted-read" | "external" | "cache
 | `group://participation_requires_credential` | Group DID | VC type URI | Credential required for participation acceptance |
 | `group://participation_max_count` | Group DID | xsd:integer | Maximum number of accepted participants |
 | `group://participation_vote_threshold` | Group DID | xsd:integer | Number of delegate approvals required for new participants |
-| `context://participates_in` | Participant DID (any context) | Group DID | Asserted in the participant's context; declares participation. Mutually required. |
-| `context://accepts_participation` | Group DID | Participant DID | Asserted in the group's context; confirms participation. Mutually required; MUST be signed by a `capabilityDelegation` delegate of the group. |
+| `context://participates_in` | Participant DID (any graph) | Group DID | Asserted in the participant's graph; declares participation. Mutually required. |
+| `context://accepts_participation` | Group DID | Participant DID | Asserted in the group's graph; confirms participation. Mutually required; MUST be signed by a `capabilityDelegation` delegate of the group. |
 | `context://capability_transitive` | ZCAP URI | xsd:boolean | If true, the capability may be invoked by participants of the named invoker group. Default: false. |
 | `vote://delegates_to` | Participant DID | DID (individual or group) | Asserts a vote delegation. |
 | `vote://delegates_topic` | Participant DID | Topic URI | Scopes the delegation to a topic. |
@@ -1226,7 +1222,7 @@ console.log(doc.trustLevel);   // "local" | "mounted-read" | "external" | "cache
 
 **[CAPABILITY-FRAMEWORK]** [Graph Capability Framework](./03_graph-capability-framework.md).
 
-**[CONTEXT-SYNC]** [Context Synchronisation Protocol](./04_context-sync-protocol.md).
+**[CONTEXT-SYNC]** [Graph Synchronisation Protocol](./04_context-sync-protocol.md).
 
 **[DID-CORE]** Decentralized Identifiers (DIDs) v1.0. W3C Recommendation, 19 July 2022. https://www.w3.org/TR/did-core/
 

@@ -91,7 +91,7 @@ export function revokeCapability(revokerDid: string, zcapId: string): Revocation
 }
 
 /**
- * Issue ZCAPs for a joining peer based on the context's default-capability templates.
+ * Issue ZCAPs for a joining peer based on the graph's default-capability templates.
  */
 export async function issueDefaultCapabilities(
   peerDid: string,

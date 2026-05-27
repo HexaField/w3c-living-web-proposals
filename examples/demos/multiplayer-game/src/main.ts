@@ -50,7 +50,7 @@ function showSetup(): void {
     try {
       const { did, identity } = await createIdentity(displayName);
       const state = await createWorld(displayName, worldName, identity, did);
-      window.location.hash = state.context.iri;
+      window.location.hash = state.graph.iri;
       startGame(state);
     } catch (e) { alert('Failed: ' + (e as Error).message); }
   });
@@ -59,7 +59,7 @@ function showSetup(): void {
     const displayName = (document.getElementById('display-name') as HTMLInputElement).value.trim();
     const contextDid = (document.getElementById('graph-uri') as HTMLInputElement).value.trim();
     if (!displayName) { alert('Please enter a display name'); return; }
-    if (!contextDid) { alert('Please enter a world context DID'); return; }
+    if (!contextDid) { alert('Please enter a world graph DID'); return; }
     try {
       const { did, identity } = await createIdentity(displayName);
       const state = await joinWorld(displayName, contextDid, identity, did);

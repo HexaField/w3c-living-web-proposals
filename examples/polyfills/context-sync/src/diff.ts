@@ -1,5 +1,5 @@
 /**
- * ContextDiff construction + revision hashing.
+ * GraphDiff construction + revision hashing.
  *
  * Revision = hex(SHA-256(graphDid || canonicalise(additions) || canonicalise(removals) || sort(deps))).
  * The canonicalisation here is a deterministic textual form sufficient for the
@@ -10,7 +10,7 @@
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import type { SignedTriple } from '@living-web/personal-graph';
-import { ContextDiff, type CapabilityProof } from './types.js';
+import { GraphDiff, type CapabilityProof } from './types.js';
 
 function canonicalise(triples: readonly SignedTriple[]): string {
   return triples.map(t => {
@@ -41,10 +41,10 @@ export function createContextDiff(opts: {
   author: string;
   timestamp?: string;
   diffsSinceSnapshot?: number;
-}): ContextDiff {
+}): GraphDiff {
   const dependencies = opts.dependencies ?? [];
   const revision = computeRevision(opts.graphDid, opts.additions, opts.removals, dependencies);
-  return new ContextDiff({
+  return new GraphDiff({
     graphDid: opts.graphDid,
     revision,
     additions: opts.additions,

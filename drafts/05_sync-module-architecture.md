@@ -55,7 +55,7 @@ This specification defines:
 ### 1.3 Relationship to Other Specifications
 
 - [[CONTEXT-SYNC]] defines the protocol that modules implement.
-- [[PERSONAL-LINKED-DATA-GRAPHS]] defines the Context and Triple types passed across the module boundary.
+- [[PERSONAL-LINKED-DATA-GRAPHS]] defines the Graph and Triple types passed across the module boundary.
 - [[CAPABILITY-FRAMEWORK]] defines the governance engine that a module's `validate()` invokes.
 - [[WEBASSEMBLY]] is the execution environment for modules.
 
@@ -94,7 +94,7 @@ A **conforming sync module** MUST implement the `GraphSyncModule` interface ([§
 <dd>The user-agent-managed sandbox in which modules execute. Isolated from the page realm, from other modules, and from arbitrary network/storage access.</dd>
 
 <dt><dfn>Capability Handle</dfn></dt>
-<dd>An opaque token granting a module access to a specific runtime resource (a context's triples, a relay endpoint, a crypto operation, etc.). Capability handles are minted by the user agent at module initialisation and cannot be forged or extended by the module.</dd>
+<dd>An opaque token granting a module access to a specific runtime resource (a graph's triples, a relay endpoint, a crypto operation, etc.). Capability handles are minted by the user agent at module initialisation and cannot be forged or extended by the module.</dd>
 </dl>
 
 ---
@@ -132,9 +132,9 @@ Modules execute in a **user-agent-managed execution environment** outside the pa
 
 - Modules persist across tab navigations and user agent restarts.
 - Modules are not tied to any origin.
-- Multiple pages from different origins can interact with the same context through the same module instance.
+- Multiple pages from different origins can interact with the same graph through the same module instance.
 
-The module runs in a WebAssembly sandbox with capability-scoped permissions ([§7](#7-module-capabilities)). The module has NO access to: DOM, other contexts' data, the filesystem, arbitrary network endpoints (only those granted by capabilities), user data, cookies, local storage, or other sync modules.
+The module runs in a WebAssembly sandbox with capability-scoped permissions ([§7](#7-module-capabilities)). The module has NO access to: DOM, other graphs' data, the filesystem, arbitrary network endpoints (only those granted by capabilities), user data, cookies, local storage, or other sync modules.
 
 ### 4.5 Module Availability and Upgrade
 
@@ -162,8 +162,8 @@ interface GraphSyncModule {
   undefined connect(USVString spaceUri, USVString localDid);
   undefined disconnect();
 
-  // Sync (per context)
-  USVString commit(USVString graphDid, ContextDiff diff);   // returns the diff's revision
+  // Sync (per graph)
+  USVString commit(USVString graphDid, GraphDiff diff);   // returns the diff's revision
   undefined onRemoteDiff(RemoteDiffCallback callback);
   undefined requestSync(USVString graphDid, USVString fromRevision);
 
@@ -177,18 +177,18 @@ interface GraphSyncModule {
   undefined onSignal(SignalCallback callback);
 
   // Governance validation — graphDid is explicit so a module serving multiple
-  // contexts in one space can route to the correct governance engine.
-  SyncValidationResult validate(USVString graphDid, ContextDiff diff,
+  // graphs in one space can route to the correct governance engine.
+  SyncValidationResult validate(USVString graphDid, GraphDiff diff,
                                 USVString author, GraphReader graphState);
 };
 
-callback RemoteDiffCallback = SyncValidationResult (USVString graphDid, ContextDiff diff);
+callback RemoteDiffCallback = SyncValidationResult (USVString graphDid, GraphDiff diff);
 callback SignalCallback = undefined (USVString remoteDid, bytes payload);
 ```
 
-`ContextDiff`, `Peer`, and `SyncValidationResult` are defined in [[CONTEXT-SYNC]] §5.
+`GraphDiff`, `Peer`, and `SyncValidationResult` are defined in [[CONTEXT-SYNC]] §5.
 
-Modules MAY treat multiple contexts as a single causal stream within one space (Unified topology) but MUST keep per-context capability checks.
+Modules MAY treat multiple graphs as a single causal stream within one space (Unified topology) but MUST keep per-graph capability checks.
 
 ### 5.2 ModuleConfig
 
@@ -206,7 +206,7 @@ dictionary ModuleConfig {
 
 ### 5.3 GraphReader & GraphWriter
 
-The runtime provides capability handles giving the module scoped read/write access **per context**:
+The runtime provides capability handles giving the module scoped read/write access **per graph**:
 
 ```webidl
 interface GraphReader {
@@ -216,11 +216,11 @@ interface GraphReader {
 };
 
 interface GraphWriter {
-  Promise<undefined> apply(USVString graphDid, ContextDiff diff);
+  Promise<undefined> apply(USVString graphDid, GraphDiff diff);
 };
 ```
 
-The module MUST pass `graphDid` on every read/write to scope the operation. The runtime rejects requests for contexts the module is not authorised for.
+The module MUST pass `graphDid` on every read/write to scope the operation. The runtime rejects requests for graphs the module is not authorised for.
 
 ### 5.4 CryptoProvider & NetworkProvider
 
@@ -239,13 +239,13 @@ Crypto and network access are mediated handles, not direct capabilities. The run
 2. Verify the SHA-256 content hash.
 3. Parse the manifest and extract requested capabilities.
 4. Display the user consent prompt ([§6.2](#62-user-consent)).
-5. On approval, store the module, register it, and (if a context is waiting) initialise it.
+5. On approval, store the module, register it, and (if a graph is waiting) initialise it.
 
 ### 6.2 User Consent
 
 Installing a sync module is privileged. The user agent MUST obtain explicit user consent:
 
-1. Display a prompt identifying the content hash, the capabilities requested ([§7](#7-module-capabilities)), the contexts/spaces that will use the module, and the relay endpoints.
+1. Display a prompt identifying the content hash, the capabilities requested ([§7](#7-module-capabilities)), the graphs/spaces that will use the module, and the relay endpoints.
 2. Require explicit "Allow" or "Deny".
 3. The user agent SHOULD remember the decision for subsequent encounters with the same hash.
 
@@ -262,7 +262,7 @@ When a space announces a new module hash, the runtime:
 The user MAY remove a module via the management UI. Removal:
 
 1. Disconnects all spaces using the module.
-2. Unmounts contexts that depended on the module (preserving the per-context stores).
+2. Unmounts graphs that depended on the module (preserving the per-graph stores).
 3. Removes the module binary and capability grants.
 
 ### 6.5 Suspension
@@ -271,7 +271,7 @@ The runtime MAY suspend a module under resource pressure. Suspended modules reta
 
 ### 6.6 Management UI
 
-The user agent SHOULD provide a management interface analogous to "Manage Extensions" — see installed modules, content hashes, statuses, which contexts/spaces use them, and resource consumption. Allow pause, resume, removal.
+The user agent SHOULD provide a management interface analogous to "Manage Extensions" — see installed modules, content hashes, statuses, which graphs/spaces use them, and resource consumption. Allow pause, resume, removal.
 
 ---
 
@@ -281,8 +281,8 @@ The sandbox grants modules a fixed set of capability handles. Modules may not sy
 
 | Capability | Permits |
 |---|---|
-| `graph.read` | Read triples from the contexts the module serves |
-| `graph.write` | Apply ContextDiffs to the contexts the module serves |
+| `graph.read` | Read triples from the graphs the module serves |
+| `graph.write` | Apply ContextDiffs to the graphs the module serves |
 | `crypto.sign` | Sign data with the local agent's DID key (via runtime mediation; no key material exposed) |
 | `crypto.verify` | Verify signatures |
 | `network.relay.<endpoint>` | Open WebTransport/WebSocket to a specific relay endpoint |
@@ -306,7 +306,7 @@ The user agent MUST verify the SHA-256 content hash of every downloaded module b
 
 ### 8.3 Capability Containment
 
-A module's capability handles MUST be unforgeable; the module MUST NOT be able to manufacture references to contexts, endpoints, or storage outside its grant set.
+A module's capability handles MUST be unforgeable; the module MUST NOT be able to manufacture references to graphs, endpoints, or storage outside its grant set.
 
 ### 8.4 Module Update Quorum
 
@@ -326,7 +326,7 @@ A module's `validate()` is normatively required to invoke the [[CAPABILITY-FRAME
 
 ### 9.1 Module-Observable Metadata
 
-A module sees: the `graphDid`s it is authorised for; the `Peer` records for those graphs; the contents of `ContextDiff`s for those graphs; signals exchanged in its sync space. The module does NOT see other contexts the agent has mounted, the user's identity beyond the supplied `localDid`, or any content outside its sync space.
+A module sees: the `graphDid`s it is authorised for; the `Peer` records for those graphs; the contents of `GraphDiff`s for those graphs; signals exchanged in its sync space. The module does NOT see other graphs the agent has mounted, the user's identity beyond the supplied `localDid`, or any content outside its sync space.
 
 ### 9.2 Module-Private Storage Disclosure
 
@@ -345,7 +345,7 @@ Because modules execute outside the page realm, they MUST NOT be addressable fro
 - **[RFC2119]** Bradner, S., "Key words for use in RFCs to Indicate Requirement Levels", BCP 14, RFC 2119, March 1997.
 - **[RFC8174]** Leiba, B., "Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words", BCP 14, RFC 8174, May 2017.
 - **[WEBASSEMBLY]** "WebAssembly Core Specification", W3C Recommendation. https://www.w3.org/TR/wasm-core-2/
-- **[CONTEXT-SYNC]** [Context Synchronisation Protocol](./04_context-sync-protocol.md).
+- **[CONTEXT-SYNC]** [Graph Synchronisation Protocol](./04_context-sync-protocol.md).
 - **[PERSONAL-LINKED-DATA-GRAPHS]** [Personal Linked Data Graphs](./02_personal-linked-data-graphs.md).
 - **[CAPABILITY-FRAMEWORK]** [Graph Capability Framework](./03_graph-capability-framework.md).
 

@@ -1,4 +1,4 @@
-# Context Synchronisation Protocol
+# Graph Synchronisation Protocol
 
 **W3C Draft Community Group Report**
 
@@ -9,12 +9,12 @@
 
 ## Abstract
 
-This specification defines a protocol for synchronising **contexts** (named graphs, per [[PERSONAL-LINKED-DATA-GRAPHS]]) between multiple agents in a peer-to-peer manner. Synchronisation is keyed by a context's sovereign DID (the `Context.did` attribute defined in [[PERSONAL-LINKED-DATA-GRAPHS]] §3.3). A sovereign DID is REQUIRED for sync: a context's `graph://<content-hash>` IRI changes whenever its triples change, so it cannot serve as the durable subscription handle that sync needs. Contexts without a sovereign DID can still be transported between agents as immutable snapshots ([[PERSONAL-LINKED-DATA-GRAPHS]] §5), but they cannot be *synced* — sync presupposes an evolving graph with a stable, content-independent identity. How a sovereign DID is attached to a context is out of scope for this specification. This specification defines:
+This specification defines a protocol for synchronising **graphs** (named graphs, per [[PERSONAL-LINKED-DATA-GRAPHS]]) between multiple agents in a peer-to-peer manner. Synchronisation is keyed by a graph's sovereign DID (the `Graph.did` attribute defined in [[PERSONAL-LINKED-DATA-GRAPHS]] §3.3). A sovereign DID is REQUIRED for sync: a graph's `graph://<content-hash>` IRI changes whenever its triples change, so it cannot serve as the durable subscription handle that sync needs. Graphs without a sovereign DID can still be transported between agents as immutable snapshots ([[PERSONAL-LINKED-DATA-GRAPHS]] §5), but they cannot be *synced* — sync presupposes an evolving graph with a stable, content-independent identity. How a sovereign DID is attached to a graph is out of scope for this specification. This specification defines:
 
-- The **ContextDiff** format — additions and removals scoped to a specific sovereign DID, accompanied by a capability proof per [[CAPABILITY-FRAMEWORK]].
-- The **mount-and-subscribe** lifecycle — a graduated, per-context subscription model.
-- The separation of **logical contexts** (with self-contained governance) from **sync spaces** (gossip topologies that may carry one or many contexts).
-- The Context-API additions that user agents expose for publish, subscribe, and signal.
+- The **GraphDiff** format — additions and removals scoped to a specific sovereign DID, accompanied by a capability proof per [[CAPABILITY-FRAMEWORK]].
+- The **mount-and-subscribe** lifecycle — a graduated, per-graph subscription model.
+- The separation of **logical graphs** (with self-contained governance) from **sync spaces** (gossip topologies that may carry one or many graphs).
+- The Graph-API additions that user agents expose for publish, subscribe, and signal.
 
 The protocol is *transport-neutral* and *module-neutral*: it is realised over a pluggable module mechanism in which each module supplies transport, merge logic, peer discovery, and governance validation. The interface, sandbox, and built-in default module are out of scope for this specification.
 
@@ -31,7 +31,7 @@ This is a draft Community Group Report. It has no official W3C standing and is s
 1. [Introduction](#1-introduction)
 2. [Conformance](#2-conformance)
 3. [Terminology](#3-terminology)
-4. [Architecture: Logical Contexts vs Sync Spaces](#4-architecture-logical-contexts-vs-sync-spaces)
+4. [Architecture: Logical Graphs vs Sync Spaces](#4-architecture-logical-graphs-vs-sync-spaces)
 5. [Data Model](#5-data-model)
 6. [API](#6-api)
 7. [Sync Spaces](#7-sync-spaces)
@@ -52,33 +52,33 @@ This is a draft Community Group Report. It has no official W3C standing and is s
 
 The web's data model is fundamentally client–server. Local-first software addresses this, but the web platform provides no native primitives for peer-to-peer data synchronisation beyond raw transport (WebRTC, WebTransport).
 
-This specification defines a **synchronisation protocol for linked data contexts** — a standard interface and diff format that enables multiple agents to maintain a shared, eventually-consistent named graph without a central server.
+This specification defines a **synchronisation protocol for linked data graphs** — a standard interface and diff format that enables multiple agents to maintain a shared, eventually-consistent named graph without a central server.
 
 This specification *does not* prescribe a specific transport, merge algorithm, or peer-discovery mechanism. Those choices are encapsulated in **sync modules** — pluggable components referenced by content-hash but whose interface, sandboxing, and built-in default are out of scope for this specification.
 
 ### 1.2 Use Cases
 
-- **Collaborative editing.** Multiple users co-author contexts, with changes propagating in real time.
-- **Peer-to-peer social.** Per-context feeds, profiles, interactions; no platform intermediary.
-- **Distributed knowledge bases.** Research groups maintain shared contexts across institutional boundaries.
+- **Collaborative editing.** Multiple users co-author graphs, with changes propagating in real time.
+- **Peer-to-peer social.** Per-graph feeds, profiles, interactions; no platform intermediary.
+- **Distributed knowledge bases.** Research groups maintain shared graphs across institutional boundaries.
 - **Offline-first.** Users on intermittent connections make local edits that reconcile when connectivity resumes.
-- **Governance-enforced collaboration.** Contexts enforce membership, rate limits, and content rules at the sync layer via [[CAPABILITY-FRAMEWORK]].
+- **Governance-enforced collaboration.** Graphs enforce membership, rate limits, and content rules at the sync layer via [[CAPABILITY-FRAMEWORK]].
 
 ### 1.3 Scope
 
 This specification defines:
 
-- The **Context** API additions for sync (publish, unpublish, mount, subscription lifecycle).
-- The **ContextDiff** format.
+- The **Graph** API additions for sync (publish, unpublish, mount, subscription lifecycle).
+- The **GraphDiff** format.
 - The **sync space** abstraction and three standard topologies (Unified / Privacy-Tiered / Fully Partitioned).
 - The **subscription** state model.
 - **Governance integration** — how the protocol invokes [[CAPABILITY-FRAMEWORK]] validation on every incoming diff.
-- **Signalling** for ephemeral peer communication outside the context.
+- **Signalling** for ephemeral peer communication outside the graph.
 
 ### 1.4 Relationship to Other Specifications
 
 - [[DECENTRALISED-IDENTITY]] defines `did:key` and the `DIDCredential` signing surface.
-- [[PERSONAL-LINKED-DATA-GRAPHS]] defines the Context interface, GraphStore, and the optional sovereign DID (`Context.did`) on which sync subscriptions are keyed. Subscribing to a context with no sovereign DID is not possible; the immutable-snapshot transport path ([[PERSONAL-LINKED-DATA-GRAPHS]] §5) applies instead.
+- [[PERSONAL-LINKED-DATA-GRAPHS]] defines the `Graph` interface, the `GraphManager` (`navigator.graph`), and the optional sovereign DID (`Graph.did`) on which sync subscriptions are keyed. Subscribing to a graph with no sovereign DID is not possible; the immutable-snapshot transport path ([[PERSONAL-LINKED-DATA-GRAPHS]] §5) applies instead.
 - [[CAPABILITY-FRAMEWORK]] defines the ZCAP rules that the protocol's governance integration enforces.
 
 The pluggable sync-module interface, sandboxing model, and built-in default module are defined by extension specifications and are out of scope here.
@@ -91,7 +91,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 A **conforming user agent** MUST implement:
 
-1. The Context sync API additions ([§6](#6-api)).
+1. The Graph sync API additions ([§6](#6-api)).
 2. The sync space abstraction ([§7](#7-sync-spaces)).
 3. The subscription lifecycle ([§8](#8-subscription-lifecycle)).
 4. Governance integration ([§9](#9-governance-integration)).
@@ -103,53 +103,53 @@ A **conforming user agent** MUST implement:
 ## 3. Terminology
 
 <dl>
-<dt><dfn>Context</dfn></dt>
+<dt><dfn>Graph</dfn></dt>
 <dd>A named graph identified by a <code>graph://&lt;content-hash&gt;</code> IRI (optionally also by a sovereign DID). See [[PERSONAL-LINKED-DATA-GRAPHS]] §3.3.</dd>
 
-<dt><dfn>ContextDiff</dfn></dt>
-<dd>A unit of change to a specific context: additions, removals, a revision identifier, causal dependencies, and a CapabilityProof. The unit of gossip.</dd>
+<dt><dfn>GraphDiff</dfn></dt>
+<dd>A unit of change to a specific graph: additions, removals, a revision identifier, causal dependencies, and a CapabilityProof. The unit of gossip.</dd>
 
 <dt><dfn>CapabilityProof</dfn></dt>
-<dd>The ZCAP delegation chain that authorises the committing agent's writes for this context. See [§5.3](#53-capabilityproof) and [[CAPABILITY-FRAMEWORK]].</dd>
+<dd>The ZCAP delegation chain that authorises the committing agent's writes for this graph. See [§5.3](#53-capabilityproof) and [[CAPABILITY-FRAMEWORK]].</dd>
 
 <dt><dfn>Mount</dfn></dt>
-<dd>The act of opening a context's per-context store in a GraphStore, with a specified mount mode (<code>read</code>, <code>write</code>, or <code>governance</code>). See [[PERSONAL-LINKED-DATA-GRAPHS]] §4.2.</dd>
+<dd>The act of opening a graph in the local `GraphManager`, with a specified mount mode (<code>read</code>, <code>write</code>, or <code>governance</code>). See [§6.2](#62-mounting-a-remote-graph).</dd>
 
 <dt><dfn>Subscription</dfn></dt>
-<dd>An agent is subscribed to a context when they (a) hold a valid capability chain for it, (b) have it mounted, and (c) are subscribed to the appropriate sync space that gossips its diffs.</dd>
+<dd>An agent is subscribed to a graph when they (a) hold a valid capability chain for it, (b) have it mounted, and (c) are subscribed to the appropriate sync space that gossips its diffs.</dd>
 
 <dt><dfn>Sync Space</dfn></dt>
-<dd>A lightweight gossip network identified by a hash. One sync space MAY carry diffs for one context (Fully Partitioned topology) or many contexts (Unified / Privacy-Tiered topologies). The unit of physical message propagation.</dd>
+<dd>A lightweight gossip network identified by a hash. One sync space MAY carry diffs for one graph (Fully Partitioned topology) or many graphs (Unified / Privacy-Tiered topologies). The unit of physical message propagation.</dd>
 
 <dt><dfn>Topology</dfn></dt>
-<dd>A policy that maps contexts to sync spaces. See [§7.2](#72-topology-policy).</dd>
+<dd>A policy that maps graphs to sync spaces. See [§7.2](#72-topology-policy).</dd>
 
 <dt><dfn>Sync Module</dfn></dt>
 <dd>A content-addressed pluggable component that handles transport, merge, peer discovery, and validation for a sync space. Its interface, sandbox, and any built-in default module are out of scope for this specification.</dd>
 
 <dt><dfn>Peer</dfn></dt>
-<dd>An agent participating in synchronisation of a context. Identified by (DID, sessionId).</dd>
+<dd>An agent participating in synchronisation of a graph. Identified by (DID, sessionId).</dd>
 
 <dt><dfn>Revision</dfn></dt>
-<dd>A content-addressed identifier for a ContextDiff, computed as a cryptographic hash of additions, removals, and dependencies.</dd>
+<dd>A content-addressed identifier for a GraphDiff, computed as a cryptographic hash of additions, removals, and dependencies.</dd>
 
 <dt><dfn>Snapshot</dfn></dt>
-<dd>An addressable serialised form of a context, produced when diff chains exceed a configured length. Maps to the GraphSnapshot in [[PERSONAL-LINKED-DATA-GRAPHS]] §5.</dd>
+<dd>An addressable serialised form of a graph, produced when diff chains exceed a configured length. Maps to the GraphSnapshot in [[PERSONAL-LINKED-DATA-GRAPHS]] §5.</dd>
 </dl>
 
 ---
 
-## 4. Architecture: Logical Contexts vs Sync Spaces
+## 4. Architecture: Logical Graphs vs Sync Spaces
 
 This section is normative.
 
 ### 4.1 The Two Layers
 
-Context identity, sync topology, and module choice are kept separate:
+Graph identity, sync topology, and module choice are kept separate:
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│  Logical Layer (per-context)                         │
+│  Logical Layer (per-graph)                         │
 │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌──────────┐   │
 │  │#general │ │#random  │ │#private │ │Thread-42 │   │
 │  │ graph:// │ │ graph:// │ │ graph:// │ │ graph:// │   │
@@ -170,39 +170,39 @@ Context identity, sync topology, and module choice are kept separate:
 └─────────────────────────────────────────────────────┘
 ```
 
-**Logical layer**: Each context is identified by its sovereign DID (required for sync) and has its own governance, shapes, flows, and data. Its current state has a `graph://<content-hash>` IRI which changes with every diff. **Authorization** lives here, per-context.
+**Logical layer**: Each graph is identified by its sovereign DID (required for sync) and has its own governance, shapes, flows, and data. Its current state has a `graph://<content-hash>` IRI which changes with every diff. **Authorization** lives here, per-graph.
 
 **Sync layer**: Sync spaces determine what gossips with what. **Membership in a space** carries diffs to your peer; **a valid capability** lets you process them. The two are orthogonal.
 
 A receiving peer in a shared space:
 
 1. Receives a diff carrying its `graphDid`.
-2. Checks "am I subscribed to this context?" — if no, discard.
-3. If yes, verify the `CapabilityProof` against the context's governance ([[CAPABILITY-FRAMEWORK]]).
-4. If valid, apply to the local per-context store.
+2. Checks "am I subscribed to this graph?" — if no, discard.
+3. If yes, verify the `CapabilityProof` against the graph's governance ([[CAPABILITY-FRAMEWORK]]).
+4. If valid, apply to the local per-graph store.
 5. If invalid, reject.
 
 ### 4.2 Why Decouple?
 
-- **Overhead.** A 1000-context community could mean 1000 separate gossip networks per agent. Decoupling lets multiple contexts share a network.
+- **Overhead.** A 1000-graph community could mean 1000 separate gossip networks per agent. Decoupling lets multiple graphs share a network.
 - **Lifecycle churn.** Ephemeral threads with three messages and two participants gain nothing from a dedicated DHT.
 - **Flexibility.** Some communities want privacy isolation. Others want simplicity. The right tradeoff is per-community.
-- **Migration.** A context's privacy can crystallise over time. Decoupled topology can migrate the context to a more-isolated space as governance tightens.
+- **Migration.** A graph's privacy can crystallise over time. Decoupled topology can migrate the graph to a more-isolated space as governance tightens.
 
 ---
 
 ## 5. Data Model
 
-### 5.1 ContextDiff
+### 5.1 GraphDiff
 
 ```webidl
 [Exposed=Window,Worker]
-interface ContextDiff {
-  readonly attribute USVString graphDid;          // the context's sovereign DID
+interface GraphDiff {
+  readonly attribute USVString graphDid;          // the graph's sovereign DID
   readonly attribute USVString revision;           // sha256 hex
   readonly attribute FrozenArray<Triple> additions;
   readonly attribute FrozenArray<Triple> removals;
-  readonly attribute FrozenArray<USVString> dependencies;  // prior revisions in this context's chain
+  readonly attribute FrozenArray<USVString> dependencies;  // prior revisions in this graph's chain
   readonly attribute CapabilityProof? capabilityProof;
   readonly attribute USVString author;             // did:key:... (the committing agent)
   readonly attribute DOMString timestamp;          // RFC 3339; authoritative commit time
@@ -212,7 +212,7 @@ interface ContextDiff {
 
 Triples carry reifier-based provenance per [[PERSONAL-LINKED-DATA-GRAPHS]] §3.2.
 
-A ContextDiff MUST be immutable once `revision` has been computed.
+A GraphDiff MUST be immutable once `revision` has been computed.
 
 ### 5.2 Revision
 
@@ -239,7 +239,7 @@ interface CapabilityProof {
 };
 ```
 
-The chain is the ordered list of ZCAPs from the committing agent's leaf capability up to the context's root capability ([[CAPABILITY-FRAMEWORK]] §4.3). Each entry is a content-addressed reference; resolving them requires the context's local store (so the receiving peer must already be mounted to verify).
+The chain is the ordered list of ZCAPs from the committing agent's leaf capability up to the graph's root capability ([[CAPABILITY-FRAMEWORK]] §4.3). Each entry is a content-addressed reference; resolving them requires the graph's local store (so the receiving peer must already be mounted to verify).
 
 `caveatsSatisfied` records which caveats the committing agent's executor evaluated and accepted before commit. The receiving peer re-evaluates independently; this field is an audit trail, not a trust shortcut.
 
@@ -260,12 +260,12 @@ dictionary Peer {
 
 A single agent MAY have multiple concurrent peer sessions (tabs, devices). Peers are equal iff (DID, sessionId) match.
 
-When a user opens a context in a new tab or on a new device, the user agent MUST generate a new sessionId. The sessionId is ephemeral — it does not persist across user agent restarts.
+When a user opens a graph in a new tab or on a new device, the user agent MUST generate a new sessionId. The sessionId is ephemeral — it does not persist across user agent restarts.
 
-### 5.5 Context Sync State
+### 5.5 Graph Sync State
 
 ```webidl
-enum ContextSyncState {
+enum GraphSyncState {
   "idle",
   "resolving",   // resolving graph IRI + space + module
   "connecting",  // establishing connections in the space
@@ -290,17 +290,17 @@ dictionary SyncValidationResult {
 
 ## 6. API
 
-The sync API extends the `Context` and `GraphStore` interfaces defined in [[PERSONAL-LINKED-DATA-GRAPHS]].
+The sync API extends the `Graph` interface and the `GraphManager` (`navigator.graph`) defined in [[PERSONAL-LINKED-DATA-GRAPHS]].
 
-### 6.1 Publishing a Context
+### 6.1 Publishing a Graph
 
-A locally-created context becomes shareable by calling `publish()`:
+A locally-created graph becomes shareable by calling `publish()`:
 
 ```webidl
-partial interface Context {
-  [NewObject] Promise<PublishedContext> publish(optional PublishOptions options);
+partial interface Graph {
+  [NewObject] Promise<PublishedGraph> publish(optional PublishOptions options);
   [NewObject] Promise<undefined> unpublish();
-  [NewObject] Promise<ContextSyncState> syncState();
+  [NewObject] Promise<GraphSyncState> syncState();
 };
 
 dictionary PublishOptions {
@@ -311,7 +311,7 @@ dictionary PublishOptions {
 };
 
 [Exposed=Window]
-interface PublishedContext {
+interface PublishedGraph {
   readonly attribute USVString graphDid;
   readonly attribute USVString spaceUri;
   readonly attribute USVString moduleHash;
@@ -326,33 +326,49 @@ The `publish()` method MUST:
 3. Determine the space URI ([§7](#7-sync-spaces)).
 4. Initialise the sync module if not already running for this space.
 5. Subscribe to the space.
-6. Return a `PublishedContext` carrying the addressing.
+6. Return a `PublishedGraph` carrying the addressing.
 
-### 6.2 Mounting a Remote Context
+### 6.2 Mounting a Remote Graph
 
-The `mount()` method is defined in [[PERSONAL-LINKED-DATA-GRAPHS]] §4.2. This specification extends its options dictionary with sync-layer hints:
+Mounting opens a remote graph (identified by its sovereign DID) into the local user agent so that diffs can be exchanged with peers. This specification defines `mount()` on `GraphManager`:
 
 ```webidl
-partial dictionary MountOptions {
-  USVString spaceUri;            // hint: the space carrying this context's diffs
+partial interface GraphManager {
+  [NewObject] Promise<Graph> mount(USVString graphDid, optional MountOptions options);
+  [NewObject] Promise<undefined> unmount(USVString graphDid);
+};
+
+dictionary MountOptions {
+  MountMode mode = "read";
+  object capabilityProof;        // ZCAP chain; required for "write" or "governance"
+  USVString snapshotUri;         // optional initial snapshot to materialise from
+  USVString spaceUri;            // hint: the space carrying this graph's diffs
   USVString moduleHash;          // hint: the sync module the space uses
   sequence<USVString> relays;    // hint: relay endpoints
 };
+
+enum MountMode { "read", "write", "governance" };
 ```
 
-When a `Context` is mounted with any of these hints present, the user agent MUST in addition to the steps of [[PERSONAL-LINKED-DATA-GRAPHS]] §4.2:
+The `mount()` method MUST:
 
-1. Subscribe to `spaceUri` using `moduleHash` (downloading the module if needed, with user consent — module installation semantics are out of scope here).
-2. Begin emitting and accepting `ContextDiff`s scoped to the mounted graph IRI.
+1. Reject with `"InvalidStateError"` if the graph is already mounted.
+2. If `options.mode` is `"write"` or `"governance"`, require a `capabilityProof` and validate it against the graph's governance ([[CAPABILITY-FRAMEWORK]]). Reject with `"NotAllowedError"` on failure.
+3. If the graph's per-graph store does not exist locally and `options.snapshotUri` is provided, fetch and verify the snapshot per [[PERSONAL-LINKED-DATA-GRAPHS]] §5.4.
+4. Subscribe to `spaceUri` using `moduleHash` (downloading the module if needed, with user consent — module installation semantics are out of scope here).
+5. Begin emitting and accepting `GraphDiff`s scoped to the mounted graph's sovereign DID.
+6. Return the live `Graph`.
+
+The `unmount()` method releases the local mount entry and stops gossiping diffs for the graph. It does not delete the per-graph store; calling `mount()` again reopens it.
 
 ### 6.3 Sync Operations
 
 ```webidl
-partial interface Context {
+partial interface Graph {
   [NewObject] Promise<sequence<Peer>> peers();
   [NewObject] Promise<sequence<Peer>> onlinePeers();
   [NewObject] Promise<USVString> currentRevision();
-  [NewObject] Promise<sequence<ContextDiff>> pendingDiffs();
+  [NewObject] Promise<sequence<GraphDiff>> pendingDiffs();
 
   Promise<undefined> sendSignal(USVString remoteDid, BufferSource payload);
   Promise<undefined> sendSignalToSession(USVString remoteDid, USVString sessionId, BufferSource payload);
@@ -366,11 +382,11 @@ partial interface Context {
 };
 ```
 
-### 6.4 GraphStore-Level Sync Management
+### 6.4 GraphManager-Level Sync Management
 
 ```webidl
-partial interface GraphStore {
-  [NewObject] Promise<sequence<MountedContextInfo>> listMounted();
+partial interface GraphManager {
+  [NewObject] Promise<sequence<MountedGraphInfo>> listMounted();
   [NewObject] Promise<sequence<SyncModuleInfo>> listModules();
   [NewObject] Promise<sequence<SyncSpaceInfo>> listSpaces();
 
@@ -378,10 +394,10 @@ partial interface GraphStore {
   attribute EventHandler onsubscriptionlost;
 };
 
-dictionary MountedContextInfo {
+dictionary MountedGraphInfo {
   USVString graphDid;
   MountMode mode;
-  ContextSyncState syncState;
+  GraphSyncState syncState;
   USVString spaceUri;
   USVString moduleHash;
   unsigned long peerCount;
@@ -390,7 +406,7 @@ dictionary MountedContextInfo {
 dictionary SyncSpaceInfo {
   USVString spaceUri;
   USVString moduleHash;
-  unsigned long contextCount;
+  unsigned long graphCount;
   unsigned long peerCount;
 };
 
@@ -418,27 +434,27 @@ interface SubscriptionEvent : Event {
 
 ### 7.1 What a Sync Space Is
 
-A **sync space** is a lightweight gossip network identified by a hash. Members of a space gossip diffs with each other; non-members never receive those bytes. A space is the **physical boundary** of message propagation; a context is the **logical boundary** of authorisation.
+A **sync space** is a lightweight gossip network identified by a hash. Members of a space gossip diffs with each other; non-members never receive those bytes. A space is the **physical boundary** of message propagation; a graph is the **logical boundary** of authorisation.
 
-A space carries `ContextDiff`s for one or more contexts. The receiving peer's runtime dispatches each diff to the corresponding mounted context (and discards diffs for contexts it does not have mounted).
+A space carries `GraphDiff`s for one or more graphs. The receiving peer's runtime dispatches each diff to the corresponding mounted graph (and discards diffs for graphs it does not have mounted).
 
 ### 7.2 Topology Policy
 
-A topology is a policy that maps contexts to spaces. The three standard topologies:
+A topology is a policy that maps graphs to spaces. The three standard topologies:
 
 | Topology | Behaviour | Use For |
 |---|---|---|
-| **Unified** | All published contexts share one space. Simplest. No network-layer privacy. Authorisation per-context still applies. | Small teams (< 20). Low overhead. Privacy not needed. |
-| **Privacy-Tiered** | Public contexts (no restrictive ZCAP caveats) share a "community" space. Restricted contexts (credential requirements, limited delegations) get dedicated spaces. Auto-adapts as governance crystallises. | Most communities (20–500). |
-| **Fully Partitioned** | Every context gets its own dedicated space. Maximum isolation. | High-security orgs, compliance needs. |
-| **Custom** | Explicit per-context rules. | Federations, special access patterns. |
+| **Unified** | All published graphs share one space. Simplest. No network-layer privacy. Authorisation per-graph still applies. | Small teams (< 20). Low overhead. Privacy not needed. |
+| **Privacy-Tiered** | Public graphs (no restrictive ZCAP caveats) share a "community" space. Restricted graphs (credential requirements, limited delegations) get dedicated spaces. Auto-adapts as governance crystallises. | Most communities (20–500). |
+| **Fully Partitioned** | Every graph gets its own dedicated space. Maximum isolation. | High-security orgs, compliance needs. |
+| **Custom** | Explicit per-graph rules. | Federations, special access patterns. |
 
-The topology engine inspects each context's governance:
+The topology engine inspects each graph's governance:
 
-- A context with `governance://enforcement_mode = "open"` and no restrictive caveats → public.
-- A context with credential requirements or narrow delegate lists → restricted.
+- A graph with `governance://enforcement_mode = "open"` and no restrictive caveats → public.
+- A graph with credential requirements or narrow delegate lists → restricted.
 
-When a context's governance changes, the topology engine MAY migrate the context to a different space. Migration republishes the context's current snapshot into the new space and notifies peers.
+When a graph's governance changes, the topology engine MAY migrate the graph to a different space. Migration republishes the graph's current snapshot into the new space and notifies peers.
 
 ### 7.3 Space Derivation
 
@@ -458,40 +474,40 @@ partitioned:  "lwsync:dedicated:" + <graph-did>
 custom:       "lwsync:named:" + <custom-name>
 ```
 
-The namespace-id is typically the sovereign DID of a root context that other contexts participate in.
+The namespace-id is typically the sovereign DID of a root graph that other graphs participate in.
 
 ### 7.4 Space Memberships
 
-An agent's set of subscribed spaces is the union of spaces required by their mounted contexts:
+An agent's set of subscribed spaces is the union of spaces required by their mounted graphs:
 
 ```
 spaces_to_join = unique(
-  for each mounted context c:
+  for each mounted graph c:
     derive_space(c.graphDid, this.topology)
 )
 ```
 
-If the topology is **Unified**, this is always one space. If **Fully Partitioned**, one space per mounted context. If **Privacy-Tiered**, a community space plus one per restricted mount.
+If the topology is **Unified**, this is always one space. If **Fully Partitioned**, one space per mounted graph. If **Privacy-Tiered**, a community space plus one per restricted mount.
 
-When an agent unmounts the last context that required a particular space, the runtime SHOULD leave the space.
+When an agent unmounts the last graph that required a particular space, the runtime SHOULD leave the space.
 
 ### 7.5 What Syncs Within a Space
 
-Every diff committed to a space is a `ContextDiff` ([§5.1](#51-contextdiff)) tagged with its `graphDid`. In a shared space, diffs for multiple contexts coexist; each carries its own `CapabilityProof`.
+Every diff committed to a space is a `GraphDiff` ([§5.1](#51-contextdiff)) tagged with its `graphDid`. In a shared space, diffs for multiple graphs coexist; each carries its own `CapabilityProof`.
 
 A receiving peer:
 
-1. Read `graphDid` — am I subscribed to this context?
+1. Read `graphDid` — am I subscribed to this graph?
 2. If no, discard (do not store, do not process, do not forward to non-space peers).
-3. If yes, verify `capabilityProof` against the context's governance.
-4. If valid, apply to the per-context store.
+3. If yes, verify `capabilityProof` against the graph's governance.
+4. If valid, apply to the per-graph store.
 5. If invalid, reject and (optionally) log.
 
 In a dedicated space, the graphDid filter always passes. The flow is the same.
 
-### 7.6 Per-Context Diff Chains
+### 7.6 Per-Graph Diff Chains
 
-Even in a shared space, each context maintains its own diff chain. The `dependencies` field of `ContextDiff` references previous diffs *for the same context*, not the previous diff in the space.
+Even in a shared space, each graph maintains its own diff chain. The `dependencies` field of `GraphDiff` references previous diffs *for the same graph*, not the previous diff in the space.
 
 ```
 Shared Community Space:
@@ -500,7 +516,7 @@ Shared Community Space:
   Thread-42 chain: T1 → T2 → T3
 ```
 
-Pulls target a specific context within a space, identified by `graphDid` + last-known-revision.
+Pulls target a specific graph within a space, identified by `graphDid` + last-known-revision.
 
 ---
 
@@ -510,37 +526,37 @@ This section is normative.
 
 ### 8.1 Becoming Subscribed
 
-The full handshake for an agent to subscribe to a context they have not previously mounted:
+The full handshake for an agent to subscribe to a graph they have not previously mounted:
 
-1. **Discover.** The agent obtains the context's sovereign DID plus addressing hints (space URI, module hash, relay endpoints, snapshot URI) — typically out of band (invitation link, paper, side-channel).
+1. **Discover.** The agent obtains the graph's sovereign DID plus addressing hints (space URI, module hash, relay endpoints, snapshot URI) — typically out of band (invitation link, paper, side-channel).
 2. **Resolve.** The runtime resolves the DID per [[DID-CORE]]. If no snapshot is locally available, fetch one via the snapshot URI hint and verify it (the snapshot's `graphIri` is its content hash; the snapshot's binding to the sovereign DID is verified per the conventions established by the DID method in use).
 3. **Verify snapshot.** Verify the snapshot's signatures.
-4. **Verify capability.** If the mount mode requires authorisation, verify the agent's `capabilityProof` against the (now-resolved) context governance.
-5. **Mount.** Open the per-context store and write the snapshot triples ([[PERSONAL-LINKED-DATA-GRAPHS]] §5.3).
+4. **Verify capability.** If the mount mode requires authorisation, verify the agent's `capabilityProof` against the (now-resolved) graph governance.
+5. **Mount.** Open the per-graph store and write the snapshot triples ([[PERSONAL-LINKED-DATA-GRAPHS]] §5.3).
 6. **Join space.** Subscribe to the space identified by the topology + module.
 7. **Sync.** Pull diffs from the space since the snapshot's `currentRevision`. Apply each (re-verifying CapabilityProofs).
 
-The agent is now subscribed. Subsequent diffs propagate via gossip; subsequent writes by the agent are authored to the context, packaged into ContextDiffs, signed with their capability chain, and committed to the space.
+The agent is now subscribed. Subsequent diffs propagate via gossip; subsequent writes by the agent are authored to the graph, packaged into GraphDiffs, signed with their capability chain, and committed to the space.
 
 ### 8.2 Maintaining the Subscription
 
-The runtime keeps the per-context store in sync via the module's connection and remote-diff handling. Heartbeats, peer discovery, and retry are module-defined.
+The runtime keeps the per-graph store in sync via the module's connection and remote-diff handling. Heartbeats, peer discovery, and retry are module-defined.
 
 ### 8.3 Losing the Subscription
 
 | Trigger | Effect |
 |---|---|
-| **Agent unmounts the context** | The runtime leaves the space (if no other mounted context requires it), drops the local store reference, fires `contextunmounted`. The per-context store stays on disk; remounting reopens it. |
+| **Agent unmounts the graph** | The runtime leaves the space (if no other mounted graph requires it), drops the local store reference, fires `contextunmounted`. The per-graph store stays on disk; remounting reopens it. |
 | **Capability is revoked** | A revocation triple arrives. The runtime detects it, fires `subscriptionlost`, and either downgrades mount mode (if a partial chain remains valid) or fully unmounts. |
 | **Snapshot promotion makes prior diffs unreachable** | If the agent has been offline long enough that the chain has been promoted past their last-known revision, the runtime pulls a fresh snapshot to catch up. |
 
 ### 8.4 Subscription Events
 
-`subscriptiongained` and `subscriptionlost` events are dispatched on the `GraphStore` (see [§6.4](#64-graphstore-level-sync-management)).
+`subscriptiongained` and `subscriptionlost` events are dispatched on the `GraphManager` (see [§6.4](#64-graphmanager-level-sync-management)).
 
 ### 8.5 Read-Only Snapshots
 
-Mounting in `"read"` mode does not require a capability proof beyond the context's general read policy. A read-only mount receives diffs but cannot author them. Applications MAY upgrade later by calling `mount()` again with a write capability proof.
+Mounting in `"read"` mode does not require a capability proof beyond the graph's general read policy. A read-only mount receives diffs but cannot author them. Applications MAY upgrade later by calling `mount()` again with a write capability proof.
 
 ---
 
@@ -550,7 +566,7 @@ This specification integrates with [[CAPABILITY-FRAMEWORK]] at three normative p
 
 ### 9.1 Three Verification Points
 
-Every `ContextDiff` is governance-verified at three points:
+Every `GraphDiff` is governance-verified at three points:
 
 | Point | Who | What is checked |
 |---|---|---|
@@ -562,7 +578,7 @@ Every `ContextDiff` is governance-verified at three points:
 
 A conforming sync module's `validate(graphDid, diff, author, graphState)` MUST:
 
-1. Verify the diff's `CapabilityProof.chain` against the context's governance ([[CAPABILITY-FRAMEWORK]] §7).
+1. Verify the diff's `CapabilityProof.chain` against the graph's governance ([[CAPABILITY-FRAMEWORK]] §7).
 2. Re-evaluate any content-dependent caveats against the actual triples in `additions` and `removals` (per [[CAPABILITY-FRAMEWORK]] §9).
 3. Verify each triple's reifier signature against the resolved author.
 4. Return `{ accepted: true }` or `{ accepted: false, module: ..., reason: ... }`.
@@ -571,14 +587,14 @@ A conforming sync module's `validate(graphDid, diff, author, graphState)` MUST:
 
 A diff that fails validation MUST NOT be:
 
-- Stored in the local per-context store.
+- Stored in the local per-graph store.
 - Forwarded to other peers (the receiving peer should not re-broadcast).
 
 Implementations SHOULD log rejected diffs for audit but MUST NOT retain rejected triple content beyond what is needed for the audit.
 
 ### 9.4 Enforcement Mode Awareness
 
-The runtime SHALL inspect the context's `governance://enforcement_mode` ([[CAPABILITY-FRAMEWORK]] §5) before applying capability checks:
+The runtime SHALL inspect the graph's `governance://enforcement_mode` ([[CAPABILITY-FRAMEWORK]] §5) before applying capability checks:
 
 - **Open**: Skip ZCAP checks; accept diffs without capability proofs.
 - **Announced**: Verify but do not reject on capability failure; log.
@@ -593,24 +609,24 @@ Constraint kinds supplied by extension specifications (e.g., content, temporal, 
 Sync activity executes in the user-agent-managed environment and persists across:
 
 - Tab navigation
-- Window closing (with active mounted contexts in other windows)
+- Window closing (with active mounted graphs in other windows)
 - Background tabs
 - User agent restart (sessions reconnect)
 
 The user agent MAY pause sync activity under battery / network / resource pressure, surfacing pause/resume controls via the module management UI (out of scope here).
 
-When all top-level browsing contexts are closed, the user agent MAY continue running modules briefly (e.g., to flush pending diffs) before fully suspending.
+When all top-level browsing graphs are closed, the user agent MAY continue running modules briefly (e.g., to flush pending diffs) before fully suspending.
 
 ---
 
 ## 11. Signalling
 
-Signalling carries opaque ephemeral messages between peers (e.g., WebRTC ICE candidates, presence, typing indicators) without entering the context's diff stream.
+Signalling carries opaque ephemeral messages between peers (e.g., WebRTC ICE candidates, presence, typing indicators) without entering the graph's diff stream.
 
 ### 11.1 sendSignal
 
 ```javascript
-await context.sendSignal("did:key:z6MkBob...", encoder.encode("hello"));
+await graph.sendSignal("did:key:z6MkBob...", encoder.encode("hello"));
 ```
 
 Targets all sessions of the named DID. `sendSignalToSession(did, sessionId, payload)` targets one specific session.
@@ -618,7 +634,7 @@ Targets all sessions of the named DID. `sendSignalToSession(did, sessionId, payl
 ### 11.2 onsignal
 
 ```javascript
-context.onsignal = (event) => {
+graph.onsignal = (event) => {
   console.log(`signal from ${event.from.did}:`, event.payload);
 };
 ```
@@ -632,10 +648,10 @@ context.onsignal = (event) => {
 ### 11.4 broadcast
 
 ```javascript
-await context.broadcast(encoder.encode("typing..."));
+await graph.broadcast(encoder.encode("typing..."));
 ```
 
-Sends to all currently-online peers in the context's space who are subscribed to the same context.
+Sends to all currently-online peers in the graph's space who are subscribed to the same graph.
 
 ---
 
@@ -643,7 +659,7 @@ Sends to all currently-online peers in the context's space who are subscribed to
 
 ### 12.1 Capability Proof Verification
 
-Receiving peers MUST independently verify `CapabilityProof.chain` against the context's governance ([[CAPABILITY-FRAMEWORK]]) before applying a diff.
+Receiving peers MUST independently verify `CapabilityProof.chain` against the graph's governance ([[CAPABILITY-FRAMEWORK]]) before applying a diff.
 
 ### 12.2 DID Resolution Trust
 
@@ -651,15 +667,15 @@ Resolving a sovereign DID from snapshots is subject to the trust level of the sn
 
 ### 12.3 Sync Space Membership Privacy
 
-A peer's presence in a sync space is visible to other space members. In a shared space, this reveals which contexts the peer is plausibly interested in (without revealing exact mounts). Communities that need membership privacy SHOULD use Fully Partitioned topology.
+A peer's presence in a sync space is visible to other space members. In a shared space, this reveals which graphs the peer is plausibly interested in (without revealing exact mounts). Communities that need membership privacy SHOULD use Fully Partitioned topology.
 
 ### 12.4 Replay Attacks
 
-`ContextDiff.revision` is content-addressed, so replaying a previously-applied diff is a no-op (already in the per-context store).
+`GraphDiff.revision` is content-addressed, so replaying a previously-applied diff is a no-op (already in the per-graph store).
 
 ### 12.5 Authoritative Timestamps
 
-Constraint kinds and downstream specifications that rely on time-of-write (e.g., temporal caveats, state-entry timestamps) depend on the diff's timestamp. The runtime MUST treat each ContextDiff's `timestamp` as the authoritative time for triples in that diff.
+Constraint kinds and downstream specifications that rely on time-of-write (e.g., temporal caveats, state-entry timestamps) depend on the diff's timestamp. The runtime MUST treat each GraphDiff's `timestamp` as the authoritative time for triples in that diff.
 
 ### 12.6 Module Sandbox
 
@@ -673,9 +689,9 @@ Sync modules MUST run in a sandboxed environment with only the capabilities they
 
 | Topology | Network Privacy | Notes |
 |---|---|---|
-| Unified | None — all members see all diffs | Authorization still per-context; non-authorised diffs are discarded after receipt. |
-| Privacy-Tiered | Isolated for restricted contexts; shared for public | Auto-adapts. |
-| Fully Partitioned | Full — agents only receive their subscribed contexts' diffs | Maximum overhead. |
+| Unified | None — all members see all diffs | Authorization still per-graph; non-authorised diffs are discarded after receipt. |
+| Privacy-Tiered | Isolated for restricted graphs; shared for public | Auto-adapts. |
+| Fully Partitioned | Full — agents only receive their subscribed graphs' diffs | Maximum overhead. |
 
 "Discarded after receipt" means the agent receives bytes but does not store or process them. A compromised agent could log discarded bytes.
 
@@ -689,21 +705,20 @@ A peer's mount table is a sensitive artefact. The runtime MUST NOT disclose the 
 
 ### 13.4 DID Resolution Side Effects
 
-Resolving a sovereign DID can reveal interest in a context. Implementations SHOULD batch resolution requests and SHOULD avoid resolving identifiers based on untrusted input.
+Resolving a sovereign DID can reveal interest in a graph. Implementations SHOULD batch resolution requests and SHOULD avoid resolving identifiers based on untrusted input.
 
-### 13.5 Per-Context Identity
+### 13.5 Per-Graph Identity
 
-Per [[PERSONAL-LINKED-DATA-GRAPHS]] §10.2, the recommended privacy posture is per-context identity.
+Per [[PERSONAL-LINKED-DATA-GRAPHS]] §10.2, the recommended privacy posture is per-graph identity.
 
 ---
 
 ## 14. Examples
 
-### 14.1 Publishing a Context
+### 14.1 Publishing a Graph
 
 ```javascript
-const me = await navigator.graph.create("My Workspace");
-const planning = await me.createContext({ displayName: "Q3 Planning" });
+const planning = await navigator.graph.create({ displayName: "Q3 Planning" });
 
 const published = await planning.publish({
   spaceTopology: "privacy-tiered",
@@ -721,7 +736,7 @@ console.log("  module:", published.moduleHash);
 ```javascript
 const invite = JSON.parse(invitationLink);
 
-const planning = await me.mount(invite.graphDid, {
+const planning = await navigator.graph.mount(invite.graphDid, {
   mode: "write",
   capabilityProof: invite.capabilityProof,
   spaceUri: invite.spaceUri,
@@ -761,32 +776,34 @@ planning.onsignal = async (e) => {
 };
 ```
 
-### 14.5 Multiple Contexts in One Sync Space
+### 14.5 Multiple Graphs in One Sync Space
 
 ```javascript
-const community = await me.createContext({ displayName: "Acme" });
-const general   = await me.createContext({ displayName: "#general", participatesIn: community.did });
-const random    = await me.createContext({ displayName: "#random",  participatesIn: community.did });
+const community = await navigator.graph.create({ displayName: "Acme" });
+const general   = await navigator.graph.create({ displayName: "#general" });
+const random    = await navigator.graph.create({ displayName: "#random"  });
+await general.addTriple(new Triple(general.iri, "context://participates_in", community.did));
+await random.addTriple(new Triple(random.iri, "context://participates_in", community.did));
 
 const c1 = await community.publish({ spaceTopology: "unified" });
 const c2 = await general.publish({ spaceTopology: "unified" });
 const c3 = await random.publish({ spaceTopology: "unified" });
 
-console.log(c1.spaceUri === c2.spaceUri);   // true — same root context
+console.log(c1.spaceUri === c2.spaceUri);   // true — same root graph
 console.log(c1.spaceUri === c3.spaceUri);   // true
 ```
 
-### 14.6 Listing Mounted Contexts and Spaces
+### 14.6 Listing Mounted Graphs and Spaces
 
 ```javascript
-const mounted = await me.listMounted();
+const mounted = await navigator.graph.listMounted();
 for (const m of mounted) {
   console.log(`${m.graphDid} (${m.mode}, ${m.peerCount} peers) on ${m.spaceUri}`);
 }
 
-const spaces = await me.listSpaces();
+const spaces = await navigator.graph.listSpaces();
 for (const s of spaces) {
-  console.log(`${s.spaceUri}: ${s.contextCount} contexts, ${s.peerCount} peers`);
+  console.log(`${s.spaceUri}: ${s.contextCount} graphs, ${s.peerCount} peers`);
 }
 ```
 

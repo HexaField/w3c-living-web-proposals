@@ -49,7 +49,7 @@ This specification supplies the standard vocabulary that conforming user agents 
 This specification depends on:
 
 - [[CAPABILITY-FRAMEWORK]] — defines the framework into which these constraint kinds plug.
-- [[PERSONAL-LINKED-DATA-GRAPHS]] — defines the Context whose triples are constrained.
+- [[PERSONAL-LINKED-DATA-GRAPHS]] — defines the Graph whose triples are constrained.
 - [[SHAPE-VALIDATION]] — supplies SHACL shape evaluation for the `shape` caveat in [§7](#7-shape-caveat).
 - [[VC-DATA-MODEL-2.0]] — supplies the credential format that credential constraints validate against.
 
@@ -226,15 +226,15 @@ A caveat of type `shape` requires the authorised triple to conform to a register
 { "type": "shape", "value": { "shapeIri": "<URI of a registered shape>" } }
 ```
 
-The shape MUST be registered in the writing context (or a parent context reachable via `context://participates_in`) per [[SHAPE-VALIDATION]].
+The shape MUST be registered in the writing graph (or a parent graph reachable via `context://participates_in`) per [[SHAPE-VALIDATION]].
 
 ### 7.2 Evaluation Algorithm
 
 For each triple under the caveat's authority:
 
-1. Resolve the shape via [[SHAPE-VALIDATION]] §7 (cross-context resolution).
+1. Resolve the shape via [[SHAPE-VALIDATION]] §7 (cross-graph resolution).
 2. Treat the triple's subject as the candidate node.
-3. Evaluate the shape's property definitions against the candidate node and all sibling triples in the same `ContextDiff`.
+3. Evaluate the shape's property definitions against the candidate node and all sibling triples in the same `GraphDiff`.
 4. Return ACCEPT iff the candidate conforms; REJECT otherwise.
 
 ### 7.3 Relationship to `property` Caveat
@@ -288,7 +288,7 @@ await community.addTriple({
 await community.addTriple({
   subject: community.did, predicate: "governance://has_constraint", object: humanity
 });
-// Applies transitively: every child context inherits this requirement because
+// Applies transitively: every child graph inherits this requirement because
 // they participate_in community.
 ```
 
@@ -358,7 +358,7 @@ Credential status checks SHOULD be performed on every validation. Caching is per
 
 ### 9.6 Shape Caveat Resolution
 
-If the shape referenced by a `shape` caveat is not resolvable (e.g., not registered in the writing context or any reachable parent), the caveat MUST evaluate to REJECT (fail-closed).
+If the shape referenced by a `shape` caveat is not resolvable (e.g., not registered in the writing graph or any reachable parent), the caveat MUST evaluate to REJECT (fail-closed).
 
 ---
 
@@ -427,7 +427,7 @@ Temporal enforcement requires the engine to scan recent triples by a specific au
 <dd><a href="./02_personal-linked-data-graphs.md">Personal Linked Data Graphs</a>.</dd>
 
 <dt>[CONTEXT-SYNC]</dt>
-<dd><a href="./04_context-sync-protocol.md">Context Synchronisation Protocol</a>.</dd>
+<dd><a href="./04_context-sync-protocol.md">Graph Synchronisation Protocol</a>.</dd>
 
 <dt>[SHACL]</dt>
 <dd>Knublauch, H. and D. Kontokostas, "Shapes Constraint Language (SHACL)", W3C Recommendation, July 2017. https://www.w3.org/TR/shacl/</dd>

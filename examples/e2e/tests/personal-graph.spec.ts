@@ -436,7 +436,7 @@ test.describe('Spec 01 — Personal Graph API', () => {
       return { count: list.length, allHaveUuid: list.every((g: any) => typeof g.uuid === 'string') };
     });
     expect(result.allHaveUuid).toBe(true);
-    // Verify a different origin context can't see our graphs
+    // Verify a different origin graph can't see our graphs
     // (In polyfill, IndexedDB is origin-scoped by the browser itself)
     expect(result.count).toBeGreaterThanOrEqual(1);
   });

@@ -18,7 +18,7 @@ function parseCommaSeparated(val: string | undefined): string[] {
 
 /** Determine the action being attempted. Polyfill heuristic. */
 function inferAction(_triple: TripleInput): string {
-  return 'createLink';   // applications can override via context
+  return 'createLink';   // applications can override via graph
 }
 
 export async function verifyCapability(
@@ -132,7 +132,7 @@ async function verifyChain(
   if (!zcap.proof?.proofValue) return false;
 
   if (zcap.parentCapability === null) {
-    // Root ZCAP — must match the context's root capability.
+    // Root ZCAP — must match the graph's root capability.
     if (ctx.rootCapabilityId && zcap.id !== ctx.rootCapabilityId) return false;
     return true;
   }

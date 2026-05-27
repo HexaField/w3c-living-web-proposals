@@ -40,9 +40,9 @@ export interface DelegateAddOptions {
 }
 
 /**
- * Hooks for writing DID-document changes into a backing graph context.
+ * Hooks for writing DID-document changes into a backing graph graph.
  * Implemented by the group-identity polyfill at install time (against the
- * personal-graph GraphStoreManager).
+ * personal-graph GraphManager).
  */
 export interface GraphDIDWriter {
   addMethodToGraph(

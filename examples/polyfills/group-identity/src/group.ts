@@ -1,11 +1,11 @@
 /**
- * Group — a thin convenience layer over Context + did:graph + governance.
+ * Group — a thin convenience layer over Graph + did:graph + governance.
  *
- * A Group IS a Context. The "group identity" surface is a usage pattern over
+ * A Group IS a Graph. The "group identity" surface is a usage pattern over
  * the underlying primitives, not a separate data type.
  */
 
-import { Context } from '@living-web/personal-graph';
+import { Graph } from '@living-web/personal-graph';
 import {
   decodeEd25519Multibase,
   type DIDDocument,
@@ -36,7 +36,7 @@ interface CredentialsWithResolver {
 export class Group {
   /** The group's `did:graph:...` signing identity — stable across mutations. */
   readonly did: string;
-  readonly context: Context;
+  readonly graph: Graph;
   readonly name: string;
   readonly description: string;
   /** RFC 3339 timestamp. */
@@ -44,31 +44,31 @@ export class Group {
 
   private readonly registry: GroupRegistry;
 
-  constructor(context: Context, registry: GroupRegistry, options: GroupOptions = {}) {
-    if (!context.did) {
+  constructor(graph: Graph, registry: GroupRegistry, options: GroupOptions = {}) {
+    if (!graph.did) {
       throw new DOMException(
-        `Group requires a groupified context; ${context.id} has no did:graph yet. Call store.groupify() first.`,
+        `Group requires a groupified graph; ${graph.id} has no did:graph yet. Call store.groupify() first.`,
         'InvalidStateError',
       );
     }
-    this.context = context;
-    this.did = context.did;
-    this.name = options.displayName || options.name || context.displayName || '';
+    this.graph = graph;
+    this.did = graph.did;
+    this.name = options.displayName || options.name || graph.displayName || '';
     this.description = options.description || '';
     this.created = new Date().toISOString();
     this.registry = registry;
   }
 
-  /** The host context's *current* snapshot IRI. Changes per mutation. */
+  /** The host graph's *current* snapshot IRI. Changes per mutation. */
   get iri(): string {
-    return this.context.iri;
+    return this.graph.iri;
   }
 
   // ── Participation (NOT signing authority) ─────────────────────────────────
 
   /** Direct participants — those for whom the group has written `accepts_participation`. */
   async participants(): Promise<Participant[]> {
-    const accepts = await this.context.queryTriples({
+    const accepts = await this.graph.queryTriples({
       subject: this.did,
       predicate: CONTEXT.ACCEPTS_PARTICIPATION,
     });
@@ -77,7 +77,7 @@ export class Group {
       const did = t.data.object;
       const isGroup = await this.isGroupDid(did);
       let name: string | undefined;
-      const nameTriples = await this.context.queryTriples({ subject: did, predicate: RDF.NAME });
+      const nameTriples = await this.graph.queryTriples({ subject: did, predicate: RDF.NAME });
       if (nameTriples.length > 0) name = stripLit(nameTriples[0].data.object);
       result.push({
         did,
@@ -91,7 +91,7 @@ export class Group {
 
   /** Accept a participant — writes the `accepts_participation` triple. */
   async invite(participantDid: string): Promise<void> {
-    await this.context.addTriple({
+    await this.graph.addTriple({
       subject: this.did,
       predicate: CONTEXT.ACCEPTS_PARTICIPATION,
       object: participantDid,
@@ -100,16 +100,16 @@ export class Group {
 
   /** Revoke participation acceptance. */
   async revokeParticipation(participantDid: string): Promise<void> {
-    const triples = await this.context.queryTriples({
+    const triples = await this.graph.queryTriples({
       subject: this.did,
       predicate: CONTEXT.ACCEPTS_PARTICIPATION,
       object: participantDid,
     });
-    for (const t of triples) await this.context.removeTriple(t);
+    for (const t of triples) await this.graph.removeTriple(t);
   }
 
   async hasParticipant(did: string): Promise<boolean> {
-    const triples = await this.context.queryTriples({
+    const triples = await this.graph.queryTriples({
       subject: this.did,
       predicate: CONTEXT.ACCEPTS_PARTICIPATION,
       object: did,
@@ -140,18 +140,18 @@ export class Group {
     const id = method.id ?? `${this.did}#${method.publicKeyMultibase.slice(0, 16)}`;
     const publicKey = decodeEd25519Multibase(method.publicKeyMultibase);
     const triples = addMethodTriples(this.did, id, publicKey, sections);
-    for (const t of triples) await this.context.addTriple(t);
+    for (const t of triples) await this.graph.addTriple(t);
   }
 
   async removeSigner(methodId: string): Promise<void> {
     const removals = removeMethodTriples(this.did, methodId);
     for (const removal of removals) {
-      const matches = await this.context.queryTriples({
+      const matches = await this.graph.queryTriples({
         subject: removal.subject,
         predicate: removal.predicate,
         object: removal.object,
       });
-      for (const m of matches) await this.context.removeTriple(m);
+      for (const m of matches) await this.graph.removeTriple(m);
     }
   }
 
@@ -164,7 +164,7 @@ export class Group {
 
   /** Groups this group participates in. */
   async parentGroups(): Promise<Group[]> {
-    const participations = await this.context.queryTriples({
+    const participations = await this.graph.queryTriples({
       subject: this.did,
       predicate: CONTEXT.PARTICIPATES_IN,
     });
@@ -225,7 +225,7 @@ export class Group {
       opts.invoker,
       opts.actions,
       opts.resource ?? this.did,
-      this.context.getIdentity().getDID(),
+      this.graph.getIdentity().getDID(),
       { caveats: opts.caveats, expires: opts.expires ?? null },
     );
     if (opts.transitiveToParticipants) {
@@ -246,13 +246,13 @@ export class Group {
     validUntil?: string;
     revocable?: boolean;
   }): Promise<void> {
-    await this.context.addTriple({ subject: this.did, predicate: VOTE.DELEGATES_TO, object: opts.delegateTo });
-    await this.context.addTriple({ subject: this.did, predicate: VOTE.DELEGATES_TOPIC, object: opts.topic });
+    await this.graph.addTriple({ subject: this.did, predicate: VOTE.DELEGATES_TO, object: opts.delegateTo });
+    await this.graph.addTriple({ subject: this.did, predicate: VOTE.DELEGATES_TOPIC, object: opts.topic });
     if (opts.validUntil) {
-      await this.context.addTriple({ subject: this.did, predicate: VOTE.VALID_UNTIL, object: `"${opts.validUntil}"` });
+      await this.graph.addTriple({ subject: this.did, predicate: VOTE.VALID_UNTIL, object: `"${opts.validUntil}"` });
     }
     if (opts.revocable !== undefined) {
-      await this.context.addTriple({ subject: this.did, predicate: VOTE.REVOCABLE, object: `"${opts.revocable}"` });
+      await this.graph.addTriple({ subject: this.did, predicate: VOTE.REVOCABLE, object: `"${opts.revocable}"` });
     }
   }
 

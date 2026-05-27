@@ -51,7 +51,7 @@ export interface Reifier {
 
 /**
  * A triple plus its provenance reifier. Returned from query methods and
- * carried over the wire by [[CONTEXT-SYNC]].
+ * carried over the wire by sync protocols layered on top.
  */
 export interface SignedTriple {
   readonly data: Triple;
@@ -71,6 +71,7 @@ export interface TripleQuery {
   author?: string | null;
   fromDate?: string | null;
   untilDate?: string | null;
+  offset?: number | null;
   limit?: number | null;
 }
 
@@ -82,38 +83,22 @@ export interface SparqlResult {
 }
 
 export interface SparqlQueryOptions {
-  /** Graph DIDs to include in the dataset. */
-  graphs?: string[];
-  defaultGraphMode?: 'default' | 'union' | 'listed';
-  timeout?: number;                    // milliseconds
+  /** Other Graphs to include as named graphs in the SPARQL dataset.
+   *  Each is addressable in the query via GRAPH <graph.iri> { ... }. */
+  namedGraphs?: import('./graph.js').Graph[];
+  /** Query timeout in milliseconds. */
+  timeout?: number;
 }
 
-export type MountMode = 'read' | 'write' | 'governance';
+export type GraphTrustLevel = 'local' | 'external' | (string & {});
 
-export type ContextSubscriptionState = 'local' | 'subscribed' | 'external' | 'error';
-
-export interface MountOptions {
-  mode?: MountMode;
-  capabilityProof?: unknown;
-  snapshotUri?: string;
-}
-
-export interface ContextCreationOptions {
+export interface GraphCreationOptions {
   displayName?: string;
-  /** Graph IRI (or did:graph alias) of a parent context to participate in. */
-  participatesIn?: string;
 }
 
-export interface MountedContextInfo {
-  /** Stable internal id (storage key). */
-  contextId: string;
-  /** Current snapshot IRI. Changes per mutation. */
-  graphIri: string;
-  /** Sovereign did:graph if groupified, else null. */
-  graphDid: string | null;
-  mode: MountMode;
-  displayName?: string;
-  state: ContextSubscriptionState;
+export interface GraphFromSnapshotOptions {
+  /** Provenance tag for the materialised graph. Defaults to `"external"`. */
+  trustLevel?: string;
 }
 
 function isValidURI(value: string): boolean {

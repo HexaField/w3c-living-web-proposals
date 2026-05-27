@@ -3,7 +3,7 @@
  * the installation function it calls to take over the active runtime.
  *
  * A polyfill of this spec is intentionally minimal: it provides the
- * `SyncModule` interface alias and a thin wrapper around the context-sync
+ * `SyncModule` interface alias and a thin wrapper around the graph-sync
  * runtime registry. A real implementation supplies a WebAssembly sandbox,
  * module loader, capability mediation, and lifecycle (install/update/suspend/
  * remove); see {@link https://www.w3.org/TR/sync-module-architecture/} for the
@@ -27,7 +27,7 @@ export interface ModuleManifest {
 
 /**
  * Install a sync module as the active runtime. Subsequent
- * `Context.publish/peers/diff/signal` calls dispatch to this module.
+ * `Graph.publish/peers/diff/signal` calls dispatch to this module.
  */
 export function installSyncModule(module: SyncModule, _manifest?: ModuleManifest): void {
   installSyncRuntime(module);

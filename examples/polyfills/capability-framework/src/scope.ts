@@ -1,8 +1,8 @@
 /**
- * Scope resolution across nested contexts.
+ * Scope resolution across nested graphs.
  *
- * Walks `context://participates_in` links upward (from the writing context
- * toward its parent contexts). Mutually-declared `context://accepts_participation`
+ * Walks `context://participates_in` links upward (from the writing graph
+ * toward its parent graphs). Mutually-declared `context://accepts_participation`
  * is verified before honouring a participation claim.
  */
 
@@ -17,7 +17,7 @@ const MAX_ANCESTRY_DEPTH = 100;
 const VALID_KINDS = new Set<ConstraintKind>(['capability', 'temporal', 'content', 'credential']);
 
 /**
- * Walk from the writing context up through participates_in links.
+ * Walk from the writing graph up through participates_in links.
  * Each parent must reciprocally declare accepts_participation for the claim
  * to be honoured.
  */

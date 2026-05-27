@@ -5,7 +5,7 @@
  * support and only installs polyfills if needed.
  *
  * Installs identity (did:key + did:graph), personal-graph
- * (GraphStoreManager on navigator.graph), shape-validation, context-sync +
+ * (GraphManager on navigator.graph), shape-validation, graph-sync +
  * default-sync-module, group-identity, and flows extensions.
  */
 

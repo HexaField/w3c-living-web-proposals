@@ -1,7 +1,7 @@
 /**
  * Governance setup for collaborative canvas
  */
-import { Context } from '@living-web/personal-graph';
+import { Graph } from '@living-web/personal-graph';
 import {
   createGovernanceLayer,
   createCapability,
@@ -10,7 +10,7 @@ import {
 } from '@living-web/capability-framework';
 import { PREDICATES } from './shapes.js';
 
-type SharedGraph = Context;
+type SharedGraph = Graph;
 
 const EDITOR_PREDICATES = [
   PREDICATES.SHAPE_TYPE, PREDICATES.SHAPE_X, PREDICATES.SHAPE_Y,
