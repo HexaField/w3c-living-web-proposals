@@ -123,7 +123,7 @@ export class GraphManager {
     return this.graphs.values();
   }
 
-  /** @internal Look up a graph by internal id, current IRI, or sovereign DID. */
+  /** @internal Look up a graph by internal id, current IRI, or `did` slot. */
   getGraph(idOrIriOrDid: string): Graph | undefined {
     const direct = this.graphs.get(idOrIriOrDid);
     if (direct) return direct;

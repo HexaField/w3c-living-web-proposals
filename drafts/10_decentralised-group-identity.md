@@ -387,7 +387,7 @@ For a `did:graph` credential, `addDelegate()` translates into the corresponding 
 
 `signGraph(graphIri)` produces a signed assertion of a graph's current state — the canonical way to attest "I observed graph G at state-hash H at time T." The method MUST:
 
-1. Compute the graph's state hash via [[PERSONAL-LINKED-DATA-GRAPHS]] §`contentHash()`.
+1. Compute the graph's state hash per the content-hash algorithm in [[PERSONAL-LINKED-DATA-GRAPHS]] §5.2 (equivalently, `graph.iri` with the `graph://` prefix stripped).
 2. Sign the structured payload `{ graphIri, stateHash }` using `sign()` ([[DECENTRALISED-IDENTITY]] §6.1).
 3. Return the `SignedContent`.
 

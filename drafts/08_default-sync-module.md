@@ -322,7 +322,7 @@ The threshold MUST be documented by the module — receiving peers need to know 
 ### 9.3 Promotion Algorithm
 
 1. The committing module decides to promote (typically the agent who authored the threshold-crossing diff).
-2. The module calls `getAsSnapshot()` on the graph ([[PERSONAL-LINKED-DATA-GRAPHS]] §5.2) requesting `signBy: "both"`.
+2. The module calls `getAsSnapshot()` on the graph ([[PERSONAL-LINKED-DATA-GRAPHS]] §5.4) requesting `signBy: "both"`. The default `"nquads-canonical"` format is RECOMMENDED for SNAPSHOT messages: it is the most compact RDF 1.2 serialisation defined and lets recipients verify the IRI invariant by a single SHA-256 over `snapshot.data` without parsing.
 3. The module commits a special `SNAPSHOT` diff into the space carrying the snapshot. The diff's `dependencies` includes all previously-unsnapshotted diffs.
 4. Receiving peers apply the snapshot, mark the prior chain as superseded, and discard older diffs from local cache after a grace period.
 
@@ -340,7 +340,7 @@ The respondent is any peer with the snapshot locally — typically the agent who
 
 ### 9.5 Snapshot Signature
 
-The snapshot's signature(s) are produced via [[PERSONAL-LINKED-DATA-GRAPHS]] §5.2:
+The snapshot's signature(s) are produced via [[PERSONAL-LINKED-DATA-GRAPHS]] §5.4 (`signBy: "both"`):
 
 - The snapshotter signs ("agent X observed graph G at hash H at time T").
 - A graph-DID `assertionMethod` delegate signs ("graph G asserts H at T"), if available.

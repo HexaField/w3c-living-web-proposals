@@ -3,13 +3,14 @@
  *
  * Its `iri` is a `graph://<content-hash>` URI computed from the current
  * triple set. **Mutations change the IRI** — the IRI identifies a snapshot,
- * not the evolving graph itself. For sovereign, content-independent
- * identity, an extension specification must attach a DID to `graph.did`
- * (see `@living-web/group-identity` for the `did:graph` method).
+ * not the evolving graph itself. For content-independent identity that
+ * survives mutation, the `did` slot is reserved per Spec 02 §3.3; this
+ * specification does not populate it (other specifications layered on top
+ * may).
  *
- * Internally the graph is tracked by an opaque `id` (a fresh UUID at
- * creation, stable for the graph's lifetime). Storage is keyed by this
- * id, not by the IRI — the IRI is too volatile.
+ * Internally the graph is tracked by a stable internal `id` (a URN
+ * minted at creation, never changing). Storage is keyed by this id,
+ * not by the IRI — the IRI is too volatile.
  */
 
 import { v4 as uuidv4 } from 'uuid';
@@ -63,7 +64,7 @@ export function computeGraphIri(triples: readonly SignedTriple[]): string {
 
 /**
  * Receiver interface that the GraphManager implements; lets a Graph call
- * back when it is dissolved or wants to surface a sovereign-DID binding.
+ * back when it is dissolved or wants to surface a `did`-slot binding.
  */
 export interface GraphManagerHooks {
   notifyDissolved(graph: Graph): void;
@@ -74,15 +75,15 @@ export class Graph extends EventTarget {
   /** Opaque, stable internal id — what storage is keyed by. Not the IRI. */
   readonly id: string;
   /**
-   * Optional sovereign DID (content-independent identity) attached by an
-   * extension specification. Null until attached.
+   * Optional content-independent DID identifying the graph across all its
+   * states. Null until set; this specification does not populate it.
    */
   private _did: string | null = null;
   readonly displayName: string | null;
   /**
    * Provenance tag for this graph instance. `"local"` for graphs created by
    * the calling agent; `"external"` for graphs materialised from a snapshot
-   * received from another source. Extension specifications MAY define
+   * received from another source. Other specifications MAY define
    * additional values (e.g., `"mounted-read"`).
    */
   trustLevel: string | null = 'local';
@@ -148,15 +149,16 @@ export class Graph extends EventTarget {
     return this._cachedIri;
   }
 
-  /** The sovereign DID if attached by an extension; otherwise null. */
+  /** The graph's `did` per Spec 02 §3.3; null if not set. */
   get did(): string | null {
     return this._did;
   }
 
   /**
-   * Attach a sovereign DID to this graph. Called by an extension
-   * specification (e.g. `@living-web/group-identity`) after writing the
-   * binding + DID-document triples. Once set, the DID should not change.
+   * Attach a DID to this graph's `did` slot. This specification does not
+   * call this directly; other specifications (or applications) populate
+   * the slot when they bind a content-independent identifier. Once set,
+   * the DID MUST NOT change.
    */
   setDid(did: string): void {
     if (this._did && this._did !== did) {
@@ -174,13 +176,10 @@ export class Graph extends EventTarget {
     this.reifiers = await this.storage.loadReifiers(this.id);
     this.usedBytesValue = this.triples.reduce((s, t) => s + this.estimateSize(t), 0);
     this.invalidateIri();
-    // Pick up the graph's sovereign DID from its DID-document triples, if any.
-    if (!this._did) {
-      const docTriple = this.triples.find(
-        t => t.data.predicate === 'did://hasMethod' && t.data.subject.startsWith('did:graph:'),
-      );
-      if (docTriple) this._did = docTriple.data.subject;
-    }
+    // The `did` slot is reserved by Spec 02 §3.3 but not populated by this
+    // specification. Other specifications that store the DID binding inside
+    // the graph's triples can amend `fromSnapshot` step 7 to recover it on
+    // load (Spec 02 §8.2); this polyfill keeps the substrate neutral.
   }
 
   get ontripleadded(): EventListener | null {
@@ -227,10 +226,9 @@ export class Graph extends EventTarget {
     const triple = input instanceof Triple
       ? input
       : new Triple(input.subject, input.predicate, input.object);
-    // The signing-time "graph identifier" embedded in the reifier is the
-    // stable id of this graph (the sovereign DID if available, otherwise the
-    // internal id). Using the volatile IRI would invalidate every reifier on
-    // the next write.
+    // Per Spec 02 §3.2.1, the signing-time graph identifier is the graph's
+    // `did` if set, otherwise its stable internal `id`. Using the volatile
+    // `iri` would invalidate every reifier on the next write.
     const graphIdForSig = this._did ?? this.id;
     const reifier = await signTripleWithReifier(triple, this.identity, graphIdForSig);
     const signed = reifierToSigned(reifier);

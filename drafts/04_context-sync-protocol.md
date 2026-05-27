@@ -354,7 +354,7 @@ The `mount()` method MUST:
 
 1. Reject with `"InvalidStateError"` if the graph is already mounted.
 2. If `options.mode` is `"write"` or `"governance"`, require a `capabilityProof` and validate it against the graph's governance ([[CAPABILITY-FRAMEWORK]]). Reject with `"NotAllowedError"` on failure.
-3. If the graph's per-graph store does not exist locally and `options.snapshotUri` is provided, fetch and verify the snapshot per [[PERSONAL-LINKED-DATA-GRAPHS]] §5.4.
+3. If the graph's per-graph store does not exist locally and `options.snapshotUri` is provided, fetch and materialise the snapshot per [[PERSONAL-LINKED-DATA-GRAPHS]] §5.5.
 4. Subscribe to `spaceUri` using `moduleHash` (downloading the module if needed, with user consent — module installation semantics are out of scope here).
 5. Begin emitting and accepting `GraphDiff`s scoped to the mounted graph's sovereign DID.
 6. Return the live `Graph`.
@@ -532,7 +532,7 @@ The full handshake for an agent to subscribe to a graph they have not previously
 2. **Resolve.** The runtime resolves the DID per [[DID-CORE]]. If no snapshot is locally available, fetch one via the snapshot URI hint and verify it (the snapshot's `graphIri` is its content hash; the snapshot's binding to the sovereign DID is verified per the conventions established by the DID method in use).
 3. **Verify snapshot.** Verify the snapshot's signatures.
 4. **Verify capability.** If the mount mode requires authorisation, verify the agent's `capabilityProof` against the (now-resolved) graph governance.
-5. **Mount.** Open the per-graph store and write the snapshot triples ([[PERSONAL-LINKED-DATA-GRAPHS]] §5.3).
+5. **Mount.** Open the per-graph store and materialise the snapshot via `GraphManager.fromSnapshot()` ([[PERSONAL-LINKED-DATA-GRAPHS]] §5.5). Any serialisation format defined in [[PERSONAL-LINKED-DATA-GRAPHS]] §5.3 is acceptable; the materialised graph's IRI equals the snapshot's `graphIri`.
 6. **Join space.** Subscribe to the space identified by the topology + module.
 7. **Sync.** Pull diffs from the space since the snapshot's `currentRevision`. Apply each (re-verifying CapabilityProofs).
 
