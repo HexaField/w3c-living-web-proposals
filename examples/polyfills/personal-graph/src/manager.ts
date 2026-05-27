@@ -83,12 +83,16 @@ export class GraphManager {
   }
 
   /**
-   * Materialise a graph from a previously-serialised snapshot. The resulting
-   * graph's IRI matches `snapshot.graphIri` exactly until the first
-   * mutation, because the original signed triples + reifiers are reinstated
-   * as-is rather than re-signed by the receiving agent.
+   * Materialise a graph from a previously-serialised snapshot. Accepts any
+   * RDF 1.2 serialisation defined by Spec 02 §5.3 (`nquads-canonical`,
+   * `nquads`, `turtle`, `jsonld`) — every format carries the full triple
+   * set including reifiers and is round-trippable.
    *
-   * Per Spec 02 §5.4, rejects with `"DataError"` if the recomputed IRI
+   * The resulting graph's IRI matches `snapshot.graphIri` exactly until the
+   * first mutation, because the original signed triples + reifiers are
+   * reinstated as-is rather than re-signed by the receiving agent.
+   *
+   * Per Spec 02 §5.5, rejects with `"DataError"` if the recomputed IRI
    * does not match `snapshot.graphIri`.
    */
   async fromSnapshot(snapshot: GraphSnapshot, options: GraphFromSnapshotOptions = {}): Promise<Graph> {

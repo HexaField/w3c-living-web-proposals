@@ -236,17 +236,26 @@ describe('GraphManager', () => {
     expect(materialised.trustLevel).toBe('external');
   });
 
-  it('rejects lossy snapshot formats in fromSnapshot', async () => {
-    const eph = new EphemeralIdentity();
-    await eph.ensureReady();
-    const manager = new GraphManager(store, async () => eph);
+  it.each(['nquads-canonical', 'nquads', 'turtle', 'jsonld'] as const)(
+    'round-trips a snapshot through the %s format with identical IRI',
+    async (format) => {
+      const eph = new EphemeralIdentity();
+      await eph.ensureReady();
+      const manager = new GraphManager(store, async () => eph);
 
-    const source = await manager.create({ displayName: 'Source' });
-    await source.addTriple(new Triple('urn:a', 'pred://x', 'hello'));
-    const lossy = await source.getAsSnapshot({ format: 'turtle', signBy: 'agent' });
+      const source = await manager.create({ displayName: 'Source' });
+      await source.addTriple(new Triple('urn:a', 'pred://x', 'hello'));
+      await source.addTriple(new Triple('urn:b', 'pred://y', 'urn:other'));
+      const snap = await source.getAsSnapshot({ format, signBy: 'agent' });
 
-    await expect(manager.fromSnapshot(lossy)).rejects.toThrow(/NotSupportedError|lossy/);
-  });
+      const materialised = await manager.fromSnapshot(snap);
+      expect(materialised.iri).toBe(source.iri);
+      expect(materialised.iri).toBe(snap.graphIri);
+
+      const triples = await materialised.snapshot();
+      expect(triples).toHaveLength(2);
+    },
+  );
 });
 
 describe('Holonic SPARQL', () => {

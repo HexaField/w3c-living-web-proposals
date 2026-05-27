@@ -89,7 +89,7 @@ A conforming user agent MUST:
 
 1. Implement the data model in [§3](#3-data-model).
 2. Implement the `navigator.graph` API in [§4](#4-api).
-3. Implement graph snapshots ([§5](#5-graph-snapshots)) including the content-hash algorithm in [§5.2](#52-content-hash-computation) and the lossless serialisation format in [§5.3.1](#531-the-canonical-serialisation).
+3. Implement graph snapshots ([§5](#5-graph-snapshots)) including the content-hash algorithm in [§5.2](#52-content-hash-computation) and the canonical serialisation in [§5.3.1](#531-the-canonical-serialisation). Support for the additional RDF 1.2 serialisations in [§5.3.2](#532-other-rdf-12-serialisations) is OPTIONAL on the producer side; on the consumer side, `fromSnapshot()` MUST accept every format the user agent advertises support for.
 4. Support per-graph persistent storage as required by [§6](#6-storage).
 5. Implement holonic SPARQL queries as defined in [§7](#7-holonic-composition-and-sparql).
 
@@ -421,10 +421,9 @@ Observers that need to react to IRI changes do so via `tripleadded` / `triplerem
 
 ### 5.3 Serialisation Formats
 
-Two roles of serialisation are distinguished:
+Every serialisation format defined by this specification is a complete, lossless rendering of the graph's full triple set — data triples *and* reifier triples — in an RDF 1.2 syntax. Each format carries the same abstract content; the choice of format is a choice of syntax, not of fidelity. All four are round-trippable: a snapshot produced in any format can be passed to `fromSnapshot()` ([§5.5](#55-materialising-a-snapshot)) and yields a graph whose IRI equals `snapshot.graphIri`.
 
-- The **canonical serialisation** (§5.3.1) is lossless: it preserves the full triple set including reifier triples, and `fromSnapshot()` can re-materialise an identical graph (same IRI) from it. This is the only format guaranteed to round-trip.
-- **Export formats** (§5.3.2) are intended for interoperability with external tools that operate on data triples only. They are lossy: they discard reifier triples (or downgrade them to non-RDF-1.2 reification), and a snapshot in an export format MUST NOT be passed to `fromSnapshot()`.
+The `"nquads-canonical"` format is distinguished only in that its `data` bytes *are* the canonical hash form, so verifying the IRI invariant is a single SHA-256 with no parsing. Verification of the other formats requires parsing followed by re-canonicalisation per [§5.2](#52-content-hash-computation).
 
 ```webidl
 enum SnapshotFormat { "nquads-canonical", "nquads", "turtle", "jsonld" };
@@ -458,12 +457,12 @@ interface SnapshotProof {
 
 #### 5.3.1 The Canonical Serialisation
 
-The `"nquads-canonical"` format is the canonical N-Quads output of RDF Dataset Canonicalization [[RDF-CANON]] over the graph's full triple set (data triples + reifier triples) per [§5.2](#52-content-hash-computation), placed in the default graph of the dataset.
+The `"nquads-canonical"` format is the canonical N-Quads output of RDF Dataset Canonicalization [[RDF-CANON]] (the `rdfc-1.0` algorithm) over the graph's full triple set (data triples + reifier triples) per [§5.2](#52-content-hash-computation), placed in the default graph of the dataset.
 
-This format is lossless:
+This format MUST contain every triple that contributes to the IRI:
 
-- It contains every triple that contributes to the IRI.
-- Reifier triples are present, with their `rdf:reifies` triple-term targets and all four `prov://*` predicates.
+- Each data triple.
+- Each reifier's `rdf:reifies` triple — with its target expressed as an RDF 1.2 triple term `<<( s p o )>>` — and all four `prov://*` predicates per [§3.2](#32-triple-provenance-via-rdf-12-reifiers).
 - Blank-node labels are canonical (the [[RDF-CANON]] output is a function of the abstract triples, not of the labels supplied to the algorithm).
 
 A snapshot in `"nquads-canonical"` format MUST satisfy:
@@ -472,18 +471,29 @@ A snapshot in `"nquads-canonical"` format MUST satisfy:
 snapshot.graphIri == "graph://" + hex(SHA-256(snapshot.data))
 ```
 
-This is the invariant that `fromSnapshot()` ([§5.4](#54-materialising-a-snapshot)) checks.
+This is the invariant that `fromSnapshot()` ([§5.5](#55-materialising-a-snapshot)) checks directly, without re-canonicalisation.
 
-#### 5.3.2 Export Formats
+#### 5.3.2 Other RDF 1.2 Serialisations
 
-The `"nquads"`, `"turtle"`, and `"jsonld"` formats serialise the **data triples only**, omitting reifier triples. They are intended for interoperability with external RDF tooling that does not understand RDF 1.2 reifiers. A user agent that produces these formats MUST emit only the data triples (subjects not beginning `_:r-`) and MUST emit them in the canonical order produced by [[RDF-CANON]].
+The `"nquads"`, `"turtle"`, and `"jsonld"` formats serialise the same abstract triple set as the canonical form, in their respective RDF 1.2 syntaxes:
 
-Snapshots in export formats:
+- **`"nquads"`** — RDF 1.2 N-Quads [[N-QUADS]]. Same content as `"nquads-canonical"` but not necessarily in canonical line order and not necessarily with canonical blank-node labels. Reifier triples use the same triple-term syntax `<<( s p o )>>` as in the canonical form.
+- **`"turtle"`** — RDF 1.2 Turtle [[TURTLE]]. Reifier triples MAY be expressed either with the explicit triple-term syntax (`_:r rdf:reifies <<( s p o )>>`) or with Turtle 1.2 annotation syntax (`<< s p o ~ _:r >>`) per [[TURTLE]]. The four `prov://*` predicates are emitted as triples on the reifier node in either form.
+- **`"jsonld"`** — JSON-LD 1.2 [[JSON-LD12]]. Reifier triples are expressed using the `@triple` keyword introduced for RDF 1.2 alignment; the reifier node carries the four `prov://*` predicates as ordinary properties.
 
-- MAY be transported, archived, and inspected by RDF tooling.
-- MUST NOT be passed to `fromSnapshot()`. Calling `fromSnapshot()` with `snapshot.format !== "nquads-canonical"` MUST reject with `"NotSupportedError"`.
+A user agent emitting these formats MUST emit every reifier triple, so that a recipient applying the parse + canonicalise + SHA-256 sequence reproduces `snapshot.graphIri`.
 
-A user agent that needs to import a non-canonical snapshot MUST do so via application code that re-signs each triple under the importing identity; the resulting graph will have a different IRI from the source.
+These formats MAY be passed to `fromSnapshot()`. They MAY also be consumed directly by RDF 1.2 tooling that recognises the same set of constructs.
+
+#### 5.3.3 Verifying the IRI Invariant for Non-Canonical Formats
+
+For `format !== "nquads-canonical"`, a verifier MUST:
+
+1. Parse `snapshot.data` per its `format`.
+2. Project the parsed dataset back to the canonical form per [§5.2](#52-content-hash-computation) (the `rdfc-1.0` canonical N-Quads).
+3. Verify `snapshot.graphIri == "graph://" + hex(SHA-256(canonical-bytes))`.
+
+A correct implementation of any of the three non-canonical formats produces canonical bytes equal to those of the canonical-format emission of the same triple set.
 
 ### 5.4 Producing a Snapshot
 
@@ -491,7 +501,7 @@ A user agent that needs to import a non-canonical snapshot MUST do so via applic
 
 1. Compute the canonical dataset per [§5.2](#52-content-hash-computation) steps 1–2.
 2. Compute `graphIri` per [§5.2](#52-content-hash-computation) steps 3–4.
-3. Serialise the dataset per [§5.3.1](#531-the-canonical-serialisation) when `format` is `"nquads-canonical"`, or per [§5.3.2](#532-export-formats) otherwise.
+3. Serialise the full triple set (data triples + reifier triples) per [§5.3.1](#531-the-canonical-serialisation) when `format` is `"nquads-canonical"`, or per [§5.3.2](#532-other-rdf-12-serialisations) otherwise. Every format MUST include all reifier triples.
 4. Capture `timestamp` as the current time in RFC 3339 form.
 5. Produce proofs. Let `proofPayload = SHA-256(graphIri || "|" || timestamp)`:
    - If `signBy` is `"agent"` or `"both"`, sign `proofPayload` with the active agent credential and append a proof with `role = "agent"`.
@@ -503,10 +513,14 @@ A user agent that needs to import a non-canonical snapshot MUST do so via applic
 
 `GraphManager.fromSnapshot(snapshot, options?)` MUST:
 
-1. **Format check.** If `snapshot.format` is not `"nquads-canonical"`, reject with `"NotSupportedError"`. Only the canonical format is round-trippable; see [§5.3.2](#532-export-formats).
+1. **Format check.** If `snapshot.format` is not one of the values defined in [§5.3](#53-serialisation-formats) (or values added by other specifications per [§8.1](#81-amending-interfaces)) reject with `"NotSupportedError"`. All formats defined here are accepted.
 2. **Proof check.** Verify every proof in `snapshot.proofs`. If `snapshot.proofs` is empty OR any proof fails verification, reject with `"DataError"`.
-3. **Hash check.** Compute `expected = "graph://" + hex(SHA-256(snapshot.data))`. If `expected !== snapshot.graphIri`, reject with `"DataError"`.
-4. **Parse.** Parse `snapshot.data` as N-Quads 1.2 [[N-QUADS]]. Recover the data triples and their reifier triples.
+3. **Parse.** Parse `snapshot.data` according to `snapshot.format`:
+   - `"nquads-canonical"` and `"nquads"` per [[N-QUADS]];
+   - `"turtle"` per [[TURTLE]];
+   - `"jsonld"` per [[JSON-LD12]].
+   Recover the data triples and their reifier triples.
+4. **Hash check.** Compute `expected` per [§5.2](#52-content-hash-computation) from the parsed triples. For `"nquads-canonical"`, this is equivalent to (and MAY be implemented as) `"graph://" + hex(SHA-256(snapshot.data))`; for other formats, re-canonicalisation is required ([§5.3.3](#533-verifying-the-iri-invariant-for-non-canonical-formats)). If `expected !== snapshot.graphIri`, reject with `"DataError"`.
 5. **Allocate.** Mint a fresh internal `id` and per-graph store as in `create()` ([§4.1](#41-creating-a-graph)).
 6. **Insert.** Write every triple (data + reifier) into the new per-graph store without re-signing.
 7. **DID attachment.** If `snapshot.graphDid` is non-null, set the materialised graph's `did` attribute to that value. This specification does not define which predicate inside the graph's triples carries the DID binding; the snapshot's top-level `graphDid` field is the authoritative source for materialisation purposes.
@@ -833,15 +847,17 @@ const mounted = await navigator.graph.fromSnapshot(snapshot);
 // mounted.trustLevel === "external"
 ```
 
-### 12.5 Export for External Tooling
+### 12.5 Alternative Serialisations
+
+Every format defined in §5.3 is lossless and round-trippable. Choose `"turtle"` for human readability, `"jsonld"` for JSON tooling, `"nquads"` for line-oriented RDF tooling, or `"nquads-canonical"` (the default) when you want the IRI invariant to be verifiable by a single SHA-256 without parsing.
 
 ```javascript
-// Lossy export for tools that don't understand RDF 1.2 reifiers.
-const turtleExport = await calendar.getAsSnapshot({ format: "turtle", signBy: "agent" });
+// Human-readable Turtle 1.2, including reifier triples.
+const turtle = await calendar.getAsSnapshot({ format: "turtle", signBy: "agent" });
 
-// turtleExport.data is human-readable Turtle of the data triples only.
-// turtleExport CANNOT be passed to fromSnapshot(); attempting so rejects
-// with "NotSupportedError".
+// Round-trips identically — same IRI as the source.
+const restored = await navigator.graph.fromSnapshot(turtle);
+console.log(restored.iri === calendar.iri);   // true
 ```
 
 ### 12.6 Dissolving a Graph
@@ -872,6 +888,8 @@ await calendar.addTriple(/* ... */);  // → "InvalidStateError"
 - **[SPARQL12-QUERY]** "SPARQL 1.2 Query Language", W3C Working Draft. https://www.w3.org/TR/sparql12-query/
 - **[N-TRIPLES]** "RDF 1.2 N-Triples", W3C Working Draft. https://www.w3.org/TR/rdf12-n-triples/
 - **[N-QUADS]** "RDF 1.2 N-Quads", W3C Working Draft. https://www.w3.org/TR/rdf12-n-quads/
+- **[TURTLE]** "RDF 1.2 Turtle", W3C Working Draft. https://www.w3.org/TR/rdf12-turtle/
+- **[JSON-LD12]** "JSON-LD 1.2", W3C Working Draft. https://www.w3.org/TR/json-ld12/
 - **[STORAGE]** "Storage Standard". https://storage.spec.whatwg.org/
 - **[INDEXEDDB]** "Indexed Database API 3.0", W3C Working Draft. https://www.w3.org/TR/IndexedDB/
 
