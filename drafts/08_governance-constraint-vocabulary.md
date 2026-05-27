@@ -9,7 +9,12 @@
 
 ## Abstract
 
-This specification defines a normative vocabulary of **constraint kinds** that plug into the [[CAPABILITY-FRAMEWORK]]. Where the framework defines the capability-chain mechanism, enforcement modes, scope resolution, and the meta-structure of caveats, this specification defines *what specific constraints exist* and *how they are evaluated*: **temporal** (rate limits and intervals), **content** (length, blocked patterns, URL/domain/media-type policy), **credential** (Verifiable-Credential requirements per [[VC-DATA-MODEL-2.0]]), and the **shape** and **content** caveat types that integrate with [[SHAPE-VALIDATION]]. Each constraint kind defines its predicates, its plug-in handler, and its evaluation algorithm. The vocabulary is open-ended: applications MAY define additional kinds via the plug-in mechanism in [[CAPABILITY-FRAMEWORK]] §9.4.
+This specification defines a normative vocabulary of **constraint kinds** and **caveat types** that plug into the [[CAPABILITY-FRAMEWORK]]. Where the framework defines the capability-chain mechanism, enforcement modes, scope resolution, and the meta-structure of caveats (with `expiry` as the only built-in caveat type), this specification defines *what other constraints and caveats exist* and *how they are evaluated*. It covers:
+
+- **Constraint kinds** that plug in via `ConstraintKindHandler`: **temporal** (rate limits and intervals), **content** (length, blocked patterns, URL/domain/media-type policy), and **credential** (Verifiable-Credential requirements per [[VC-DATA-MODEL-2.0]]).
+- **Caveat types** that plug in via `CaveatHandler`: **predicate**, **property**, **subject**, **object**, **rateLimit**, **cardinality**, **authorOnly**, **shape**, **content**, and **credential**.
+
+Each kind and type defines its predicates / value shape, its plug-in handler, and its evaluation algorithm. The vocabulary is open-ended: applications MAY define additional kinds and types via the plug-in mechanism in [[CAPABILITY-FRAMEWORK]] §9.3.
 
 ---
 
@@ -27,7 +32,7 @@ This document is a draft Community Group Report. It has no official W3C standing
 4. [Credential Constraints](#4-credential-constraints)
 5. [Temporal Constraints](#5-temporal-constraints)
 6. [Content Constraints](#6-content-constraints)
-7. [Shape Caveat](#7-shape-caveat)
+7. [Caveat Vocabulary](#7-caveat-vocabulary)
 8. [Examples](#8-examples)
 9. [Security Considerations](#9-security-considerations)
 10. [Privacy Considerations](#10-privacy-considerations)
@@ -59,9 +64,9 @@ This specification depends on:
 
 The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" are to be interpreted as described in [[RFC2119]] and [[RFC8174]].
 
-A conforming **governance engine** that supports this vocabulary MUST register handlers for the constraint kinds `"credential"`, `"temporal"`, and `"content"` per the framework's plug-in mechanism ([[CAPABILITY-FRAMEWORK]] §9.4), and MUST handle the caveat types `shape` and `content` per [§7](#7-shape-caveat) and [§6.3](#63-content-caveat-evaluation).
+A conforming **governance engine** that supports this vocabulary MUST register handlers for the constraint kinds `"credential"`, `"temporal"`, and `"content"` per the framework's plug-in mechanism ([[CAPABILITY-FRAMEWORK]] §9.3), AND MUST register `CaveatHandler` plug-ins for each caveat type defined in [§7](#7-caveat-vocabulary).
 
-A conforming **application** MAY define additional constraint kinds; the engine handles them via the same plug-in mechanism.
+A conforming **application** MAY define additional constraint kinds and caveat types; the engine handles them via the same plug-in mechanism.
 
 ---
 
@@ -207,42 +212,118 @@ Optional:
 
 ### 6.3 `content` Caveat Evaluation
 
-In addition to constraint-bound content checks, [[CAPABILITY-FRAMEWORK]] §9.4 admits caveats of type `content` whose `value` is `{ "sparql": "ASK { ... }" }`. The handler:
-
-1. Builds an in-memory model containing the triple and its reifier.
-2. Substitutes `$this` in the SPARQL query for the triple's subject IRI.
-3. Executes the `ASK` query against the model.
-4. Returns ACCEPT iff the query returns `true`. Fail-closed on any query error.
+Constraint-bound content checks (above) restrict the *content* of triple objects across an entire graph or scope set. For per-delegation conditions (e.g., "this contractor's writes must additionally satisfy this SPARQL ASK"), see the `content` caveat in [§7.9](#79-content).
 
 ---
 
-## 7. Shape Caveat
+## 7. Caveat Vocabulary
 
-A caveat of type `shape` requires the authorised triple to conform to a registered SHACL shape ([[SHAPE-VALIDATION]]).
+This section defines the standard caveat types — caveats that attach to specific ZCAP delegations and narrow the conditions under which the capability may be exercised. Each is registered with the governance engine as a `CaveatHandler` per [[CAPABILITY-FRAMEWORK]] §9.3. Caveat composition with the framework's immutable-attenuation rule is unchanged: a child delegation MAY add caveats from this vocabulary, MUST NOT modify or remove parent caveats.
 
-### 7.1 Caveat Format
+### 7.1 Caveat Applicability to Non-Triple Operations
+
+Each caveat below carries an applicability flag (`appliesToNonTripleOps`) used by the engine when authorising non-triple operations such as `mountContext` ([[CAPABILITY-FRAMEWORK]] §7.1).
+
+| Caveat type | Applies to non-triple ops? | Rationale |
+|---|---|---|
+| `predicate` | No | Requires the triple's predicate. |
+| `property` | No | Requires the triple's predicate. |
+| `subject` | No | Requires the triple's subject. |
+| `object` | No | Requires the triple's object. |
+| `shape` | No | Requires the triple's subject + sibling triples. |
+| `content` | No | Requires the triple's object content. |
+| `rateLimit` | Yes | Context-only (author, action, window). |
+| `cardinality` | Yes | Context-only (delegation usage counter). |
+| `authorOnly` | Yes | Context-only (compares authors). |
+| `credential` | Yes | Context-only (author's credentials). |
+
+### 7.2 `predicate`
+
+```json
+{ "type": "predicate", "value": { "allowed": ["<uri>", ...], "denied": ["<uri>", ...] } }
+```
+
+Both `allowed` and `denied` are OPTIONAL arrays. Composition is **deny-wins-within-caveat**:
+
+1. If `denied` is present and contains the triple's predicate, REJECT.
+2. Else if `allowed` is present and non-empty and does NOT contain the triple's predicate, REJECT.
+3. Else ACCEPT.
+
+### 7.3 `property`
+
+```json
+{ "type": "property", "value": { "allowed": ["<uri>", ...], "denied": ["<uri>", ...] } }
+```
+
+Identical evaluation to `predicate` but applied at the property-path level for use with [[SHAPE-VALIDATION]] shape definitions. When combined with `shape`, narrows authority to specific properties of the shape: `shape` alone authorises any property of the shape; `shape` + `property` authorises only the listed properties of the shape.
+
+### 7.4 `subject` and `object`
+
+```json
+{ "type": "subject", "value": { "pattern": "<glob>" } }
+{ "type": "object",  "value": { "pattern": "<glob>" } }
+```
+
+Glob match against the triple's subject IRI / object lexical form. `*` matches any sequence; all other characters match literally. REJECT if the pattern does not match.
+
+### 7.5 `rateLimit`
+
+```json
+{ "type": "rateLimit", "value": { "maxPerWindow": <int>, "windowSeconds": <int> } }
+```
+
+Sliding-window rate limit keyed by `(zcap.id, author)`. The engine counts uses of the capability by the author within the trailing window and REJECTs when `maxPerWindow` is exceeded.
+
+**Eventual-consistency caveat.** Per [[CAPABILITY-FRAMEWORK]] §13.11, `rateLimit` is best-effort under concurrent writes from multiple peers — each peer evaluates against its local-state counter only. Communities that require strict bounds MUST pair this with a coordination mechanism at the sync layer.
+
+### 7.6 `cardinality`
+
+```json
+{ "type": "cardinality", "value": { "max": <int> } }
+```
+
+Lifetime usage cap, keyed by `(zcap.id, author)`. REJECT after `max` uses.
+
+**Eventual-consistency caveat.** Same as `rateLimit` (§7.5): under concurrent writes, the engine can only enforce against local-state counters; convergent over-use is possible and MUST be coordinated at the sync layer if strict bounds are needed.
+
+### 7.7 `authorOnly`
+
+```json
+{ "type": "authorOnly", "value": {} }
+```
+
+The operation MUST be authored by the same agent who created the triple's *subject* (the agent whose authorship is recorded on the subject's first introducing triple). REJECT otherwise. Use case: "only the author of a message may edit it." For operations against a subject that has no prior author of record, the caveat MUST ACCEPT (there is no other-author to compare against).
+
+### 7.8 `shape`
 
 ```json
 { "type": "shape", "value": { "shapeIri": "<URI of a registered shape>" } }
 ```
 
-The shape MUST be registered in the writing graph (or a parent graph reachable via `context://participates_in`) per [[SHAPE-VALIDATION]].
+The authorised triple MUST conform to a SHACL shape registered in the writing graph or a graph reachable via the participation scope set, per [[SHAPE-VALIDATION]].
 
-### 7.2 Evaluation Algorithm
-
-For each triple under the caveat's authority:
+**Evaluation algorithm.** For each triple under the caveat's authority:
 
 1. Resolve the shape via [[SHAPE-VALIDATION]] §7 (cross-graph resolution).
 2. Treat the triple's subject as the candidate node.
 3. Evaluate the shape's property definitions against the candidate node and all sibling triples in the same `GraphDiff`.
 4. Return ACCEPT iff the candidate conforms; REJECT otherwise.
 
-### 7.3 Relationship to `property` Caveat
+### 7.9 `content`
 
-The `property` caveat ([[CAPABILITY-FRAMEWORK]] §9.2) restricts which property paths a delegation can write. When combined with `shape`, it narrows the shape further to specific properties:
+```json
+{ "type": "content", "value": { "sparql": "ASK { ... }" } }
+```
 
-- `shape` alone — "any property of this shape."
-- `shape` + `property` — "this property of this shape."
+A SPARQL `ASK` query evaluated against an in-memory model containing the triple and its reifier. The substring `$this` in the query is substituted with the triple's subject IRI. REJECT unless the query returns `true`. Per [§9.4](#94-sparql-query-cost-content-caveat), implementations MUST cap query cost and treat exceeded caps as REJECT.
+
+### 7.10 `credential`
+
+```json
+{ "type": "credential", "value": { "requires": [{ "type": "<vc-type>", "issuerPattern": "<glob>"? }, ...] } }
+```
+
+The operation's author MUST present a Verifiable Credential matching every entry in `requires`. The credentials are supplied via the `presentations` field of the sync-protocol `CapabilityProofInput` ([[CONTEXT-SYNC]] §5.3) when delivered across the network, or via the author's `governance://has_credential` triples when evaluated against local state. Verification follows §4.2 of this spec, applied to each required type.
 
 ---
 

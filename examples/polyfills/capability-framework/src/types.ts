@@ -3,10 +3,12 @@
  *
  * - ZCAPs target `did:graph:...` as their canonical resource.
  * - Enforcement modes (Open / Announced / Enforced) are first-class.
- * - The core caveat types (Expiry, Predicate, Property, RateLimit, Cardinality,
- *   Subject, Object, AuthorOnly) are evaluated here. Additional caveat types
- *   (Shape, Content) and additional constraint kinds (temporal, content,
- *   credential) are supplied by plug-in handlers registered on the engine.
+ * - Only `expiry` is built into the framework as a caveat type — it applies
+ *   to the capability lifecycle itself and is meaningful regardless of which
+ *   plug-ins are installed. All other caveat types (predicate, property,
+ *   subject, object, rateLimit, cardinality, authorOnly, shape, content,
+ *   credential) are supplied by `CaveatHandler` plug-ins registered on the
+ *   engine — see `@living-web/constraint-vocabulary` for the standard set.
  * - A graph's authority is rooted in its root capability — a single ZCAP
  *   minted at creation time and delegatable like any other.
  */
@@ -15,22 +17,32 @@
 export type ConstraintKind = string;
 export type EnforcementMode = 'open' | 'announced' | 'enforced';
 
-export type CaveatType =
-  | 'expiry'
-  | 'predicate'
-  | 'shape'
-  | 'property'
-  | 'content'
-  | 'rateLimit'
-  | 'cardinality'
-  | 'subject'
-  | 'object'
-  | 'authorOnly'
-  | 'custom';
+/** `'expiry'` is built in; any other string identifies a plug-in caveat type. */
+export type CaveatType = string;
 
 export interface Caveat {
   type: CaveatType;
   value: Record<string, unknown>;
+}
+
+/**
+ * Caveat plug-in interface. Register via `engine.registerCaveatType(handler)`.
+ *
+ * `appliesToNonTripleOps` controls whether the engine evaluates this caveat
+ * when authorising operations that have no triple (e.g. `mountContext`).
+ * Caveats that depend on triple fields (predicate, subject, object, content)
+ * MUST set this to `false`; context-only caveats (expiry, rateLimit,
+ * cardinality, credential) MUST set it to `true`.
+ */
+export interface CaveatHandler {
+  type: string;
+  appliesToNonTripleOps: boolean;
+  evaluate(
+    caveat: Caveat,
+    triple: TripleInput | null,
+    action: string,
+    ctx: ValidationContext,
+  ): Promise<GovernanceValidationResult> | GovernanceValidationResult;
 }
 
 export interface GraphConstraint {

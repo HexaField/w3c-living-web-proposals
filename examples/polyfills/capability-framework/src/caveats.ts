@@ -1,144 +1,69 @@
 /**
- * Caveat vocabulary (Spec 03 §9).
+ * Caveat dispatch (Spec 04 §9).
  *
- * Each caveat narrows a ZCAP. Evaluated at write time against the operation.
+ * The framework defines exactly one core caveat type: `expiry`. All other
+ * caveat types are plug-ins registered via `engine.registerCaveatType(handler)`
+ * — see `@living-web/constraint-vocabulary` for the standard vocabulary.
+ *
+ * Counter-style caveats that need cross-invocation state (rateLimit,
+ * cardinality, etc.) live in the plug-in package; the framework holds no
+ * counters itself.
  */
 
-import type { Caveat, TripleInput, GovernanceValidationResult, ValidationContext } from './types.js';
+import type {
+  Caveat,
+  CaveatHandler,
+  TripleInput,
+  GovernanceValidationResult,
+  ValidationContext,
+} from './types.js';
 
-// Per-(zcapId,window) rate counters
-const rateCounters = new Map<string, number[]>();
-const cardinalityCounters = new Map<string, number>();
+/** Framework-core `expiry` handler — always registered by default. */
+export const expiryCaveatHandler: CaveatHandler = {
+  type: 'expiry',
+  appliesToNonTripleOps: true,
+  evaluate(caveat, _triple, _action, ctx) {
+    const { expiresAt } = caveat.value as { expiresAt?: string };
+    if (!expiresAt) return { allowed: true };
+    const now = ctx.now ? ctx.now() : Date.now();
+    if (new Date(expiresAt).getTime() < now) {
+      return { allowed: false, constraintKind: 'caveat', reason: 'Capability expired' };
+    }
+    return { allowed: true };
+  },
+};
 
+/**
+ * Evaluate caveats against an operation. The handler registry MUST contain
+ * at least `expiry`; missing handlers for any other caveat type cause
+ * rejection (fail-closed, Spec 04 §13.9). Non-triple ops skip handlers
+ * whose `appliesToNonTripleOps = false`.
+ */
 export async function evaluateCaveats(
   caveats: Caveat[],
-  triple: TripleInput,
+  triple: TripleInput | null,
   action: string,
   ctx: ValidationContext,
+  handlers: Map<string, CaveatHandler>,
 ): Promise<GovernanceValidationResult> {
-  const now = ctx.now ? ctx.now() : Date.now();
-
   for (const c of caveats) {
-    const result = await evalCaveat(c, triple, action, now, ctx);
-    if (!result.allowed) return result;
+    const h = handlers.get(c.type);
+    if (!h) {
+      return {
+        allowed: false,
+        constraintKind: 'caveat',
+        reason: `Unknown caveat type '${c.type}' has no registered handler`,
+      };
+    }
+    if (triple === null && !h.appliesToNonTripleOps) continue;
+    const r = await h.evaluate(c, triple, action, ctx);
+    if (!r.allowed) return r;
   }
   return { allowed: true };
 }
 
-async function evalCaveat(
-  c: Caveat,
-  triple: TripleInput,
-  _action: string,
-  now: number,
-  ctx: ValidationContext,
-): Promise<GovernanceValidationResult> {
-  switch (c.type) {
-    case 'expiry': {
-      const { expiresAt } = c.value as { expiresAt: string };
-      if (expiresAt && new Date(expiresAt).getTime() < now) {
-        return { allowed: false, constraintKind: 'caveat', reason: 'Capability expired' };
-      }
-      return { allowed: true };
-    }
-    case 'predicate': {
-      const { allowed, denied } = c.value as { allowed?: string[]; denied?: string[] };
-      if (denied?.includes(triple.predicate)) {
-        return { allowed: false, constraintKind: 'caveat', reason: `Predicate ${triple.predicate} denied` };
-      }
-      if (allowed && !allowed.includes(triple.predicate)) {
-        return { allowed: false, constraintKind: 'caveat', reason: `Predicate ${triple.predicate} not allowed` };
-      }
-      return { allowed: true };
-    }
-    case 'property': {
-      const { allowed, denied } = c.value as { allowed?: string[]; denied?: string[] };
-      if (denied?.includes(triple.predicate)) {
-        return { allowed: false, constraintKind: 'caveat', reason: `Property ${triple.predicate} denied` };
-      }
-      if (allowed && !allowed.includes(triple.predicate)) {
-        return { allowed: false, constraintKind: 'caveat', reason: `Property ${triple.predicate} not allowed` };
-      }
-      return { allowed: true };
-    }
-    case 'shape': {
-      // Shape conformance is checked by the shape-validation layer; here we only
-      // verify the caveat references a known shape IRI.
-      const { shapeIri } = c.value as { shapeIri: string };
-      if (!shapeIri) return { allowed: false, constraintKind: 'caveat', reason: 'Shape caveat missing shapeIri' };
-      return { allowed: true };
-    }
-    case 'rateLimit': {
-      const { maxPerWindow, windowSeconds } = c.value as { maxPerWindow: number; windowSeconds: number };
-      const key = `${triple.author}@${triple.predicate}`;
-      const arr = rateCounters.get(key) ?? [];
-      const cutoff = now - windowSeconds * 1000;
-      const recent = arr.filter(ts => ts >= cutoff);
-      if (recent.length >= maxPerWindow) {
-        return {
-          allowed: false,
-          constraintKind: 'caveat',
-          reason: `Rate limit: ${maxPerWindow} per ${windowSeconds}s exceeded`,
-        };
-      }
-      recent.push(now);
-      rateCounters.set(key, recent);
-      return { allowed: true };
-    }
-    case 'cardinality': {
-      const { max } = c.value as { max: number };
-      const key = `${triple.author}@cardinality`;
-      const current = cardinalityCounters.get(key) ?? 0;
-      if (current >= max) {
-        return { allowed: false, constraintKind: 'caveat', reason: `Cardinality cap ${max} exceeded` };
-      }
-      cardinalityCounters.set(key, current + 1);
-      return { allowed: true };
-    }
-    case 'subject': {
-      const { pattern } = c.value as { pattern: string };
-      if (!globMatch(pattern, triple.subject)) {
-        return { allowed: false, constraintKind: 'caveat', reason: `Source does not match ${pattern}` };
-      }
-      return { allowed: true };
-    }
-    case 'object': {
-      const { pattern } = c.value as { pattern: string };
-      if (!globMatch(pattern, triple.object)) {
-        return { allowed: false, constraintKind: 'caveat', reason: `Target does not match ${pattern}` };
-      }
-      return { allowed: true };
-    }
-    case 'content': {
-      const { sparql } = c.value as { sparql: string };
-      if (!sparql) return { allowed: true };
-      // The polyfill doesn't run arbitrary SPARQL against in-flight triples; we
-      // accept conservatively (a real runtime would evaluate the ASK query).
-      return { allowed: true };
-    }
-    case 'authorOnly': {
-      // The author must be the original instance creator. Polyfill best-effort:
-      // we look up an existing rdf://type triple's author and compare.
-      const existing = await ctx.queryTriples({ subject: triple.subject, predicate: 'rdf://type' });
-      if (existing.length > 0 && existing[0].author !== triple.author) {
-        return { allowed: false, constraintKind: 'caveat', reason: 'authorOnly: not the original author' };
-      }
-      return { allowed: true };
-    }
-    case 'custom':
-      // Custom caveats default to allow; applications register handlers separately.
-      return { allowed: true };
-  }
-}
-
-function globMatch(pattern: string, value: string): boolean {
-  const re = new RegExp(
-    '^' + pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$',
-  );
-  return re.test(value);
-}
-
-/** Test helper: reset accumulated counters. */
+/** Test helper retained for backward-compatible test API surface; no-op now. */
 export function resetCaveatCounters(): void {
-  rateCounters.clear();
-  cardinalityCounters.clear();
+  // No counters in the framework core. Plug-ins manage their own state and
+  // expose their own reset helpers (e.g. constraint-vocabulary).
 }

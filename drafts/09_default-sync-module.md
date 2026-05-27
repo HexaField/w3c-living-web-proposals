@@ -392,7 +392,7 @@ The engine internally applies the capability-chain verification ([[CAPABILITY-FR
 The default module's `validateReadAccess(graphDid, authorDid, capabilityProof?, graphState)` implements the read-side contract in [[CONTEXT-SYNC]] §9.2.2. It MUST be called by the receiving peer **before** serving a `SNAPSHOT` or any `DIFF` for `graphDid` in response to a `PULL` from `authorDid`:
 
 1. Resolve the `graphDid`'s governance engine via `graphState`.
-2. Determine whether the graph's scope set contains a capability constraint covering `mountContext` (i.e., a constraint with `constraint_kind = "capability"`, `capability_enforcement = "required"`, and either no `capability_predicates` restriction or the action `"mountContext"` in scope per [[CAPABILITY-FRAMEWORK]] §7.1). If none, return `{ accepted: true }` — read access is unrestricted.
+2. Determine whether the graph's scope set contains a capability constraint covering `mountContext` (i.e., a constraint with `constraint_kind = "capability"` and either no `capability_predicates` restriction or the action `"mountContext"` in scope per [[CAPABILITY-FRAMEWORK]] §7.1). If none, return `{ accepted: true }` — read access is unrestricted.
 3. Otherwise, invoke the engine's `validate({ author: authorDid, capabilityProof, ... }, { action: "mountContext" })` ([[CAPABILITY-FRAMEWORK]] §7 with the explicit action override per §7.1).
 4. Return `{ accepted: true }` or `{ accepted: false, constraintKind, constraintId, reason }`.
 

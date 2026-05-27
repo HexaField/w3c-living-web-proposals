@@ -113,7 +113,8 @@ async function bindConstraint(graphDid: string, constraintId: string): Promise<v
 async function defineCapabilityConstraint(constraintId: string, opts?: { predicates?: string[] }): Promise<void> {
   await graph.addTriple({ subject: constraintId, predicate: GOV.ENTRY_TYPE, object: GOV.CONSTRAINT });
   await graph.addTriple({ subject: constraintId, predicate: GOV.CONSTRAINT_KIND, object: '"capability"' });
-  await graph.addTriple({ subject: constraintId, predicate: GOV.CAPABILITY_ENFORCEMENT, object: '"required"' });
+  // Spec 04 §4.5.1: presence of a capability constraint is itself the "required" signal;
+  // the earlier `capability_enforcement` field has been removed.
   if (opts?.predicates) {
     await graph.addTriple({ subject: constraintId, predicate: GOV.CAPABILITY_PREDICATES, object: opts.predicates.join(',') });
   }
@@ -484,19 +485,26 @@ describe('Immutable-caveats attenuation', () => {
     await bindConstraint(ALPHA, 'urn:c:alpha-cap');
   });
 
+  // Use the framework-core `expiry` caveat type so the engine evaluates without
+  // needing constraint-vocabulary plug-ins registered. Future expiry → always
+  // accepted by the leaf check; the test focuses on chain-walk attenuation.
+  const FUTURE_EXPIRY: Caveat = { type: 'expiry', value: { expiresAt: '2099-01-01T00:00:00Z' } };
+
   function parentCap(caveats: Caveat[]): ZCAPDocument {
     return makeZcap({
       id: 'urn:cap:parent',
       invoker: ALICE,
       parent: BOOTSTRAP_ROOT,
-      actions: ['createLink'],
+      // delegateCapability required for chain walk to permit children
+      // (Spec 04 §7 step 6.5.3).
+      actions: ['createLink', 'delegateCapability'],
       resource: ALPHA,
       caveats,
     });
   }
 
   test('child with identical caveats: chain valid', async () => {
-    const parent = parentCap([{ type: 'rateLimit', value: { maxPerWindow: 10, windowSeconds: 60 } }]);
+    const parent = parentCap([FUTURE_EXPIRY]);
     storeZcap(parent);
     await declareRoot(ALPHA, parent.id);
 
@@ -506,7 +514,7 @@ describe('Immutable-caveats attenuation', () => {
       parent: parent.id,
       actions: ['createLink'],
       resource: ALPHA,
-      caveats: [{ type: 'rateLimit', value: { maxPerWindow: 10, windowSeconds: 60 } }],
+      caveats: [FUTURE_EXPIRY],
       proofSigner: ALICE,
     });
     storeZcap(child);
@@ -518,7 +526,7 @@ describe('Immutable-caveats attenuation', () => {
   });
 
   test('child adding a new caveat (parent caveats unchanged): chain valid', async () => {
-    const parent = parentCap([{ type: 'rateLimit', value: { maxPerWindow: 10, windowSeconds: 60 } }]);
+    const parent = parentCap([FUTURE_EXPIRY]);
     storeZcap(parent);
     await declareRoot(ALPHA, parent.id);
 
@@ -529,8 +537,9 @@ describe('Immutable-caveats attenuation', () => {
       actions: ['createLink'],
       resource: ALPHA,
       caveats: [
-        { type: 'rateLimit', value: { maxPerWindow: 10, windowSeconds: 60 } },
-        { type: 'predicate', value: { allowed: ['urn:p:x'] } },
+        FUTURE_EXPIRY,
+        // Earlier expiry as additional restriction — still framework-core.
+        { type: 'expiry', value: { expiresAt: '2098-06-15T00:00:00Z' } },
       ],
       proofSigner: ALICE,
     });
@@ -543,7 +552,7 @@ describe('Immutable-caveats attenuation', () => {
   });
 
   test('child missing a parent caveat: chain invalid', async () => {
-    const parent = parentCap([{ type: 'rateLimit', value: { maxPerWindow: 10, windowSeconds: 60 } }]);
+    const parent = parentCap([FUTURE_EXPIRY]);
     storeZcap(parent);
     await declareRoot(ALPHA, parent.id);
 
@@ -553,7 +562,7 @@ describe('Immutable-caveats attenuation', () => {
       parent: parent.id,
       actions: ['createLink'],
       resource: ALPHA,
-      caveats: [],   // missing the parent's rateLimit
+      caveats: [],   // missing the parent's expiry
       proofSigner: ALICE,
     });
     storeZcap(child);
@@ -565,7 +574,7 @@ describe('Immutable-caveats attenuation', () => {
   });
 
   test('child with modified parent caveat (different value): chain invalid', async () => {
-    const parent = parentCap([{ type: 'rateLimit', value: { maxPerWindow: 10, windowSeconds: 60 } }]);
+    const parent = parentCap([FUTURE_EXPIRY]);
     storeZcap(parent);
     await declareRoot(ALPHA, parent.id);
 
@@ -575,7 +584,8 @@ describe('Immutable-caveats attenuation', () => {
       parent: parent.id,
       actions: ['createLink'],
       resource: ALPHA,
-      caveats: [{ type: 'rateLimit', value: { maxPerWindow: 100, windowSeconds: 60 } }],  // "narrowed" → still rejected
+      // Different expiresAt value — "narrowed" but byte-different → invalid.
+      caveats: [{ type: 'expiry', value: { expiresAt: '2050-01-01T00:00:00Z' } }],
       proofSigner: ALICE,
     });
     storeZcap(child);
@@ -601,7 +611,7 @@ describe('Revocation', () => {
       id: 'urn:cap:parent',
       invoker: ALICE,
       parent: BOOTSTRAP_ROOT,
-      actions: ['createLink'],
+      actions: ['createLink', 'delegateCapability'],
       resource: ALPHA,
     });
     storeZcap(parent);
@@ -643,14 +653,16 @@ describe('Action derivation', () => {
   test('did-document:// → updateDIDDocument', () => {
     expect(inferAction(mkTriple('did-document://add-method'))).toBe('updateDIDDocument');
   });
-  test('shacl:// → updateSHACL', () => {
-    expect(inferAction(mkTriple('shacl://target'))).toBe('updateSHACL');
+  test('extension-registered prefix → custom action (shacl://)', () => {
+    // Plug-in registration: shacl:// is NOT in the framework-core map; it must
+    // be supplied by the extension spec. Spec 04 §4.5.4.1.
+    expect(inferAction(mkTriple('shacl://target'), [['shacl://', 'updateSHACL']])).toBe('updateSHACL');
   });
-  test('shape:// → updateSHACL', () => {
-    expect(inferAction(mkTriple('shape://target'))).toBe('updateSHACL');
+  test('extension-registered prefix → custom action (shape://)', () => {
+    expect(inferAction(mkTriple('shape://target'), [['shape://', 'updateSHACL']])).toBe('updateSHACL');
   });
-  test('flow:// → updateFlow', () => {
-    expect(inferAction(mkTriple('flow://name'))).toBe('updateFlow');
+  test('extension-registered prefix → custom action (flow://)', () => {
+    expect(inferAction(mkTriple('flow://name'), [['flow://', 'updateFlow']])).toBe('updateFlow');
   });
   test('unrecognised prefix → createLink', () => {
     expect(inferAction(mkTriple('urn:msg:body'))).toBe('createLink');
@@ -946,5 +958,331 @@ describe('Read-side authorization: end-to-end PULL scenario (validateAction as t
     expect(bobResponse.accepted).toBe(false);
     // Responder would send PULL_DENIED { graphDid, reason: 'mountContext_required', ... }
     //   and MUST NOT send SNAPSHOT or DIFFs for ALPHA to Bob.
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 10. DELEGATE-CAPABILITY ENFORCEMENT (Spec 04 §7 step 6.5.3)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('delegateCapability enforcement', () => {
+  beforeEach(async () => {
+    await declareEnforcement(ALPHA, 'enforced');
+    await defineCapabilityConstraint('urn:c:alpha-cap');
+    await bindConstraint(ALPHA, 'urn:c:alpha-cap');
+  });
+
+  test('parent without delegateCapability breaks the chain', async () => {
+    // Parent has createLink but NOT delegateCapability — so it must not be
+    // usable as the parent of any sub-delegation.
+    const parent = makeZcap({
+      id: 'urn:cap:parent',
+      invoker: ALICE,
+      parent: BOOTSTRAP_ROOT,
+      actions: ['createLink'],  // no delegateCapability
+      resource: ALPHA,
+    });
+    storeZcap(parent);
+    await declareRoot(ALPHA, parent.id);
+
+    const child = makeZcap({
+      id: 'urn:cap:child',
+      invoker: BOB,
+      parent: parent.id,
+      actions: ['createLink'],
+      resource: ALPHA,
+      proofSigner: ALICE,
+    });
+    storeZcap(child);
+    await grantZcap(BOB, child.id);
+
+    const result = await new GraphGovernanceEngine(ctxFor(ALPHA, 'enforced'))
+      .validate(mkTriple('urn:p:x', { author: BOB }));
+    expect(result.allowed).toBe(false);
+    expect(result.constraintKind).toBe('capability');
+  });
+
+  test('parent with delegateCapability permits the chain', async () => {
+    const parent = makeZcap({
+      id: 'urn:cap:parent',
+      invoker: ALICE,
+      parent: BOOTSTRAP_ROOT,
+      actions: ['createLink', 'delegateCapability'],
+      resource: ALPHA,
+    });
+    storeZcap(parent);
+    await declareRoot(ALPHA, parent.id);
+
+    const child = makeZcap({
+      id: 'urn:cap:child',
+      invoker: BOB,
+      parent: parent.id,
+      actions: ['createLink'],
+      resource: ALPHA,
+      proofSigner: ALICE,
+    });
+    storeZcap(child);
+    await grantZcap(BOB, child.id);
+
+    const result = await new GraphGovernanceEngine(ctxFor(ALPHA, 'enforced'))
+      .validate(mkTriple('urn:p:x', { author: BOB }));
+    expect(result.allowed).toBe(true);
+  });
+
+  test('grandparent missing delegateCapability breaks the chain at that step', async () => {
+    // Root has delegateCapability (so it can mint the middle cap)…
+    const root = makeZcap({
+      id: 'urn:cap:root',
+      invoker: OWNER,
+      parent: BOOTSTRAP_ROOT,
+      actions: ['createLink', 'delegateCapability'],
+      resource: ALPHA,
+    });
+    storeZcap(root);
+    await declareRoot(ALPHA, root.id);
+
+    // …but the middle cap does NOT have delegateCapability, so it can't
+    // legitimately have minted the leaf.
+    const middle = makeZcap({
+      id: 'urn:cap:middle',
+      invoker: ALICE,
+      parent: root.id,
+      actions: ['createLink'],  // no delegateCapability
+      resource: ALPHA,
+      proofSigner: OWNER,
+    });
+    storeZcap(middle);
+
+    const leaf = makeZcap({
+      id: 'urn:cap:leaf',
+      invoker: BOB,
+      parent: middle.id,
+      actions: ['createLink'],
+      resource: ALPHA,
+      proofSigner: ALICE,
+    });
+    storeZcap(leaf);
+    await grantZcap(BOB, leaf.id);
+
+    const result = await new GraphGovernanceEngine(ctxFor(ALPHA, 'enforced'))
+      .validate(mkTriple('urn:p:x', { author: BOB }));
+    expect(result.allowed).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 11. BRICK-STATE GUARD (Spec 04 §13.10)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('brick-state guard', () => {
+  test('refuses a revocation that would leave zero updateGovernance caps', async () => {
+    const sole = makeZcap({
+      id: 'urn:cap:sole-governance',
+      invoker: ALICE,
+      parent: BOOTSTRAP_ROOT,
+      actions: ['createLink', 'updateGovernance', 'delegateCapability'],
+      resource: ALPHA,
+    });
+    storeZcap(sole);
+    await declareRoot(ALPHA, sole.id);
+    await grantZcap(ALICE, sole.id);
+
+    const engine = new GraphGovernanceEngine(ctxFor(ALPHA, 'enforced'));
+    const guard = await engine.wouldBrickGovernance([sole.id]);
+    expect(guard.allowed).toBe(false);
+    expect(guard.reason).toBe('would_brick_governance');
+  });
+
+  test('accepts a revocation when another updateGovernance cap survives', async () => {
+    const a = makeZcap({
+      id: 'urn:cap:gov-a',
+      invoker: ALICE,
+      parent: BOOTSTRAP_ROOT,
+      actions: ['updateGovernance', 'delegateCapability'],
+      resource: ALPHA,
+    });
+    storeZcap(a);
+    await declareRoot(ALPHA, a.id);
+    await grantZcap(ALICE, a.id);
+
+    const b = makeZcap({
+      id: 'urn:cap:gov-b',
+      invoker: BOB,
+      parent: a.id,
+      actions: ['updateGovernance'],
+      resource: ALPHA,
+      proofSigner: ALICE,
+    });
+    storeZcap(b);
+    await grantZcap(BOB, b.id);
+
+    const engine = new GraphGovernanceEngine(ctxFor(ALPHA, 'enforced'));
+    // Revoking b leaves a; allowed.
+    const guard = await engine.wouldBrickGovernance([b.id]);
+    expect(guard.allowed).toBe(true);
+  });
+
+  test('expired updateGovernance caps do not count as survivors', async () => {
+    const live = makeZcap({
+      id: 'urn:cap:gov-live',
+      invoker: ALICE,
+      parent: BOOTSTRAP_ROOT,
+      actions: ['updateGovernance', 'delegateCapability'],
+      resource: ALPHA,
+    });
+    storeZcap(live);
+    await grantZcap(ALICE, live.id);
+
+    const expired = makeZcap({
+      id: 'urn:cap:gov-expired',
+      invoker: BOB,
+      parent: BOOTSTRAP_ROOT,
+      actions: ['updateGovernance', 'delegateCapability'],
+      resource: ALPHA,
+      caveats: [{ type: 'expiry', value: { expiresAt: '2020-01-01T00:00:00Z' } }],
+    });
+    storeZcap(expired);
+    await grantZcap(BOB, expired.id);
+
+    const engine = new GraphGovernanceEngine(ctxFor(ALPHA, 'enforced'));
+    // Revoking the live cap — only the expired one would remain, which doesn't count.
+    const guard = await engine.wouldBrickGovernance([live.id]);
+    expect(guard.allowed).toBe(false);
+  });
+
+  test('already-revoked caps do not count as survivors', async () => {
+    const a = makeZcap({
+      id: 'urn:cap:gov-a',
+      invoker: ALICE,
+      parent: BOOTSTRAP_ROOT,
+      actions: ['updateGovernance', 'delegateCapability'],
+      resource: ALPHA,
+    });
+    storeZcap(a);
+    await grantZcap(ALICE, a.id);
+
+    const b = makeZcap({
+      id: 'urn:cap:gov-b',
+      invoker: BOB,
+      parent: BOOTSTRAP_ROOT,
+      actions: ['updateGovernance', 'delegateCapability'],
+      resource: ALPHA,
+    });
+    storeZcap(b);
+    await grantZcap(BOB, b.id);
+    // Pre-existing revocation of b.
+    await graph.addTriple({ subject: ALICE, predicate: GOV.REVOKES_CAPABILITY, object: b.id });
+
+    const engine = new GraphGovernanceEngine(ctxFor(ALPHA, 'enforced'));
+    // Revoking a now would leave only b, which is already revoked.
+    const guard = await engine.wouldBrickGovernance([a.id]);
+    expect(guard.allowed).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 12. CAVEAT HANDLER REGISTRY (Spec 04 §9.3)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('caveat handler registry', () => {
+  beforeEach(async () => {
+    await declareEnforcement(ALPHA, 'enforced');
+    await defineCapabilityConstraint('urn:c:alpha-cap');
+    await bindConstraint(ALPHA, 'urn:c:alpha-cap');
+  });
+
+  test('expiry is registered by default (framework-core)', async () => {
+    const cap = makeZcap({
+      id: 'urn:cap:expiring',
+      invoker: ALICE,
+      parent: BOOTSTRAP_ROOT,
+      actions: ['createLink'],
+      resource: ALPHA,
+      caveats: [{ type: 'expiry', value: { expiresAt: '2099-01-01T00:00:00Z' } }],
+    });
+    storeZcap(cap);
+    await declareRoot(ALPHA, cap.id);
+    await grantZcap(ALICE, cap.id);
+
+    const result = await new GraphGovernanceEngine(ctxFor(ALPHA, 'enforced'))
+      .validate(mkTriple('urn:p:x', { author: ALICE }));
+    expect(result.allowed).toBe(true);
+  });
+
+  test('unknown caveat type on leaf rejects fail-closed', async () => {
+    const cap = makeZcap({
+      id: 'urn:cap:unknown',
+      invoker: ALICE,
+      parent: BOOTSTRAP_ROOT,
+      actions: ['createLink'],
+      resource: ALPHA,
+      caveats: [{ type: 'rateLimit', value: { maxPerWindow: 1, windowSeconds: 60 } }],
+    });
+    storeZcap(cap);
+    await declareRoot(ALPHA, cap.id);
+    await grantZcap(ALICE, cap.id);
+
+    const result = await new GraphGovernanceEngine(ctxFor(ALPHA, 'enforced'))
+      .validate(mkTriple('urn:p:x', { author: ALICE }));
+    expect(result.allowed).toBe(false);
+  });
+
+  test('registered caveat handler is dispatched correctly', async () => {
+    const cap = makeZcap({
+      id: 'urn:cap:custom',
+      invoker: ALICE,
+      parent: BOOTSTRAP_ROOT,
+      actions: ['createLink'],
+      resource: ALPHA,
+      caveats: [{ type: 'always-deny', value: {} }],
+    });
+    storeZcap(cap);
+    await declareRoot(ALPHA, cap.id);
+    await grantZcap(ALICE, cap.id);
+
+    const engine = new GraphGovernanceEngine(ctxFor(ALPHA, 'enforced'));
+    engine.registerCaveatType({
+      type: 'always-deny',
+      appliesToNonTripleOps: true,
+      evaluate: () => ({ allowed: false, constraintKind: 'caveat', reason: 'denied by plug-in' }),
+    });
+
+    const result = await engine.validate(mkTriple('urn:p:x', { author: ALICE }));
+    // The handler is dispatched and rejects the only candidate cap; the
+    // engine then reports `no_matching_capability` for the overall outcome
+    // because no other candidate exists. The dispatch is proven by the
+    // fact that allowed is false despite a valid chain/action match.
+    expect(result.allowed).toBe(false);
+    expect(result.constraintKind).toBe('capability');
+  });
+
+  test('appliesToNonTripleOps=false skips caveat for mountContext (non-triple op)', async () => {
+    // Capability constraint targets mountContext; cap has a triple-content
+    // caveat that would be skipped for the non-triple operation.
+    await defineCapabilityConstraint('urn:c:mount-cap', { predicates: ['mountContext'] });
+    await bindConstraint(ALPHA, 'urn:c:mount-cap');
+
+    const cap = makeZcap({
+      id: 'urn:cap:mount-with-pred',
+      invoker: ALICE,
+      parent: BOOTSTRAP_ROOT,
+      actions: ['mountContext'],
+      resource: ALPHA,
+      // This caveat would reject any real triple, but is skipped for non-triple ops.
+      caveats: [{ type: 'predicate', value: { allowed: ['__never_matches__'] } }],
+    });
+    storeZcap(cap);
+    await declareRoot(ALPHA, cap.id);
+    await grantZcap(ALICE, cap.id);
+
+    const engine = new GraphGovernanceEngine(ctxFor(ALPHA, 'enforced'));
+    engine.registerCaveatType({
+      type: 'predicate',
+      appliesToNonTripleOps: false,
+      evaluate: () => ({ allowed: false, constraintKind: 'caveat', reason: 'would reject if applied' }),
+    });
+
+    const result = await engine.validateAction('mountContext', ALICE);
+    expect(result.allowed).toBe(true);
   });
 });

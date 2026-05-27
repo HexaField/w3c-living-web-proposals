@@ -17,6 +17,7 @@ import type {
   ValidationContext,
   EnforcementMode,
   ConstraintHandler,
+  CaveatHandler,
 } from './types.js';
 
 export interface GovernanceOptions {
@@ -26,6 +27,8 @@ export interface GovernanceOptions {
   enforcementMode?: EnforcementMode;
   /** Constraint-kind handlers to register on the engine (in addition to the built-in capability check). */
   constraintKinds?: ConstraintHandler[];
+  /** Caveat-type handlers to register on the engine (in addition to the built-in `expiry`). */
+  caveatTypes?: CaveatHandler[];
   resolveExpression?: (address: string) => Promise<unknown>;
   now?: () => number;
 }
@@ -41,6 +44,7 @@ export interface GovernanceLayer {
   setEnforcementMode(mode: EnforcementMode): Promise<void>;
   storeExpression(address: string, doc: unknown): void;
   registerConstraintKind(handler: ConstraintHandler): void;
+  registerCaveatType(handler: CaveatHandler): void;
   resetCounters: typeof resetCaveatCounters;
 }
 
@@ -87,6 +91,9 @@ export function createGovernanceLayer(graph: Graph, opts: GovernanceOptions = {}
   const engine = new GraphGovernanceEngine(ctx);
   for (const handler of opts.constraintKinds ?? []) {
     engine.registerConstraintKind(handler);
+  }
+  for (const handler of opts.caveatTypes ?? []) {
+    engine.registerCaveatType(handler);
   }
 
   // Load root capability id from triples if not provided.
@@ -147,6 +154,10 @@ export function createGovernanceLayer(graph: Graph, opts: GovernanceOptions = {}
 
     registerConstraintKind(handler) {
       engine.registerConstraintKind(handler);
+    },
+
+    registerCaveatType(handler) {
+      engine.registerCaveatType(handler);
     },
 
     resetCounters: resetCaveatCounters,

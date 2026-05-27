@@ -6,6 +6,20 @@ import { credentialConstraintHandler } from './credential.js';
 export { temporalConstraintHandler } from './temporal.js';
 export { contentConstraintHandler } from './content.js';
 export { credentialConstraintHandler } from './credential.js';
+export {
+  predicateCaveatHandler,
+  propertyCaveatHandler,
+  subjectCaveatHandler,
+  objectCaveatHandler,
+  rateLimitCaveatHandler,
+  cardinalityCaveatHandler,
+  authorOnlyCaveatHandler,
+  shapeCaveatHandler,
+  contentCaveatHandler,
+  credentialCaveatHandler,
+  standardCaveatTypes,
+  resetStandardCaveatCounters,
+} from './caveats.js';
 export { VOCAB } from './predicates.js';
 export type { VerifiableCredential } from './types.js';
 

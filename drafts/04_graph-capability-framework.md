@@ -30,7 +30,7 @@ This document is a draft Community Group Report. It has no official W3C standing
 7. [ZCAP Verification Algorithm](#7-zcap-verification-algorithm)
 8. [Capability Attenuation](#8-capability-attenuation)
 9. [Caveat Type System](#9-caveat-type-system)
-10. [Governance of DID-Document Delegates](#10-governance-of-did-document-delegates)
+10. [DID-Document Writes Are Governance Writes](#10-did-document-writes-are-governance-writes)
 11. [Governance API on Graph](#11-governance-api-on-graph)
 12. [Rule Evolution](#12-rule-evolution)
 13. [Security Considerations](#13-security-considerations)
@@ -93,7 +93,7 @@ Communities crystallise authorisation over time, not all at once. This specifica
 - [[GROUP-IDENTITY]] defines `did:graph` and the DID-document-as-triples model that populates the `did` slot for governable graphs. **This framework REQUIRES a DID-attachment mechanism that gives graphs an in-graph DID document with `capabilityDelegation` / `capabilityInvocation` sections.** `did:graph` is the model this framework is written against; other methods MAY be used provided they conform to the same in-graph delegate model.
 - [[ZCAP-LD]] defines the underlying capability data model.
 
-Specific constraint kinds (temporal, content, credential, shape) are out of scope here; they plug in via other specifications or applications using the mechanism in [§9.4](#94-constraint-kind-plug-ins).
+Specific constraint kinds (temporal, content, credential, shape) are out of scope here; they plug in via other specifications or applications using the mechanism in [§9.3](#93-plug-in-mechanism).
 
 ### 1.7 Use Cases
 
@@ -110,7 +110,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 A conforming **governance engine** is a software component that implements the algorithms in Sections [§6](#6-scope-resolution-graph-participation), [§7](#7-zcap-verification-algorithm), and [§8](#8-capability-attenuation), supports all three enforcement modes ([§5](#5-enforcement-modes)), and exposes the API defined in [§11](#11-governance-api-on-graph).
 
-A conforming **constraint-kind plug-in** (as may be supplied by another specification or by applications) MUST implement the verification interface defined in [§9.4](#94-constraint-kind-plug-ins).
+A conforming **constraint-kind plug-in** (as may be supplied by another specification or by applications) MUST implement the verification interface defined in [§9.3](#93-plug-in-mechanism).
 
 A conforming **application** MAY call the governance engine's query methods to determine allowed actions, but MUST NOT be relied upon as an enforcement point.
 
@@ -129,7 +129,7 @@ A conforming implementation **REQUIRES** access to graphs with DIDs whose docume
 <dd>A directed, labelled relationship (subject, predicate, object). See [[PERSONAL-LINKED-DATA-GRAPHS]] §3.1.</dd>
 
 <dt>Constraint</dt>
-<dd>A set of triples with <code>governance://</code> predicates defining a rule. Classified by <em>kind</em>; specific kinds are out of scope for this specification (see [§9.4](#94-constraint-kind-plug-ins)).</dd>
+<dd>A set of triples with <code>governance://</code> predicates defining a rule. Classified by <em>kind</em>; specific kinds are out of scope for this specification (see [§9.3](#93-plug-in-mechanism)).</dd>
 
 <dt>Constraint Binding</dt>
 <dd>A triple linking a constraint to the graph it governs: <code>&lt;graph-did&gt; -[governance://has_constraint]→ &lt;constraint&gt;</code>.</dd>
@@ -170,7 +170,7 @@ A conforming implementation **REQUIRES** access to graphs with DIDs whose docume
 
 ## 4. Data Model
 
-This section defines the `governance://` predicates this framework defines. Constraint-kind-specific predicates are out of scope here and are declared by the specifications or applications that define those kinds (via the plug-in mechanism in [§9.4](#94-constraint-kind-plug-ins)). All predicates use string-literal targets unless otherwise noted.
+This section defines the `governance://` predicates this framework defines. Constraint-kind-specific predicates are out of scope here and are declared by the specifications or applications that define those kinds (via the plug-in mechanism in [§9.3](#93-plug-in-mechanism)). All predicates use string-literal targets unless otherwise noted.
 
 ### 4.1 Constraint Base Type
 
@@ -181,7 +181,7 @@ Every constraint instance MUST have:
 <constraint-id> -[governance://constraint_kind]→ <kind>
 ```
 
-The framework recognises the kind `"capability"` natively (defined in [§4.5](#45-capability-constraints-zcap-based)). All other kinds are supplied by other specifications or application-defined plug-ins ([§9.4](#94-constraint-kind-plug-ins)). The framework engine MUST treat unknown kinds conservatively: if a registered plug-in handles the kind, defer to it; otherwise REJECT the operation (fail-closed).
+The framework recognises the kind `"capability"` natively (defined in [§4.5](#45-capability-constraints-zcap-based)). All other kinds are supplied by other specifications or application-defined plug-ins ([§9.3](#93-plug-in-mechanism)). The framework engine MUST treat unknown kinds conservatively: if a registered plug-in handles the kind, defer to it; otherwise REJECT the operation (fail-closed).
 
 A constraint applies to the graph to which it is bound by `governance://has_constraint` and — via [§6](#6-scope-resolution-graph-participation) — to writes in every graph in that graph's scope set.
 
@@ -241,6 +241,8 @@ The root capability is recorded in the new graph as a flattened [[ZCAP-LD]] docu
 
 The root capability is **constitutionalised**: the bootstrap delegation becomes the new graph's own root. The creating graph cannot subsequently modify the new graph's governance, and the chain walk does NOT walk past `BootstrapRoot` into the parent's chain. Delegations from the new graph's root evolve independently.
 
+**Bootstrap atomicity (normative).** When a child graph is created as a participant of a parent graph, the runtime MUST treat the following as a single atomic diff: (a) the child's `governance://root_capability` triple, (b) the child's `context://participates_in <parent.did>` triple, and (c) the parent's `context://accepts_participation <child.did>` triple. Peers MUST NOT process any of these triples in isolation: either all three are accepted into local state together, or none are. Without atomicity, there exists a window in which the child has declared participation but the parent has not yet accepted (or vice versa), during which the scope-set algorithm ([§6.1](#61-scope-set-resolution)) would not yet include the parent's constraints — writes to the child during that window could escape parent rules. Atomicity closes this gap and is the load-bearing invariant for the constitutionalisation guarantee.
+
 ### 4.4 Governance Constraint Conflicts
 
 When constraints disagree on a write, the result is determined by [§6.3](#63-precedence-and-conflict-resolution). The canonical rule is **deny-wins**: if any same-kind constraint evaluating the write rejects, the write is rejected. The audit field `rejectedBy` is attributed to the rejecting constraint at the lowest delegation depth (the most-authoritative); ties are broken by lexicographically greater constraint ID. This affects only the audit record; the rejection itself is decided by deny-wins, not by precedence.
@@ -254,15 +256,7 @@ A capability constraint requires triple authors to hold valid ZCAPs [[ZCAP-LD]].
 ```
 <constraint-id> -[governance://entry_type]→ governance://constraint
 <constraint-id> -[governance://constraint_kind]→ "capability"
-<constraint-id> -[governance://capability_enforcement]→ <enforcement-level>
 ```
-
-Where `<enforcement-level>` is one of:
-
-| Value | Meaning |
-|---|---|
-| `"required"` | All triples under this scope MUST be authorised by a valid ZCAP |
-| `"optional"` | ZCAPs are checked only if present; absent-ZCAP triples are accepted |
 
 Optional:
 
@@ -271,6 +265,8 @@ Optional:
 ```
 
 Restricts which predicates require capability verification. If absent or empty, all predicates within scope require verification.
+
+The presence of a capability constraint in scope makes capability verification mandatory for matching writes (subject to the enforcement mode in [§5](#5-enforcement-modes)). Earlier drafts defined a `capability_enforcement` field with `"required"` / `"optional"` values; the `"optional"` semantics overlap with Announced mode without adding capability, so the field has been removed. A graph that wants capability checking to be advisory uses Announced mode; a graph that wants no capability checking declares no capability constraint.
 
 #### 4.5.2 Self-Reference: Why `resource` MUST Be the Graph DID
 
@@ -326,75 +322,54 @@ The engine resolves a `has_zcap` link by querying for all triples sharing the `<
 
 #### 4.5.4 Actions
 
-Standard actions:
+This specification defines the following framework-core actions. Additional actions are defined by extension specifications and registered with the engine.
 
-| Action | Meaning |
-|---|---|
-| `createLink` | Author a new triple in the graph |
-| `removeLink` | Remove an existing triple |
-| `updateProperty` | Modify a scalar property of a ShapeInstance |
-| `updateSHACL` | Register or modify shapes (defined by an extension specification) |
-| `updateGovernance` | Add/remove governance constraints |
-| `updateFlow` | Register or modify flows (defined by an extension specification) |
-| `updateDIDDocument` | Add/remove DID-document delegates ([§10](#10-governance-of-did-document-delegates)) |
-| `mountContext` | Mount the graph (used to gate read access) |
-| `delegateCapability` | Issue new delegations from this capability |
+| Action | Defined by | Meaning |
+|---|---|---|
+| `createLink` | this spec | Author a new triple in the graph |
+| `removeLink` | this spec | Remove an existing triple |
+| `updateGovernance` | this spec | Add/remove governance constraints (any triple with `governance://` predicate) |
+| `updateDIDDocument` | this spec | Add/remove DID-document delegates (any triple with `did-document://` predicate; semantics in [[GROUP-IDENTITY]] §5) |
+| `delegateCapability` | this spec | Issue new delegations from this capability (chain-walk requirement, [§7](#7-zcap-verification-algorithm) step 6.5) |
+| `mountContext` | this spec | Mount the graph (gates read access, [§7.1](#71-non-triple-operations)) |
 
-Applications MAY define additional action names. The governance engine MUST treat unknown actions conservatively (require explicit capability for the unknown action).
+Extension specifications MAY register additional actions, for example `updateSHACL` ([[SHAPE-VALIDATION]]) or `updateFlow` ([[GRAPH-FLOWS]]). Applications MAY define further actions. The governance engine MUST treat unknown actions conservatively (require an explicit capability for the unknown action).
 
 ##### 4.5.4.1 Action Derivation
 
 Given a triple write, the engine derives the implied `action` as follows:
 
-1. If the triple's predicate begins with one of the registered governed prefixes, the action is the prefix-mapped action. The default registry:
+1. If the triple's predicate begins with one of the registered governed prefixes, the action is the prefix-mapped action. The framework-core registry:
 
    | Predicate prefix | Action |
    |---|---|
    | `governance://` | `updateGovernance` |
    | `did-document://` | `updateDIDDocument` |
-   | `shacl://`, `shape://` | `updateSHACL` |
-   | `flow://` | `updateFlow` |
 
 2. Otherwise the action is `createLink` for additions and `removeLink` for removals.
 
-Other specifications and applications MAY register additional prefix → action mappings on the engine. The engine MUST NOT allow registration of a prefix that overlaps an existing registration.
+Other specifications and applications MAY register additional prefix → action mappings on the engine (for example `shacl://` / `shape://` → `updateSHACL`, `flow://` → `updateFlow`). The engine MUST NOT allow registration of a prefix that overlaps an existing registration.
 
 #### 4.5.5 Revocation
 
-Any agent who issued a capability MAY revoke it by adding to the graph that the capability resources:
+Any authorised agent MAY revoke an issued capability by writing the following triple into the graph the capability resources:
 
 ```
 <revoking-agent-did> -[governance://revokes_capability]→ <zcap-id>
 ```
 
-Revocation is valid if the revoking agent is:
+**Authority to revoke.** A revocation is valid if the revoking agent (or, for graph-DID invokers, a current `capabilityDelegation` delegate on that DID's document) is *any ancestor* in the revoked capability's delegation chain — equivalently, anyone whose own valid capability sits between the revoked capability and the graph's root. This includes:
 
-- The `invoker` of the revoked capability's `parentCapability` (or a `capabilityDelegation` delegate of that invoker, if the invoker is a graph DID), OR
-- The current root-capability holder for the graph.
+- The direct parent (the `invoker` of `parentCapability`).
+- Any further ancestor up to and including the current root-capability holder.
 
-Revoking C invalidates the entire delegation chain rooted at C from the moment the revocation is observable in the local state. **Revocation is forward-looking**: writes that were accepted under prior local state remain accepted in the historical record; only writes evaluated after the revocation becomes locally observable are affected. This preserves the determinism guarantee (every accept/reject decision is reproducible from the state at the time of evaluation) under eventual consistency.
+This matches the natural transitive delegation model: anyone whose authority the revoked capability ultimately derives from MAY revoke it. An agent further down the chain (a delegate of the revoked capability) MAY NOT revoke their delegator.
 
-### 4.6 Default Capability
+**Forward-looking semantics.** Revoking C invalidates the entire delegation chain rooted at C from the moment the revocation is observable in the local state. Writes that were accepted under prior local state remain accepted in the historical record; only writes evaluated after the revocation becomes locally observable are affected. This preserves the determinism guarantee (every accept/reject decision is reproducible from the state at the time of evaluation) under eventual consistency.
 
-A **default capability** template — the ZCAP automatically issued to agents joining a graph:
+**Engine requirements.** Conforming engines MUST check the revocation list during every capability verification (at every level of the chain walk). Engines MAY cache revocation status for short periods (seconds) but MUST invalidate the cache on observation of a new `revokes_capability` triple.
 
-```
-<default-cap-id> -[governance://entry_type]→ governance://default_capability
-<default-cap-id> -[governance://default_capability_actions]→ <comma-separated actions>
-<default-cap-id> -[governance://default_capability_caveats]→ <JSON array of caveat objects>
-```
-
-When an agent joins, a runtime SHOULD issue a ZCAP matching the default template. The engine does not perform issuance — it reads templates so join-flow implementations know what to issue.
-
-### 4.7 Revocation List
-
-Revocations are stored as triples:
-
-```
-<revoking-agent-did> -[governance://revokes_capability]→ <zcap-id>
-```
-
-Conforming engines MUST check the revocation list during every capability verification (every level of the chain). Engines MUST NOT cache revocation status indefinitely.
+**Brick-state protection.** See [§13.10](#1310-brick-state-protection) — revocations that would leave the graph with zero valid capabilities carrying `updateGovernance` MUST be refused by conforming engines.
 
 ---
 
@@ -512,7 +487,7 @@ Implementations SHOULD cache *scopeSet* results and invalidate when any particip
 
 2. **Determine action.** If the caller supplied an explicit `action` override, use it directly (this is the standard path for *non-triple* operations such as a read-mount authorisation check, which has no predicate to derive from). Otherwise let *action* be the action implied by the operation's predicate per [§4.5.4.1](#4541-action-derivation).
 
-3. **Collect capability constraints.** From [§6.4](#64-constraint-collection), select constraints with `constraint_kind = "capability"` and `capability_enforcement = "required"`. If none, return ACCEPT.
+3. **Collect capability constraints.** From [§6.4](#64-constraint-collection), select constraints with `constraint_kind = "capability"`. If none, return ACCEPT.
 
 4. **Predicate-coverage check.** If any selected constraint's `governance://capability_predicates` is non-empty and the triple's predicate is in none of them, capability checking does not apply to this predicate — return ACCEPT (other constraints still evaluate).
 
@@ -526,26 +501,29 @@ Implementations SHOULD cache *scopeSet* results and invalidate when any particip
       - the DID of any other graph in *scopeSet*.
 
       IRI-resourced capabilities whose IRI no longer matches the current state of any in-scope graph do not apply.
+
+      **Capability accumulation across the scope set.** Because the resource match accepts any graph in *scopeSet* — not just W — capabilities issued in any participating graph contribute to authorisation in W. In hierarchical participation (`A → B` only), B is in A's scope set but A is *not* in B's, so B-resourced caps authorise A's writes but A-resourced caps do not authorise B's writes. In holonic participation (`A ↔ B`), both are in each other's scope set, so caps issued by either authorise writes in the other. This mirrors the symmetric way constraints accumulate ([§4.2](#42-constraint-binding)) and is the load-bearing mechanism for cross-graph holonic authority.
    3. **Revocation check.** If a valid revocation triple targets `cap.id` and is locally observable, skip.
    4. **Caveat check.** Evaluate each caveat against the triple + action + context ([§9](#9-caveat-type-system)). If any caveat fails, skip.
    5. **Chain verification.** Walk the parent chain starting from `cap`:
       1. If chain depth exceeds 10, skip.
       2. Verify the current capability's proof signature: the proof's signing key MUST be the parent capability's `invoker` (or, if that invoker is a graph DID, a current `capabilityDelegation` delegate on that DID's document at validation time).
-      3. **Bootstrap termination.** If `parentCapability == urn:living-web:zcap:BootstrapRoot`, validate that `cap.id` matches `<G> -[governance://root_capability]→ ?` for some graph G in *scopeSet*. If so, the chain is **cut here** — verification succeeds without further walking. The chain MUST NOT continue into any other graph's capability chain, even if the bootstrap proof was originally produced by an external graph's delegate ([§4.3](#43-governance-bootstrap-root-capability)).
-      4. Otherwise resolve `parentCapability` by querying for triples with subject `<parentCapability>` across the scopeSet. If unresolvable, skip the candidate.
-      5. Verify attenuation ([§8](#8-capability-attenuation)) between `cap` and parent.
-      6. Verify parent is not revoked.
-      7. Set `cap = parent`; increment depth; continue from step 6.5.2.
+      3. **Delegation right.** The parent's `actions` MUST contain `delegateCapability`. A capability that does not convey delegation rights MUST NOT be used to issue children — the chain is broken at this step. (Exception: the BootstrapRoot terminus in step 6.5.4 is not subject to this check, since `BootstrapRoot` is a sentinel, not a capability with actions.)
+      4. **Bootstrap termination.** If `parentCapability == urn:living-web:zcap:BootstrapRoot`, validate that `cap.id` matches `<G> -[governance://root_capability]→ ?` for some graph G in *scopeSet*. If so, the chain is **cut here** — verification succeeds without further walking. The chain MUST NOT continue into any other graph's capability chain, even if the bootstrap proof was originally produced by an external graph's delegate ([§4.3](#43-governance-bootstrap-root-capability)).
+      5. Otherwise resolve `parentCapability` by querying for triples with subject `<parentCapability>` across the scopeSet. If unresolvable, skip the candidate.
+      6. Verify attenuation ([§8](#8-capability-attenuation)) between `cap` and parent.
+      7. Verify parent is not revoked.
+      8. Set `cap = parent`; increment depth; continue from step 6.5.2.
 
-7. **Outcome.** If any candidate succeeded, return ACCEPT. Otherwise return REJECT with `rejectedBy = <constraint-id>`, `constraintKind = "capability"`, and a `reason` string identifying the failure (e.g., `"no_matching_capability"`, `"chain_broken"`, `"revoked"`, `"caveat_failed:<type>"`).
+7. **Outcome.** If any candidate succeeded, return ACCEPT. Otherwise return REJECT with `rejectedBy = <constraint-id>`, `constraintKind = "capability"`, and a `reason` string identifying the failure (e.g., `"no_matching_capability"`, `"chain_broken"`, `"missing_delegate_capability"`, `"revoked"`, `"caveat_failed:<type>"`).
 
 ### 7.1 Non-Triple Operations
 
 The same algorithm authorises non-triple operations — most notably the `mountContext` action invoked by [[CONTEXT-SYNC]] when a peer requests a read mount or a snapshot pull of a graph it does not yet hold. In that case:
 
 - The caller supplies `action = "mountContext"` explicitly (step 2 takes the override).
-- The operation has no `subject`/`predicate`/`object` triple, so steps 4 (predicate-coverage check) and step 6.4 (caveats that depend on triple content, e.g., `predicate`, `subject`, `object`) are skipped — they cannot be evaluated against a non-existent triple. Caveats that depend only on context (`expiry`, `rateLimit`, `cardinality`, `credential`) are still evaluated normally.
-- All other steps proceed unchanged: scope-set construction, `has_zcap` lookup, chain walk, bootstrap termination, revocation, attenuation.
+- The operation has no `subject`/`predicate`/`object` triple, so step 4 (predicate-coverage check) is skipped, and in step 6.4 the engine MUST skip caveats whose handler reports `appliesToNonTripleOps = false` ([§9.3](#93-plug-in-mechanism)). The framework-core `expiry` caveat applies to non-triple operations. Plug-in caveats declare their own applicability; see [[CONSTRAINT-VOCABULARY]] §7 for the table covering the standard vocabulary.
+- All other steps proceed unchanged: scope-set construction, `has_zcap` lookup, chain walk (including delegation-right check), bootstrap termination, revocation, attenuation.
 
 The presence of a `mountContext`-bearing capability constraint in the scope set (§4.5 / §6.4) is what *makes* a graph's read access governed. Graphs with no such constraint accept any read.
 
@@ -581,36 +559,29 @@ Each caveat in a ZCAP's `caveats` array is:
 
 The framework defines the format and the meta-semantics of caveats (composition, attenuation). Specific caveat **types** are defined by this framework only when they are core to capability mechanics; the broader vocabulary is supplied by extension specifications and by applications.
 
-### 9.2 Core Caveat Types
+### 9.2 Core Caveat Type
 
-The following caveats are defined by this framework because they apply to the capability mechanism itself, independently of any constraint vocabulary:
+The framework defines a single core caveat type:
 
 | Type | Purpose | `value` shape |
 |---|---|---|
 | `expiry` | Delegation expires at a time | `{ "expiresAt": "<RFC3339>" }` |
-| `predicate` | Restrict to specific predicates | `{ "allowed": ["<uri>", ...], "denied": ["<uri>", ...] }` |
-| `property` | Restrict to specific property paths | `{ "allowed": ["<uri>", ...], "denied": ["<uri>", ...] }` |
-| `rateLimit` | Max operations per window | `{ "maxPerWindow": <int>, "windowSeconds": <int> }` |
-| `cardinality` | Max total uses of this delegation | `{ "max": <int> }` |
-| `subject` | Restrict triple subject patterns (glob) | `{ "pattern": "<glob>" }` |
-| `object` | Restrict triple object patterns (glob) | `{ "pattern": "<glob>" }` |
-| `authorOnly` | Operation must come from the original instance creator | `{}` |
 
-Additional caveat types are defined by extension specifications or by applications. The engine MUST treat unknown caveat types conservatively (reject the operation) unless a registered plug-in supplies handling.
+`expiry` is built in because it applies to the capability mechanism itself (every delegation has a lifecycle, and the engine needs to honour it independently of any plug-in being installed).
 
-### 9.3 Three Levels of Granularity
+All other caveat types — including `predicate`, `property`, `subject`, `object`, `rateLimit`, `cardinality`, `authorOnly`, `shape`, `content`, and `credential` — are defined by [[CONSTRAINT-VOCABULARY]] and registered with the engine via the plug-in mechanism in [§9.3](#93-plug-in-mechanism). Applications MAY register further caveat types.
 
-- **Coarse (graph-level):** `actions: [createLink], caveats: []` — "can write anything to this graph."
-- **Medium (predicate-level):** `+ { "type": "predicate", "value": { "allowed": ["msg://body"] }}` — "can only write the `msg://body` predicate."
-- **Fine (shape-level, requires an extension caveat type):** `+ { "type": "shape", "value": { "shapeIri": "msg://MessageShape" }}` — "can only write data conforming to MessageShape."
+The engine MUST treat unknown caveat types conservatively (reject the operation) unless a registered plug-in supplies handling ([§13.9](#139-unknown-caveat-types)).
 
-### 9.4 Constraint-Kind Plug-ins
+### 9.3 Plug-in Mechanism
 
-Specific constraint kinds (and the corresponding caveat types) are supplied by plug-ins. A plug-in supplies, at minimum:
+Two plug-in surfaces are exposed by this framework:
+
+**Constraint-kind handlers** — for evaluating constraints of non-capability kinds (`temporal`, `content`, `credential`, …):
 
 ```
 interface ConstraintKindHandler {
-  USVString kind;                              // e.g., "temporal", "content", "credential"
+  USVString kind;
   Promise<ValidationResult> validate(
     TripleInput triple,
     GraphConstraint constraint,
@@ -619,56 +590,39 @@ interface ConstraintKindHandler {
 }
 ```
 
-The engine routes constraint validation to the registered handler for the constraint's `governance://constraint_kind`. Unregistered kinds cause the framework to reject the write (fail-closed).
+**Caveat handlers** — for evaluating caveats attached to specific delegations:
 
-Extension specifications and applications MAY register handlers for additional kinds (e.g., `temporal`, `content`, `credential`, `shape`).
+```
+interface CaveatHandler {
+  USVString type;
+  /** Whether this caveat can be evaluated against non-triple operations (e.g., mountContext). */
+  boolean appliesToNonTripleOps;
+  Promise<ValidationResult> evaluate(
+    Caveat caveat,
+    TripleInput? triple,           // null for non-triple operations
+    USVString action,
+    ValidationContext ctx
+  );
+}
+```
 
-### 9.5 Performance
+The engine dispatches constraint validation to the registered handler for the constraint's `governance://constraint_kind`, and caveat evaluation to the registered handler for the caveat's `type`. Unregistered kinds and types cause rejection (fail-closed; [§13.8](#138-unknown-constraint-kinds), [§13.9](#139-unknown-caveat-types)).
 
-Caveat evaluation is designed for negligible overhead:
+For non-triple operations ([§7.1](#71-non-triple-operations)), the engine MUST skip caveats whose handler reports `appliesToNonTripleOps = false`.
 
-- `predicate`, `property` — O(1) set lookup.
-- `subject`, `object` — glob match.
-- `rateLimit`, `cardinality` — counter lookup with TTL cache.
-- Plug-in-supplied caveats — defined by the plug-in.
+### 9.4 Performance
+
+`expiry` is a single timestamp comparison. Plug-in caveats define their own evaluation cost; the framework simply dispatches and aggregates.
 
 ---
 
-## 10. Governance of DID-Document Delegates
+## 10. DID-Document Writes Are Governance Writes
 
-This section is normative.
+A graph's DID document is itself a set of triples in the graph (per [[GROUP-IDENTITY]] §4.4). Writes to those triples use the `did-document://*` predicate family, which the action-derivation rule in [§4.5.4.1](#4541-action-derivation) maps to the `updateDIDDocument` action — and are therefore governed by the standard chain walk in [§7](#7-zcap-verification-algorithm).
 
-A graph's DID (per [[PERSONAL-LINKED-DATA-GRAPHS]] §3.3, populated per [[GROUP-IDENTITY]]) is associated with a DID document whose capability sections list one or more verification methods. This delegate model gives the graph shared signing authority across multiple keys. Modifying the DID-document triples is a write to the graph's own graph and is therefore governed by this specification.
+This specification defines only the action and its derivation. The DID-document predicates themselves (`add-method`, `remove-method`, `grant-section`, `revoke-section`), the delegate-section semantics (`capabilityInvocation`, `capabilityDelegation`, `assertionMethod`, `authentication`), brick-state guards for sole-delegate removal, and self-rotation atomicity are defined by [[GROUP-IDENTITY]] §5. The bootstrap root capability ([§4.3](#43-governance-bootstrap-root-capability)) includes `updateDIDDocument` by default so the creator can add the initial delegate set without further ceremony.
 
-### 10.1 Governed Predicates
-
-| Predicate | Effect |
-|---|---|
-| `did-document://add-method` | Add a new `verificationMethod` entry |
-| `did-document://remove-method` | Remove a `verificationMethod` and all its section memberships |
-| `did-document://grant-section` | Add a method to a capability section |
-| `did-document://revoke-section` | Remove a method from a section (without removing the method) |
-
-### 10.2 Capability Required
-
-By default, modifying the DID document requires an `updateDIDDocument` capability scoped to the graph. The capability MAY carry caveats constraining which sections can be granted/revoked.
-
-The bootstrap root capability ([§4.3](#43-governance-bootstrap-root-capability)) includes `updateDIDDocument` by default. The creator can add the initial set of delegates without further ceremony.
-
-### 10.3 Delegate-of-Delegate
-
-A delegate's authority to modify the DID document is bounded:
-
-- A `capabilityInvocation` delegate may sign as the graph for ZCAP invocations, but **may not** modify the DID document unless they also hold `updateDIDDocument`.
-- A `capabilityDelegation` delegate may issue new ZCAPs from the graph DID, but **may not** add/remove DID document methods unless they also hold `updateDIDDocument`.
-
-### 10.4 Self-Rotation
-
-A delegate MAY rotate their own key by issuing a `did-document://remove-method` + `did-document://add-method` pair as an atomic operation. The default permits self-rotation. Communities that want to prevent unilateral self-rotation MAY add a content caveat requiring an additional signer.
-
-### 10.5 Non-Goal: Multisig
-
-This specification does NOT define multisig, threshold signing, or aggregate-key schemes for the graph DID itself. Shared authority is achieved through the delegate set in the DID document; "this graph said it" is satisfied by any current delegate's signature.
+This specification defines no multisig, threshold-signing, or aggregate-key schemes for the graph DID itself. Shared authority is expressed through the delegate set in the DID document; "this graph said it" is satisfied by any current delegate's signature.
 
 ---
 
@@ -697,7 +651,7 @@ dictionary CapabilityProofInput {
    *  resolvable within the scope set. */
   required sequence<USVString> chain;
   /** Optional verifiable-credential presentations consumed by `credential` caveats
-   *  on the chain (per [[CONSTRAINT-VOCABULARY]] §6). */
+   *  on the chain (per [[CONSTRAINT-VOCABULARY]] §7.10). */
   sequence<object> presentations;
 };
 
@@ -730,7 +684,7 @@ The `canAddTriple()` and `myCapabilities()` results are **advisory** — applica
 
 ### 11.1 `canAddTriple()`
 
-Evaluates whether the current identity would be permitted to add the triple. Executes the algorithms in [§7](#7-zcap-verification-algorithm) followed by any registered constraint-kind plug-ins ([§9.4](#94-constraint-kind-plug-ins)). Stops at first rejection.
+Evaluates whether the current identity would be permitted to add the triple. Executes the algorithms in [§7](#7-zcap-verification-algorithm) followed by any registered constraint-kind plug-ins ([§9.3](#93-plug-in-mechanism)). Stops at first rejection.
 
 ### 11.2 `constraintsFor()`
 
@@ -816,6 +770,18 @@ Unknown `constraint_kind` values MUST cause rejection (fail-closed). Implementat
 
 Unknown caveat `type` values MUST cause rejection unless a plug-in handler is registered. Silent ignore would allow an attacker to bypass attenuation by adding a no-op caveat type.
 
+### 13.10 Brick-State Protection
+
+Conforming engines MUST refuse any operation — including `revokes_capability` writes, capability-bearing triple removals, and self-rotation of the last delegate — that would leave the graph with **zero** valid (non-expired, non-revoked) capabilities whose `actions` include `updateGovernance` and whose chain terminates at the graph's own `BootstrapRoot`. The engine MUST evaluate the proposed post-state before accepting the operation: if no remaining capability would satisfy the chain walk in [§7](#7-zcap-verification-algorithm) for the `updateGovernance` action by some currently-listed delegate, the operation MUST be rejected with `reason: "would_brick_governance"`.
+
+Without this guard a community can be locked out of its own governance — accidentally (the sole `updateGovernance` holder revokes their own capability) or hostilely (a compromised key revokes every other governance-bearing capability before being detected). The post-state evaluation makes the substrate's "authority is constituted" guarantee operationally enforceable: the structure cannot be left in a state where authority cannot be exercised.
+
+The analogous DID-document brick-state guard (refusing to remove the sole `capabilityDelegation` delegate) is defined by [[GROUP-IDENTITY]] §5; the two guards together ensure both signing authority and capability authority remain exercisable.
+
+### 13.11 Concurrent Counter Caveats
+
+Counter-style caveats (`rateLimit`, `cardinality` per [[CONSTRAINT-VOCABULARY]], and any application-defined caveat that depends on aggregate use across writes) cannot enforce a globally accurate bound under eventual consistency: two peers can each pass the local check on a `cardinality: { max: 1 }` capability simultaneously and only discover the over-use when their writes converge. Implementations MUST treat such caveats as best-effort under concurrent writes. Communities that require strict bounds MUST pair the caveat with a coordination mechanism (a write-order arbiter, a CRDT-aware counter at the sync layer, or a centralised gate). The framework neither provides nor requires such coordination.
+
 ---
 
 ## 14. Privacy Considerations
@@ -840,15 +806,20 @@ A graph's enforcement mode is itself public (a governance triple). Communities t
 
 ```javascript
 const community = await navigator.graph.create({ displayName: "Acme Community" });
-// The runtime mints a root capability signed by the active identity.
+// The runtime mints a root capability signed by the active identity. The default
+// action set covers the framework-core actions (extension actions like updateSHACL
+// or updateFlow are not granted by default and must be delegated explicitly if
+// needed).
 //
 //   <community.did>
 //     governance://root_capability  <urn:uuid:root-cap-1> .
 //   <urn:uuid:root-cap-1>
 //     zcap://invoker  <did:key:creator> ;
-//     zcap://actions  "createLink" , "removeLink" , "updateSHACL" ,
-//                     "updateGovernance" , "updateDIDDocument" ;
+//     zcap://actions  "createLink" , "removeLink" ,
+//                     "updateGovernance" , "updateDIDDocument" ,
+//                     "delegateCapability" , "mountContext" ;
 //     zcap://resource <community.did> ;
+//     zcap://parentCapability  <urn:living-web:zcap:BootstrapRoot> ;
 //     zcap://proof    "<signature by did:key:creator>" .
 ```
 
@@ -937,6 +908,8 @@ Examples of temporal, content, credential, and shape constraints are defined by 
 
 ## 16. Predicate Reference Table
 
+This table lists only the predicates this framework defines. Plug-in constraint kinds (e.g., `temporal`, `content`, `credential` in [[CONSTRAINT-VOCABULARY]]) declare additional predicates in their own specifications, as do DID-document predicates ([[GROUP-IDENTITY]] §4.5) and participation predicates ([[PERSONAL-LINKED-DATA-GRAPHS]]).
+
 | Predicate | Target Type | Description |
 |---|---|---|
 | `governance://entry_type` | URI | Type discriminator for governance instances |
@@ -944,20 +917,17 @@ Examples of temporal, content, credential, and shape constraints are defined by 
 | `governance://has_constraint` | URI | Binds a constraint to a graph |
 | `governance://root_capability` | URI | The graph's root ZCAP |
 | `governance://enforcement_mode` | String literal | `"open"` \| `"announced"` \| `"enforced"` |
-| `governance://capability_enforcement` | String literal | `"required"` \| `"optional"` |
 | `governance://capability_predicates` | Comma-separated URIs | Predicates requiring capability verification |
 | `governance://has_zcap` | URI | Links an agent DID to a held capability |
 | `governance://revokes_capability` | URI (ZCAP id) | Revocation triple |
-| `governance://default_capability_actions` | Comma-separated actions | Default ZCAP template |
-| `governance://default_capability_caveats` | JSON array | Default ZCAP caveats |
-| `context://participates_in` | URI (graph DID) | Child declares participation in parent (in the child's graph) |
-| `context://accepts_participation` | URI (graph DID) | Parent confirms acceptance (in the parent's graph, signed by a `capabilityDelegation` delegate) |
-| `did-document://add-method` | URI | Add a `verificationMethod` to a graph DID's document |
-| `did-document://remove-method` | URI | Remove a `verificationMethod` |
-| `did-document://grant-section` | URI | Add method to a capability section |
-| `did-document://revoke-section` | URI | Remove method from a capability section |
 
-Plug-in-supplied constraint kinds (e.g., `temporal`, `content`, `credential`) declare additional predicates in their own specifications.
+Referenced from outside this framework:
+
+| Predicate | Defined in | Description |
+|---|---|---|
+| `context://participates_in` | [[PERSONAL-LINKED-DATA-GRAPHS]] | Child declares participation in parent (in the child's graph) |
+| `context://accepts_participation` | [[PERSONAL-LINKED-DATA-GRAPHS]] | Parent confirms acceptance (in the parent's graph) |
+| `did-document://*` | [[GROUP-IDENTITY]] §4.5 | DID-document write predicates; map to the `updateDIDDocument` action ([§10](#10-did-document-writes-are-governance-writes)) |
 
 ---
 

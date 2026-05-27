@@ -334,7 +334,7 @@ The following are explicitly out of scope for this specification:
 - **Threshold cryptography.** Shamir, FROST, BLS-threshold, and similar schemes are not part of the substrate.
 - **Multihash-of-keys identifiers.** The DID identifier is derived from a single Ed25519 public key (the initial key); shared authority is added to the DID document, not embedded in the identifier.
 
-Implementations that need joint *operational* approval SHOULD layer it on top — for example, by requiring multiple authorised delegates to each independently sign a ZCAP via a `content` caveat ([[CONSTRAINT-VOCABULARY]] §6.3) — but the substrate itself takes the position that **the delegate set is the answer to "who is currently authorised."**
+Implementations that need joint *operational* approval SHOULD layer it on top — for example, by requiring multiple authorised delegates to each independently sign a ZCAP via a `content` caveat ([[CONSTRAINT-VOCABULARY]] §7.9) — but the substrate itself takes the position that **the delegate set is the answer to "who is currently authorised."**
 
 ### 5.3 Delegate Lifecycle
 
@@ -566,7 +566,7 @@ The two overlap by convention (a participant who is also a `capabilityInvocation
 
 This specification explicitly does NOT define multisig, threshold signatures, or aggregate-key schemes for the group DID itself ([§5.2](#52-non-goals)). Shared signing authority is achieved via DID-document delegates — any current delegate produces a signature that counts as the group's signature.
 
-Joint *operational* approval (e.g., two delegates must each sign a particular ZCAP) MAY be expressed as a `content` caveat on a ZCAP ([[CONSTRAINT-VOCABULARY]] §6.3):
+Joint *operational* approval (e.g., two delegates must each sign a particular ZCAP) MAY be expressed as a `content` caveat on a ZCAP ([[CONSTRAINT-VOCABULARY]] §7.9):
 
 ```json
 {
@@ -846,7 +846,7 @@ The rules governing who can be invited and how participation is accepted live as
   group://participation_max_count "500" .
 ```
 
-The `accepts_participation` operation is gated by an `acceptParticipation` ZCAP whose caveats MAY encode these rules. Patterns more complex than the predicates above (e.g., "M of N delegates must each approve") MUST be expressed as a `content` caveat on the `acceptParticipation` ZCAP per [[CONSTRAINT-VOCABULARY]] §6.3; this specification does not define dedicated predicates for them.
+The `accepts_participation` operation is gated by an `acceptParticipation` ZCAP whose caveats MAY encode these rules. Patterns more complex than the predicates above (e.g., "M of N delegates must each approve") MUST be expressed as a `content` caveat on the `acceptParticipation` ZCAP per [[CONSTRAINT-VOCABULARY]] §7.9; this specification does not define dedicated predicates for them.
 
 ---
 
@@ -979,7 +979,7 @@ A compromised `capabilityInvocation` delegate can sign on the group's behalf unt
 
 - Regular review of the delegate set by holders of `capabilityDelegation`.
 - Prompt removal of suspected-compromised delegates via `removeSigner()` (or directly via `DIDCredential.removeDelegate()`).
-- For high-value capabilities, use `content` caveats on ZCAPs to require multiple independent signatures ([[CONSTRAINT-VOCABULARY]] §6.3).
+- For high-value capabilities, use `content` caveats on ZCAPs to require multiple independent signatures ([[CONSTRAINT-VOCABULARY]] §7.9).
 
 Historical signatures by removed delegates remain verifiable; this is intentional (verification of past statements should not depend on current document state).
 
@@ -1265,7 +1265,7 @@ console.log(doc.trustLevel);   // "local" | "mounted-read" | "external" | "cache
 | `group://created` | Group DID | xsd:dateTime | Creation timestamp |
 | `group://creator` | Group DID | DID | DID of the agent that created the group |
 | `group://participation_open` | Group DID | xsd:boolean | If true, agents may self-add participation. Default false. |
-| `group://participation_requires_credential` | Group DID | VC type URI | Credential required for participation acceptance. More complex rules (M-of-N approval, etc.) MUST be expressed as `content` caveats on the `acceptParticipation` ZCAP per [[CONSTRAINT-VOCABULARY]] §6.3. |
+| `group://participation_requires_credential` | Group DID | VC type URI | Credential required for participation acceptance. More complex rules (M-of-N approval, etc.) MUST be expressed as `content` caveats on the `acceptParticipation` ZCAP per [[CONSTRAINT-VOCABULARY]] §7.9. |
 | `group://participation_max_count` | Group DID | xsd:integer | Maximum number of accepted participants |
 | `context://participates_in` | Participant DID (any graph) | Group DID | Asserted in the participant's graph; declares participation. Mutually required. |
 | `context://accepts_participation` | Group DID | Participant DID | Asserted in the group's graph; confirms participation. Mutually required; MUST be signed by a `capabilityDelegation` delegate of the group. |

@@ -19,11 +19,15 @@ import {
   delegateCapability,
   revokeCapability,
   evaluateCaveats,
+  expiryCaveatHandler,
   createGovernanceLayer,
   type Caveat,
+  type CaveatHandler,
   type TripleInput,
   type ValidationContext,
 } from '../index.js';
+
+const coreHandlers = new Map<string, CaveatHandler>([['expiry', expiryCaveatHandler]]);
 
 const GRAPH_DID = 'did:graph:test-governance';
 const OWNER_DID = 'did:key:z6Mkowner';
@@ -137,40 +141,29 @@ describe('revokeCapability', () => {
   });
 });
 
-describe('Caveat evaluation', () => {
+describe('Caveat evaluation (framework-core)', () => {
   test('expiry — accepts before expiry, rejects after', async () => {
     const ctx = makeContext();
     const triple = makeTriple('msg://body', 'hi');
     const future: Caveat = { type: 'expiry', value: { expiresAt: '2099-01-01T00:00:00Z' } };
     const past: Caveat = { type: 'expiry', value: { expiresAt: '2020-01-01T00:00:00Z' } };
-    expect((await evaluateCaveats([future], triple, 'createLink', ctx)).allowed).toBe(true);
-    expect((await evaluateCaveats([past], triple, 'createLink', ctx)).allowed).toBe(false);
+    expect((await evaluateCaveats([future], triple, 'createLink', ctx, coreHandlers)).allowed).toBe(true);
+    expect((await evaluateCaveats([past], triple, 'createLink', ctx, coreHandlers)).allowed).toBe(false);
   });
 
-  test('predicate — allowed list', async () => {
+  test('unknown caveat type rejects fail-closed', async () => {
     const ctx = makeContext();
-    const allowed: Caveat = { type: 'predicate', value: { allowed: ['msg://body'] } };
-    expect((await evaluateCaveats([allowed], makeTriple('msg://body', 'x'), 'createLink', ctx)).allowed).toBe(true);
-    expect((await evaluateCaveats([allowed], makeTriple('msg://other', 'x'), 'createLink', ctx)).allowed).toBe(false);
-  });
-
-  test('rateLimit — enforces sliding window', async () => {
-    const ctx = makeContext();
-    const cap: Caveat = { type: 'rateLimit', value: { maxPerWindow: 2, windowSeconds: 60 } };
-    const triple = makeTriple('msg://body', 'x');
-    expect((await evaluateCaveats([cap], triple, 'createLink', ctx)).allowed).toBe(true);
-    expect((await evaluateCaveats([cap], triple, 'createLink', ctx)).allowed).toBe(true);
-    expect((await evaluateCaveats([cap], triple, 'createLink', ctx)).allowed).toBe(false);
-  });
-
-  test('subject — glob pattern match', async () => {
-    const ctx = makeContext();
-    const cap: Caveat = { type: 'subject', value: { pattern: 'urn:entity:*' } };
-    expect((await evaluateCaveats([cap], makeTriple('p', 'v'), 'createLink', ctx)).allowed).toBe(true);
-    const wrongSource = { ...makeTriple('p', 'v'), subject: 'urn:other:1' };
-    expect((await evaluateCaveats([cap], wrongSource, 'createLink', ctx)).allowed).toBe(false);
+    const triple = makeTriple('msg://body', 'hi');
+    const unknown: Caveat = { type: 'rateLimit', value: { maxPerWindow: 1, windowSeconds: 60 } };
+    // No handler registered for `rateLimit` in core — must reject.
+    const r = await evaluateCaveats([unknown], triple, 'createLink', ctx, coreHandlers);
+    expect(r.allowed).toBe(false);
+    expect(r.reason).toMatch(/Unknown caveat type 'rateLimit'/);
   });
 });
+
+// Plug-in caveat handlers (predicate, rateLimit, subject, object, …) are
+// covered by `@living-web/constraint-vocabulary` tests, not here.
 
 describe('Enforcement mode', () => {
   test('open mode accepts unauthorised writes', async () => {

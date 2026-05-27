@@ -249,7 +249,7 @@ The chain is the ordered list of ZCAPs from the committing agent's leaf capabili
 
 `hasContentCaveats` is `true` if any delegation in the chain has caveats whose evaluation depends on the link's content (Predicate, Shape, Property, Content, Subject, Object — see [[CAPABILITY-FRAMEWORK]] §9). When `false`, the receiving peer MAY skip per-link caveat re-evaluation as an optimisation.
 
-`presentations` carries VerifiablePresentation objects per [[VC-DATA-MODEL-2.0]] when the chain contains `credential` caveats ([[CONSTRAINT-VOCABULARY]] §6). The receiving peer's governance engine consults this field when evaluating credential caveats; if a required credential is absent or its issuer fails verification, the caveat fails and the proof is rejected. Presentations are scoped to a single proof exchange — they are not retained beyond validation.
+`presentations` carries VerifiablePresentation objects per [[VC-DATA-MODEL-2.0]] when the chain contains `credential` caveats ([[CONSTRAINT-VOCABULARY]] §7.10). The receiving peer's governance engine consults this field when evaluating credential caveats; if a required credential is absent or its issuer fails verification, the caveat fails and the proof is rejected. Presentations are scoped to a single proof exchange — they are not retained beyond validation.
 
 ### 5.4 Peer
 
@@ -573,7 +573,7 @@ Read access is governed by the same capability framework as writes ([[CAPABILITY
 
 **Restricted (constraint present):** A graph that binds a capability constraint covering `mountContext` requires the requesting agent to hold (and present) a valid `mountContext` capability. Both the responding peer that serves the snapshot ([§9.2](#92-the-validate-contract)) and the local runtime at mount time ([§6.2](#62-mounting-a-remote-graph) step 2) MUST authorise the request. Common patterns:
 
-- **Membership-credential gating.** A `mountContext` capability with a `credential` caveat ([[CONSTRAINT-VOCABULARY]] §6) requiring the agent to present a VerifiablePresentation of a specific credential type before access is granted.
+- **Membership-credential gating.** A `mountContext` capability with a `credential` caveat ([[CONSTRAINT-VOCABULARY]] §7.10) requiring the agent to present a VerifiablePresentation of a specific credential type before access is granted.
 - **Pre-issued read tokens.** A `mountContext` capability delegated directly to a specific `did:key` invoker — the holder presents the ZCAP chain and signs the request.
 - **Group-DID-bound read access.** A `mountContext` capability delegated to a group DID; any current `capabilityInvocation` delegate of that group may invoke it.
 

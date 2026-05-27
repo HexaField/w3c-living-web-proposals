@@ -22,6 +22,7 @@
 import { GOV } from './predicates.js';
 import { resolveScopeSet, collectConstraints, pickAuditAttribution, type ScopeSet } from './scope.js';
 import { verifyCapability, inferAction } from './capability.js';
+import { expiryCaveatHandler } from './caveats.js';
 import type {
   GraphConstraint,
   GovernanceValidationResult,
@@ -29,6 +30,7 @@ import type {
   ValidationContext,
   CapabilityInfo,
   ConstraintHandler,
+  CaveatHandler,
   ValidationHistoryEntry,
   ZCAPDocument,
   EnforcementMode,
@@ -37,6 +39,7 @@ import type {
 export class GraphGovernanceEngine {
   private _ctx: ValidationContext;
   private _handlers = new Map<string, ConstraintHandler>();
+  private _caveatHandlers = new Map<string, CaveatHandler>();
   private _history: ValidationHistoryEntry[] = [];
   private _historyMaxSize: number;
   private _actionPrefixes: Array<[string, string]> = [];
@@ -44,6 +47,18 @@ export class GraphGovernanceEngine {
   constructor(ctx: ValidationContext, opts?: { historyMaxSize?: number }) {
     this._ctx = ctx;
     this._historyMaxSize = opts?.historyMaxSize ?? 1000;
+    // Framework-core `expiry` handler is always registered.
+    this._caveatHandlers.set(expiryCaveatHandler.type, expiryCaveatHandler);
+  }
+
+  /** Expose the caveat handler map to the chain walk (Spec 04 §7.6.4). */
+  get caveatHandlers(): ReadonlyMap<string, CaveatHandler> {
+    return this._caveatHandlers;
+  }
+
+  /** Register a caveat type plug-in (Spec 04 §9.3). */
+  registerCaveatType(handler: CaveatHandler): void {
+    this._caveatHandlers.set(handler.type, handler);
   }
 
   get graph(): ValidationContext { return this._ctx; }
@@ -96,7 +111,14 @@ export class GraphGovernanceEngine {
     // ── Capability (built-in) ────────────────────────────────────────────────
     // Capability checking always runs (to record history under Announced),
     // but the outcome is gated by enforcement mode.
-    const capResult = await verifyCapability(triple, constraints, scope, this._ctx, options?.action);
+    const capResult = await verifyCapability(
+      triple,
+      constraints,
+      scope,
+      this._ctx,
+      this._caveatHandlers,
+      options?.action,
+    );
     if (!capResult.allowed) {
       if (this._ctx.enforcementMode === 'open') {
         // Skip — capability denials don't reject in Open.
@@ -249,9 +271,56 @@ export class GraphGovernanceEngine {
     return caps;
   }
 
-  /** Resolve the writing graph's current scope set (Spec 03 §6.1). */
+  /** Resolve the writing graph's current scope set (Spec 04 §6.1). */
   async resolveScope(): Promise<ScopeSet> {
     return resolveScopeSet(this._ctx.graphDid, this._ctx);
+  }
+
+  /**
+   * Brick-state guard (Spec 04 §13.10). Returns ACCEPT iff the proposed
+   * operation — a revocation of `zcapId` (and/or removal of the named
+   * `revokedCapIds` if the caller is removing has_zcap links directly) —
+   * would leave the graph with *at least one* valid capability bearing
+   * `updateGovernance` for some currently-listed delegate.
+   *
+   * Callers (governance APIs that mutate the cap store) MUST consult this
+   * before persisting the operation and reject when `allowed: false`.
+   *
+   * The check is deliberately conservative: any has_zcap link whose ZCAP
+   * resolves, lists `updateGovernance` in its actions, is unexpired, is
+   * not in `revokedCapIds`, and is not itself revoked counts as a
+   * surviving governance capability.
+   */
+  async wouldBrickGovernance(revokedCapIds: string[]): Promise<GovernanceValidationResult> {
+    const revokedSet = new Set(revokedCapIds);
+    const links = await this._ctx.queryTriples({ predicate: GOV.HAS_ZCAP });
+    const now = this._ctx.now ? this._ctx.now() : Date.now();
+    for (const link of links) {
+      const capId = link.data.object;
+      if (revokedSet.has(capId)) continue;
+      const zcap = await this._resolveZCAP(capId);
+      if (!zcap) continue;
+      const actions = zcap.actions ?? zcap.capability?.predicates ?? [];
+      if (!actions.includes('updateGovernance')) continue;
+      // Expiry
+      const expiry = (zcap.caveats ?? []).find(c => c.type === 'expiry');
+      const expiresAt = (expiry?.value as { expiresAt?: string } | undefined)?.expiresAt
+        ?? zcap.expires ?? null;
+      if (expiresAt && new Date(expiresAt).getTime() < now) continue;
+      // Already revoked in current state
+      const existingRevocations = await this._ctx.queryTriples({
+        predicate: GOV.REVOKES_CAPABILITY,
+        object: capId,
+      });
+      if (existingRevocations.length > 0) continue;
+      // Survives the proposed operation.
+      return { allowed: true };
+    }
+    return {
+      allowed: false,
+      constraintKind: 'brick-state',
+      reason: 'would_brick_governance',
+    };
   }
 
   registerConstraintKind(handler: ConstraintHandler): void {

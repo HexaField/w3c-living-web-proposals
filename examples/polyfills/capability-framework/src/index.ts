@@ -3,12 +3,11 @@ export { GOV, CONTEXT, DID_DOC } from './predicates.js';
 export { resolveScopeSet, collectConstraints, pickAuditAttribution } from './scope.js';
 export type { ScopeSet } from './scope.js';
 export { verifyCapability, inferAction, BOOTSTRAP_ROOT } from './capability.js';
-export { evaluateCaveats, resetCaveatCounters } from './caveats.js';
+export { evaluateCaveats, resetCaveatCounters, expiryCaveatHandler } from './caveats.js';
 export {
   createCapability,
   delegateCapability,
   revokeCapability,
-  issueDefaultCapabilities,
 } from './zcap.js';
 export type { CreateCapabilityOptions, RevocationTriple } from './zcap.js';
 export { ConstraintKindRegistry } from './registry.js';
@@ -22,6 +21,7 @@ export type {
   CapabilityProof,
   Caveat,
   CaveatType,
+  CaveatHandler,
   EnforcementMode,
   TripleInput,
   ValidationContext,
