@@ -1,6 +1,6 @@
 # The Living Web
 
-**Ten browser primitives for a decentralised, self-describing semantic web — identity, personal graphs, a capability framework, sync protocol, sync modules, shape validation, a constraint vocabulary, a default sync module, flows, and group identity.**
+**Ten browser primitives for a decentralised, self-describing semantic web — identity, personal graphs, group identity, a capability framework, sync protocol, sync modules, shape validation, a constraint vocabulary, a default sync module, and flows.**
 
 [View the Demos](examples/) · [Chromium Fork](https://github.com/HexaField/living-web-chromium)
 
@@ -14,7 +14,7 @@ The web has no native primitives for user-owned semantic data, no native identit
 - Give a *graph* an identity (a DID) so it can sign as itself and be referenced canonically.
 - Share that graph with peers without picking a custodian or surrendering control.
 - Enforce membership, rate limits, and content rules at the protocol layer rather than the application layer.
-- Compose contexts — each a coherent whole, each participating in something larger — without any single party at the centre.
+- Compose graphs — each a coherent whole, each participating in something larger — without any single party at the centre.
 
 These specifications define the missing primitives.
 
@@ -24,129 +24,172 @@ Ten W3C-format draft specifications, arranged so each spec depends only on the o
 
 | # | Spec | Description |
 |---|------|-------------|
-| 01 | [Decentralised Identity](drafts/01_decentralised-identity-web-platform.md) | Extends `navigator.credentials` with `did:key` (individuals); DID-document delegate model for shared signing — **no multisig, no threshold cryptography** |
-| 02 | [Personal Linked Data Graphs](drafts/02_personal-linked-data-graphs.md) | `navigator.graph` — content-addressed `graph://<hash>` IRIs + optional `did` slot; RDF 1.2 reifiers carrying per-triple provenance; lossless RDF 1.2 snapshots |
-| 03 | [Decentralised Group Identity](drafts/03_decentralised-group-identity.md) | `did:graph` method + DID-document-as-triples model; groupification attaches a DID to an existing graph; participation (`context://participates_in`) and signing authority (DID-document delegates) kept structurally distinct. **Substrate dependency for spec 04.** |
-| 04 | [Graph Capability Framework](drafts/04_graph-capability-framework.md) | Root Capability; ZCAPs target a graph's DID; Open/Announced/Enforced enforcement modes; immutable-caveats attenuation; deny-wins scope-set accumulation; hierarchical AND holonic governance via the same `participates_in`/`accepts_participation` mechanism |
-| 05 | [Context Sync Protocol](drafts/05_context-sync-protocol.md) | GraphDiff (graph-DID-keyed); mount-and-subscribe lifecycle; sync spaces decoupled from logical graphs; sync-blocking respects the full scope-set governance |
-| 06 | [Sync Module Architecture](drafts/06_sync-module-architecture.md) | Pluggable WASM module interface, capability sandbox, lifecycle, user consent |
-| 07 | [Dynamic Graph Shape Validation](drafts/07_dynamic-graph-shape-validation.md) | SHACL extension with action semantics under stable `shape://actions/`; cross-graph shape inheritance via `context://participates_in` |
-| 08 | [Governance Constraint Vocabulary](drafts/08_governance-constraint-vocabulary.md) | The standard constraint kinds that plug into the capability framework: temporal, content, credential, shape |
-| 09 | [Default Sync Module](drafts/09_default-sync-module.md) | The built-in module: OR-Set CRDT, WebTransport relay protocol, NAT traversal, snapshot promotion |
-| 10 | [Graph Flows](drafts/10_graph-flows.md) | Declarative state machines: SPARQL ASK guards, temporal constraints, role requirements, composite flows |
+| 01 | [Decentralised Identity](drafts/01_decentralised-identity-web-platform.md) | Extends `navigator.credentials` with `did:key` (individuals); resolver-registry extension point that later specs (e.g. spec 03's `did:graph`) plug into; one `DIDCredential` interface — no separate code paths for "individual" vs "collective" identity |
+| 02 | [Personal Linked Data Graphs](drafts/02_personal-linked-data-graphs.md) | `navigator.graph` — content-addressed `graph://<hash>` IRIs + optional `did` slot; RDF 1.2 reifiers carrying per-triple provenance; lossless RDF 1.2 snapshots (`nquads-canonical` / `nquads` / `turtle` / `jsonld` all round-trip); holonic SPARQL across mounted graphs |
+| 03 | [Decentralised Group Identity](drafts/03_decentralised-group-identity.md) | The `did:graph` method + DID-document-as-triples model. **Groupification** attaches a content-independent DID to an existing graph (in place, one-way); the resulting graph is a **group**. Two concerns kept structurally distinct: *participation* (who is part of it, `context://participates_in`) vs *signing authority* (who can sign as it, DID-document `capabilityInvocation` delegates). |
+| 04 | [Graph Capability Framework](drafts/04_graph-capability-framework.md) | Root Capability + ZCAP delegation algebra. ZCAPs target a graph's DID; Open / Announced / Enforced enforcement modes; **immutable-caveats** attenuation; **deny-wins** scope-set accumulation; hierarchical AND holonic governance via the same `participates_in`/`accepts_participation` mechanism; BootstrapRoot chain-cut at constitutional boundaries; `mountContext` action gates read access. |
+| 05 | [Context Sync Protocol](drafts/05_context-sync-protocol.md) | `GraphDiff` (graph-DID-keyed); mount-and-subscribe lifecycle; sync spaces decoupled from logical graphs; **read-side `mountContext` gate** + **write-side scope-set validation** — sync-blocking propagates rejection at every honest peer; discovery deliberately out of scope (non-normative patterns documented). |
+| 06 | [Sync Module Architecture](drafts/06_sync-module-architecture.md) | Pluggable WASM module interface, capability sandbox, lifecycle, user consent. |
+| 07 | [Dynamic Graph Shape Validation](drafts/07_dynamic-graph-shape-validation.md) | SHACL extension with action semantics under stable `shape://actions/`; cross-graph shape inheritance via `context://participates_in`. |
+| 08 | [Governance Constraint Vocabulary](drafts/08_governance-constraint-vocabulary.md) | Standard constraint kinds that plug into the capability framework: temporal, content, credential, shape. |
+| 09 | [Default Sync Module](drafts/09_default-sync-module.md) | The built-in module: OR-Set CRDT, WebTransport relay protocol, NAT traversal, snapshot promotion, `PULL` gated by `validateReadAccess`. |
+| 10 | [Graph Flows](drafts/10_graph-flows.md) | Declarative state machines: SPARQL ASK guards, temporal constraints, role requirements, composite flows. |
 
 ### Key Design Decisions
 
 | Aspect | Decision |
 |---|---|
-| **Unit of coherence** | A **context** — a named graph identified by a `did:graph:...` DID. Its identity, governance, shapes, and flows all live as triples inside it. |
-| **Top-level data structure** | A **GraphStore** (consistent with [SPARQL 1.2 Graph Store Protocol](https://www.w3.org/TR/sparql12-graph-store-protocol/)) — a mount table of contexts the agent has open, plus a private graph for agent-local state. |
-| **Triple provenance** | RDF 1.2 reifiers carrying author, timestamp, and signature inline on each triple — SPARQL-visible, no bespoke wrapper. |
-| **Identity for collectives** | A `did:graph` DID. Multiple verification methods in the DID document; any current `capabilityInvocation` delegate signs as the DID. No multisig. |
-| **Authorisation** | ZCAPs targeting `did:graph:...` as the canonical resource. Capability chains trace to each context's own root capability. |
-| **Snapshot transfer** | A context is serialisable as a signed graph snapshot. Snapshots are addressable (content-hashed) and can be mounted by other agents — bringing the context's governance, shapes, and flows along. |
-| **Sync model** | ContextDiffs propagate through configurable sync spaces. Three standard topologies: Unified, Privacy-Tiered, Fully Partitioned. |
+| **Two layers of graph identity** | Every graph has a `graph://<content-hash>` **IRI** (snapshot address; changes on every mutation). A graph that has been **groupified** (Spec 03) additionally has a `did:graph:...` **DID** (content-independent identity; survives mutations). A graph with a DID is a **group**; "group" is a usage term, not a separate data type. |
+| **Triple provenance** | RDF 1.2 reifiers carry author, timestamp, and signature inline on each triple — SPARQL-visible, no bespoke wrapper. Reifiers are part of the graph and round-trip through every snapshot serialisation. |
+| **Identity for collectives** | A `did:graph`. Multiple verification methods in the DID document; any current `capabilityInvocation` delegate signs as the DID. **No multisig, no threshold cryptography** — shared authority is the delegate set, not the identifier. A `did:graph` with one delegate is structurally identical to one with one hundred. |
+| **Participation vs signing authority** | Kept structurally distinct (Spec 03 §7). *Participation* (`context://participates_in` + reciprocal `accepts_participation`) governs what rules apply to your writes; *signing authority* (DID-document `capabilityInvocation` delegates) governs whose signature counts as the group's. The CEO can sign; every employee participates — they are different sections of the data model. |
+| **Authorisation** | ZCAPs target a graph's **DID** for long-lived authority (IRIs are reserved for snapshot-scoped capabilities). Capability chains trace to each graph's own root capability; the chain is **cut** at `BootstrapRoot` (parent governance cannot reach into a constitutionalised child). |
+| **Governance composition** | Constraints **accumulate** across the scope set with **deny-wins** semantics — children cannot escape ancestor rules by re-declaring loosely. Caveats are **immutable** under delegation: children may add, but never modify or remove parent caveats. |
+| **Hierarchical vs holonic** | Single mechanism (`participates_in` + `accepts_participation`) covers both. Asymmetric declaration → conventional parent→child inheritance. Bidirectional declaration → each graph's rules bind writes in the other. |
+| **Snapshot transfer** | A graph is serialisable as a signed `GraphSnapshot`. All four RDF 1.2 serialisations (`nquads-canonical` / `nquads` / `turtle` / `jsonld`) round-trip losslessly — content-addressed, self-verifying, and bring the graph's governance, shapes, and flows along. |
+| **Sync model** | `GraphDiff`s propagate through configurable sync spaces. Three standard topologies: Unified, Privacy-Tiered, Fully Partitioned. The receiving peer enforces governance — both write-side (per-diff capability validation) and read-side (`mountContext` gate on snapshot pulls). Sync-blocking propagates rejection at every honest peer. |
+| **Discovery** | Deliberately out of scope. Resolution accepts DID-URL `?relay=` and `?snapshot=` hints; how applications *get* those hints (invitation links, DHT, mDNS, shared discovery graphs, friend-of-friend) is the application layer's call. The substrate is robust to the discovery channel because snapshots are self-verifying and DIDs are key-bound. |
 
 ### Quick Examples
 
 <details>
-<summary>01 — Decentralised Identity (did:key + did:graph)</summary>
+<summary>01 — Decentralised Identity (did:key)</summary>
 
 ```javascript
-// Individual identity
+// Individual identity. The DID identifier is immutable (it IS the public key);
+// users who anticipate ever wanting more delegates should create a did:graph
+// from the start (see spec 03).
 const me = await navigator.credentials.create({
   did: { method: "key", displayName: "Alice" }
 });
-console.log(me.did);  // "did:key:z6Mk..."
+console.log(me.did);   // "did:key:z6Mk..."
 
-// Graph identity for a team
-const team = await navigator.credentials.create({
-  did: {
-    method: "graph",
-    displayName: "Engineering",
-    graphOptions: { initialDelegates: ["did:key:z6MkBob...", "did:key:z6MkCarol..."] }
-  }
-});
-console.log(team.did);  // "did:graph:z6Mk..."
-
-// Any current capabilityInvocation delegate can sign as the team
-const announcement = await team.sign({ type: "Release", version: "1.0" });
-console.log(announcement.author);  // team.did
+// Sign arbitrary content.
+const claim = await me.sign({ type: "Greeting", body: "hello world" });
+console.log(claim.author);   // me.did
 ```
 </details>
 
 <details>
-<summary>02 — Personal Linked Data Graphs (GraphStore + Context)</summary>
+<summary>02 — Personal Linked Data Graphs (navigator.graph)</summary>
 
 ```javascript
-const store = await navigator.graph.create("My Workspace");
-const calendar = await store.createContext({ displayName: "My Calendar" });
+// `navigator.graph` is the GraphManager. Create a graph (no DID yet —
+// it's a snapshot-only artefact until groupified).
+const calendar = await navigator.graph.create({ displayName: "My Calendar" });
 
 await calendar.addTriple(new Triple(
   "urn:event:1",
-  "schema://name",
-  "Coffee with Alice"
+  "https://schema.org/name",
+  new LiteralValue("Coffee with Alice")
 ));
 
-const events = await calendar.querySparql(`
-  SELECT ?event ?name WHERE {
-    ?event <schema://name> ?name
-  }
+// The IRI is a content hash and advances on every mutation.
+console.log(calendar.iri);   // "graph://e3b0c4..."
+
+// Holonic SPARQL across the default graph + any named graphs passed in.
+const r = await calendar.querySparql(`
+  SELECT ?name WHERE { <urn:event:1> <https://schema.org/name> ?name }
 `);
+
+// Export a lossless signed snapshot (any RDF 1.2 format round-trips).
+const snap = await calendar.getAsSnapshot({ format: "nquads-canonical", signBy: "agent" });
+const restored = await navigator.graph.fromSnapshot(snap);
+console.log(restored.iri === calendar.iri);   // true — bit-for-bit
 ```
 </details>
 
 <details>
-<summary>03 — Graph Capability Framework (Root Capability + enforcement modes)</summary>
+<summary>03 — Decentralised Group Identity (groupify a graph)</summary>
 
 ```javascript
-// A context begins in "open" mode by default
-const community = await store.createContext({ displayName: "Community" });
-await community.setEnforcementMode("announced");  // start observing capability chains
-// ...later
-await community.setEnforcementMode("enforced");   // require valid chains
+// Option A: create-and-groupify in one call.
+const team = await navigator.graph.createGroup({
+  displayName: "Engineering",
+  initialDelegates: ["did:key:z6MkAlice...", "did:key:z6MkBob..."]
+});
+console.log(team.did);   // "did:graph:z6Mk..."
 
-// Delegate a scoped capability to a contractor
-const myCred = await navigator.credentials.get({ did: { kind: "individual" } });
-const contractorCap = await myCred.signCapability({
-  parentCapability: rootCap.id,
+// Option B: promote an existing graph in place. The graph's IRI advances
+// (binding + seed DID-document triples are added) but the DID is durable.
+const notes = await navigator.graph.create({ displayName: "Notes" });
+await notes.addTriple(new Triple("urn:note:1", "schema://text", "first note"));
+await navigator.graph.groupify(notes.iri);
+console.log(notes.did);   // now "did:graph:z6Mk..." — survives all future mutations
+
+// Any current capabilityInvocation delegate signs as the team.
+const teamCred = await navigator.credentials.get({
+  did: { method: "graph", filter: { did: team.did } }
+});
+const announcement = await teamCred.sign({ type: "Release", version: "1.0" });
+console.log(announcement.author);   // team.did
+```
+</details>
+
+<details>
+<summary>04 — Graph Capability Framework (Root Capability + enforcement modes + holonic governance)</summary>
+
+```javascript
+// Groups have governance from creation. Default mode is "open".
+const community = await navigator.graph.createGroup({ displayName: "Community" });
+await community.setEnforcementMode("announced");   // observe capability chains
+await community.setEnforcementMode("enforced");    // require valid chains
+
+// Delegate a scoped capability to a contractor.
+const contractorCap = await community.delegateCapability({
   invoker: "did:key:z6MkContractor...",
   actions: ["createLink"],
-  resource: community.did,
+  resource: community.did,            // DIDs are the canonical resource
   caveats: [
     { type: "expiry",    value: { expiresAt: "2026-06-22T00:00:00Z" }},
-    { type: "shape",     value: { shapeIri: "msg://MessageShape" }},  // shape caveat — see spec 07
+    { type: "predicate", value: { allowed: ["msg://body", "msg://reaction"] }},
     { type: "rateLimit", value: { maxPerWindow: 50, windowSeconds: 3600 }}
   ]
 });
+
+// Holonic link: A↔B participation makes the two share a governance surface.
+// Each graph's constraints apply to writes in the other. Same predicates as
+// hierarchical, just declared in both directions.
+await community.graph.addTriple(new Triple(community.did, "context://participates_in", peer.did));
+await community.graph.addTriple(new Triple(community.did, "context://accepts_participation", peer.did));
+await peer.graph.addTriple(new Triple(peer.did, "context://participates_in", community.did));
+await peer.graph.addTriple(new Triple(peer.did, "context://accepts_participation", community.did));
 ```
 </details>
 
 <details>
-<summary>04 — Context Sync Protocol (Publish + Mount)</summary>
+<summary>05 — Context Sync Protocol (mount + read-side capability gate)</summary>
 
 ```javascript
-// Publish a context to a sync space
-const planning = await store.createContext({ displayName: "Q3 Planning" });
+// Publish a group's host graph to a sync space.
+const planning = await navigator.graph.createGroup({ displayName: "Q3 Planning" });
 const published = await planning.publish({
   spaceTopology: "privacy-tiered",
-  relays: ["relay.example.com"]
+  relays: ["wss://relay.example.com"]
 });
 
-// Another user agent mounts it
-const mounted = await otherStore.mount(published.graphDid, {
+// Another agent mounts it with WRITE capability.
+const mounted = await otherManager.mount(published.graphDid, {
   mode: "write",
-  capabilityProof: invitedCapabilityChain,
-  spaceUri: published.spaceUri,
+  capabilityProof: { chain: invitedZcapIds, presentations: [] },
+  spaceUri:   published.spaceUri,
   moduleHash: published.moduleHash,
-  relays: published.relays
+  relays:     published.relays
 });
-// Now subscribed — diffs flow both ways
+// Now subscribed — diffs flow both ways; each peer re-validates incoming
+// diffs against the graph's scope-set governance.
+
+// Read-only mounts of a graph with a `mountContext` constraint require a
+// proof too — the receiving peer's `validateReadAccess` gates the snapshot.
+const readOnly = await otherManager.mount(published.graphDid, {
+  mode: "read",
+  capabilityProof: { chain: [readZcap], presentations: [vcPresentation] }
+});
 ```
 </details>
 
 <details>
-<summary>06 — Dynamic Graph Shape Validation</summary>
+<summary>07 — Dynamic Graph Shape Validation</summary>
 
 ```javascript
 await calendar.addShape("Event", JSON.stringify({
@@ -169,10 +212,10 @@ await calendar.createShapeInstance("Event", "urn:event:2", {
 </details>
 
 <details>
-<summary>09 — Graph Flows (declarative state machines)</summary>
+<summary>10 — Graph Flows (declarative state machines)</summary>
 
 ```javascript
-await community.addFlow("Proposal", JSON.stringify({
+await community.graph.addFlow("Proposal", JSON.stringify({
   name: "Proposal",
   namespace: "flow://Proposal/",
   appliesTo: "gov://Proposal",
@@ -194,26 +237,27 @@ await community.addFlow("Proposal", JSON.stringify({
   ]
 }));
 
-const result = await community.executeFlowTransition("Proposal", "proposal:42", "ratify");
+const result = await community.graph.executeFlowTransition("Proposal", "proposal:42", "ratify");
 // → { success: true, newState: "ratified" } or
 //   { success: false, reason: "Quorum not reached", guardDescription: "..." }
 ```
 </details>
 
 <details>
-<summary>10 — Decentralised Group Identity (a Group IS a did:graph)</summary>
+<summary>Participation vs signing authority (spec 03 §7) — the structural distinction</summary>
 
 ```javascript
-const team = await store.createGroup({
+const team = await navigator.graph.createGroup({
   displayName: "Project Alpha",
-  initialDelegates: ["did:key:z6MkAlice...", "did:key:z6MkBob..."]
+  initialDelegates: ["did:key:z6MkAlice..."]
 });
 
-// Invite participation (separate from signing authority)
-await team.invite("did:graph:carol-personal");
-// Carol completes by adding context://participates_in in her own context
+// Invite participation — Alice will be "part of" the team.
+await team.invite("did:key:z6MkAlice...");
+// Alice completes by adding context://participates_in in her own graph.
 
-// Add Charlie as a signer (does NOT make him a participant)
+// Add Charlie as a SIGNER — does NOT make him a participant.
+// He can sign as the team but isn't recorded as "part of" it.
 await team.addSigner(
   { id: `${team.did}#key-charlie`, type: "Ed25519VerificationKey2020",
     controller: team.did, publicKeyMultibase: "z6MkCharlie..." },
@@ -227,48 +271,61 @@ console.log((await team.signers("capabilityInvocation")).map(s => s.id));
 
 ## How It Composes
 
-The specs form a strict DAG — each level builds only on the levels below it:
+The specs form a strict DAG — each level builds only on the levels below it. Spec 03 (Group Identity) is the substrate dependency for Spec 04 (Capability Framework): governance targets DIDs, which Spec 03 provides.
 
 ```
-                       ┌─────────────────────────┐
-                       │      Applications        │
-                       └────────────┬─────────────┘
-                                    │
-   ┌────────────────┬───────────────┼────────────────┐
-   │       10       │       09      │       08       │
-   │ Group Identity │     Flows     │  Default Sync  │
-   │  (pattern)     │  (process)    │  (CRDT + wire) │
-   └────────┬───────┴───────┬───────┴────────┬───────┘
-            │               │                │
-            │       ┌───────┴───────┐ ┌──────┴──────┐
-            │       │      06       │ │      07     │
-            │       │    Shapes     │ │ Constraints │
-            │       │  (structure)  │ │  (vocab)    │
-            │       └───────┬───────┘ └──────┬──────┘
-            │               │                │
-            │       ┌───────┴────────┐ ┌─────┴──────┐
-            │       │      05        │ │     04     │
-            │       │  Sync Module   │ │  Context   │
-            │       │  Architecture  │ │  Sync      │
-            │       └────────────────┘ └─────┬──────┘
-            │                                │
-            │                  ┌─────────────┴─────────┐
-            └──────────────────┤         03            │
-                               │  Capability Framework │
-                               └───────────┬───────────┘
-                                           │
-                               ┌───────────┴───────────┐
-                               │         02            │
-                               │  Personal Linked      │
-                               │  Data Graphs          │
-                               └───────────┬───────────┘
-                                           │
-                                     ┌─────┴─────┐
-                                     │    01     │
-                                     │  Identity │
-                                     │  did:key  │
-                                     │ did:graph │
-                                     └───────────┘
+                          ┌─────────────────────────┐
+                          │      Applications       │
+                          └────────────┬────────────┘
+                                       │
+   ┌─────────────────┬─────────────────┼─────────────────┐
+   │       10        │       09        │       08        │
+   │  Graph Flows    │  Default Sync   │   Constraint    │
+   │   (process)     │  (CRDT + wire)  │   Vocabulary    │
+   └────────┬────────┴────────┬────────┴────────┬────────┘
+            │                 │                 │
+            │       ┌─────────┴────────┐  ┌─────┴──────┐
+            │       │        07        │  │     06     │
+            │       │  Shape Validation│  │  Sync Mod. │
+            │       │   (structure)    │  │   Arch.    │
+            │       └─────────┬────────┘  └─────┬──────┘
+            │                 │                 │
+            │                 │       ┌─────────┴──────────┐
+            │                 │       │         05         │
+            │                 │       │   Context Sync     │
+            │                 │       │     Protocol       │
+            │                 │       └─────────┬──────────┘
+            │                 │                 │
+            └─────────────────┴─────────────────┤
+                                                │
+                                  ┌─────────────┴──────────────┐
+                                  │             04             │
+                                  │   Graph Capability Framework│
+                                  │  (scope-set, deny-wins,    │
+                                  │   immutable caveats,       │
+                                  │   mountContext gate)       │
+                                  └─────────────┬──────────────┘
+                                                │
+                                  ┌─────────────┴──────────────┐
+                                  │             03             │
+                                  │  Decentralised Group       │
+                                  │     Identity (did:graph)   │
+                                  │  — substrate dependency    │
+                                  └─────────────┬──────────────┘
+                                                │
+                                  ┌─────────────┴──────────────┐
+                                  │             02             │
+                                  │  Personal Linked Data      │
+                                  │  Graphs (navigator.graph)  │
+                                  └─────────────┬──────────────┘
+                                                │
+                                       ┌────────┴────────┐
+                                       │       01        │
+                                       │   Identity      │
+                                       │   (did:key +    │
+                                       │    resolver     │
+                                       │    registry)    │
+                                       └─────────────────┘
 ```
 
 ## Implementations
@@ -285,16 +342,16 @@ One package per spec, strict dependency order:
 
 | Spec | Package | Description |
 |-----:|---------|-------------|
-| 01 | `@living-web/identity` | `did:key` + `did:graph` + DID-document delegate management |
-| 02 | `@living-web/personal-graph` | GraphStore, Context, mount table, graph snapshots, cross-context queries |
-| 03 | `@living-web/capability-framework` | ZCAP runtime, enforcement modes, plug-in constraint-kind registry, core caveat vocabulary |
-| 04 | `@living-web/context-sync` | ContextDiff + sync spaces + `Context.publish()`; sync runtime slot for a module to fill |
-| 05 | `@living-web/sync-module` | `SyncModule` contract + `installSyncModule()` (production hosts add WASM sandbox + lifecycle) |
-| 06 | `@living-web/shape-validation` | SHACL action semantics, context-scoped, cross-context inheritance |
-| 07 | `@living-web/constraint-vocabulary` | Plug-in `ConstraintHandler`s for temporal / content / credential constraint kinds |
-| 08 | `@living-web/default-sync-module` | Reference BroadcastChannel sync module — `/polyfill` auto-installs |
-| 09 | `@living-web/flows` | Guards, temporal constraints, role requirements |
-| 10 | `@living-web/group-identity` | Group convenience layer over Context + did:graph + capability-framework |
+| 01 | `@living-web/identity` | `did:key` + resolver registry + DID-document delegate management surface |
+| 02 | `@living-web/personal-graph` | `navigator.graph`, content-addressed graphs, RDF 1.2 reifiers, lossless RDF 1.2 snapshots, holonic SPARQL |
+| 03 | `@living-web/group-identity` | `did:graph` method, DID-document-as-triples model, `groupify()` upgrade, `Group` convenience layer, participation-vs-signing separation |
+| 04 | `@living-web/capability-framework` | Scope-set governance (hierarchical + holonic), accumulate + deny-wins, `BootstrapRoot` chain-cut, immutable-caveats attenuation, Open/Announced/Enforced, plug-in constraint-kind registry, `validateAction("mountContext", ...)` read-side gate |
+| 05 | `@living-web/context-sync` | `GraphDiff` + sync spaces + per-graph subscription; `validateDiff` (writes) + `validateReadAccess` (reads) |
+| 06 | `@living-web/sync-module` | `SyncModule` contract + `installSyncModule()` (production hosts add WASM sandbox + lifecycle) |
+| 07 | `@living-web/shape-validation` | SHACL action semantics, graph-scoped, cross-graph inheritance via `context://participates_in` |
+| 08 | `@living-web/constraint-vocabulary` | Plug-in `ConstraintHandler`s for temporal / content / credential constraint kinds |
+| 09 | `@living-web/default-sync-module` | Reference BroadcastChannel sync module — `/polyfill` auto-installs |
+| 10 | `@living-web/flows` | Declarative state machines, SPARQL ASK guards, temporal constraints, role requirements |
 
 ### Chrome Extension
 
