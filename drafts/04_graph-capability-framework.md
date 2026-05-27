@@ -504,13 +504,13 @@ Implementations SHOULD cache *scopeSet* results and invalidate when any particip
 
 ## 7. ZCAP Verification Algorithm
 
-**Input:** A triple to be written, the author's DID, the target graph W (whose `did` is `W.did`), the *scopeSet* from [§6.1](#61-scope-set-resolution), the current local state of all in-scope graphs, the enforcement mode.
+**Input:** An operation descriptor (either a triple to be written, or a non-triple operation), the author's DID, the target graph W (whose `did` is `W.did`), the *scopeSet* from [§6.1](#61-scope-set-resolution), the current local state of all in-scope graphs, the enforcement mode, and an OPTIONAL explicit `action` override.
 
 **Algorithm:**
 
 1. **Mode check.** If W's enforcement mode is `"open"`, skip capability verification and return ACCEPT (other constraint kinds still evaluate per [§5.3](#53-mode-agnostic-constraints)). If `"announced"`, perform the full algorithm below, record the result in the audit trail, but always return ACCEPT regardless of outcome.
 
-2. **Derive action.** Let *action* be the action implied by the triple per [§4.5.4.1](#4541-action-derivation).
+2. **Determine action.** If the caller supplied an explicit `action` override, use it directly (this is the standard path for *non-triple* operations such as a read-mount authorisation check, which has no predicate to derive from). Otherwise let *action* be the action implied by the operation's predicate per [§4.5.4.1](#4541-action-derivation).
 
 3. **Collect capability constraints.** From [§6.4](#64-constraint-collection), select constraints with `constraint_kind = "capability"` and `capability_enforcement = "required"`. If none, return ACCEPT.
 
@@ -537,7 +537,17 @@ Implementations SHOULD cache *scopeSet* results and invalidate when any particip
       6. Verify parent is not revoked.
       7. Set `cap = parent`; increment depth; continue from step 6.5.2.
 
-7. **Outcome.** If any candidate succeeded, return ACCEPT. Otherwise return REJECT with `rejectedBy = <constraint-id>`, `module = "capability"`, and a `reason` string identifying the failure (e.g., `"no_matching_capability"`, `"chain_broken"`, `"revoked"`, `"caveat_failed:<type>"`).
+7. **Outcome.** If any candidate succeeded, return ACCEPT. Otherwise return REJECT with `rejectedBy = <constraint-id>`, `constraintKind = "capability"`, and a `reason` string identifying the failure (e.g., `"no_matching_capability"`, `"chain_broken"`, `"revoked"`, `"caveat_failed:<type>"`).
+
+### 7.1 Non-Triple Operations
+
+The same algorithm authorises non-triple operations — most notably the `mountContext` action invoked by [[CONTEXT-SYNC]] when a peer requests a read mount or a snapshot pull of a graph it does not yet hold. In that case:
+
+- The caller supplies `action = "mountContext"` explicitly (step 2 takes the override).
+- The operation has no `subject`/`predicate`/`object` triple, so steps 4 (predicate-coverage check) and step 6.4 (caveats that depend on triple content, e.g., `predicate`, `subject`, `object`) are skipped — they cannot be evaluated against a non-existent triple. Caveats that depend only on context (`expiry`, `rateLimit`, `cardinality`, `credential`) are still evaluated normally.
+- All other steps proceed unchanged: scope-set construction, `has_zcap` lookup, chain walk, bootstrap termination, revocation, attenuation.
+
+The presence of a `mountContext`-bearing capability constraint in the scope set (§4.5 / §6.4) is what *makes* a graph's read access governed. Graphs with no such constraint accept any read.
 
 ---
 
@@ -668,6 +678,12 @@ This specification does NOT define multisig, threshold signing, or aggregate-key
 [Exposed=Window,Worker]
 partial interface Graph {
   [NewObject] Promise<GovernanceValidationResult> canAddTriple(Triple triple);
+  /** Authorise a non-triple operation (e.g. mountContext) for the named author. */
+  [NewObject] Promise<GovernanceValidationResult> canPerformAction(
+    USVString action,
+    USVString authorDid,
+    optional CapabilityProofInput proof
+  );
   [NewObject] Promise<sequence<GraphConstraint>> constraintsFor(USVString contextDid);
   [NewObject] Promise<sequence<CapabilityInfo>> myCapabilities();
   [NewObject] Promise<EnforcementMode> enforcementMode();
@@ -675,6 +691,15 @@ partial interface Graph {
 };
 
 enum EnforcementMode { "open", "announced", "enforced" };
+
+dictionary CapabilityProofInput {
+  /** Ordered ZCAP delegation chain (leaf → root), as content-addressed references
+   *  resolvable within the scope set. */
+  required sequence<USVString> chain;
+  /** Optional verifiable-credential presentations consumed by `credential` caveats
+   *  on the chain (per [[CONSTRAINT-VOCABULARY]] §6). */
+  sequence<object> presentations;
+};
 
 dictionary GovernanceValidationResult {
   required boolean allowed;

@@ -41,7 +41,7 @@ beforeEach(async () => {
   identity = eph;
   // Construct with the did:graph as the internal id (it doubles as the
   // groupified identity, since these tests pre-suppose the graph is
-  // "the graph identified by GRAPH_DID"). setDid pins the sovereign id.
+  // "the graph identified by GRAPH_DID"). setDid pins the did.
   graph = new Graph(GRAPH_DID, 'Test', identity, store);
   graph.setDid(GRAPH_DID);
 });

@@ -38,7 +38,7 @@ export const DID_DOC_PREDICATES = {
   type: 'did://verificationMethod/type',
   controller: 'did://verificationMethod/controller',
   publicKeyMultibase: 'did://verificationMethod/publicKeyMultibase',
-  hasMethod: 'did://hasMethod',
+  verificationMethod: 'did://verificationMethod',
   capabilityInvocation: 'did://capabilityInvocation',
   capabilityDelegation: 'did://capabilityDelegation',
   assertionMethod: 'did://assertionMethod',
@@ -83,7 +83,7 @@ export function resolveDIDGraph(
   for (const { subject: s, predicate: p, object: t } of provider.readGraph(did)) {
     if (s === did) {
       switch (p) {
-        case DID_DOC_PREDICATES.hasMethod:
+        case DID_DOC_PREDICATES.verificationMethod:
           methodProps.set(t, methodProps.get(t) ?? { id: t, controller: did });
           break;
         case DID_DOC_PREDICATES.capabilityInvocation:
@@ -183,7 +183,7 @@ export function seedDIDDocumentTriples(graphDid: string): GraphTriple[] {
   const identifier = graphDid.slice('did:graph:'.length);
   const methodId = `${graphDid}#${identifier}`;
   return [
-    { subject: graphDid, predicate: DID_DOC_PREDICATES.hasMethod, object: methodId },
+    { subject: graphDid, predicate: DID_DOC_PREDICATES.verificationMethod, object: methodId },
     { subject: methodId, predicate: DID_DOC_PREDICATES.type, object: '"Ed25519VerificationKey2020"' },
     { subject: methodId, predicate: DID_DOC_PREDICATES.controller, object: graphDid },
     { subject: methodId, predicate: DID_DOC_PREDICATES.publicKeyMultibase, object: `"${identifier}"` },
@@ -209,7 +209,7 @@ export function addMethodTriples(
 ): GraphTriple[] {
   const multibase = encodeEd25519Multibase(publicKey);
   const triples: GraphTriple[] = [
-    { subject: graphDid, predicate: DID_DOC_PREDICATES.hasMethod, object: methodId },
+    { subject: graphDid, predicate: DID_DOC_PREDICATES.verificationMethod, object: methodId },
     { subject: methodId, predicate: DID_DOC_PREDICATES.type, object: '"Ed25519VerificationKey2020"' },
     { subject: methodId, predicate: DID_DOC_PREDICATES.controller, object: graphDid },
     { subject: methodId, predicate: DID_DOC_PREDICATES.publicKeyMultibase, object: `"${multibase}"` },
@@ -229,7 +229,7 @@ export function addMethodTriples(
  */
 export function removeMethodTriples(graphDid: string, methodId: string): GraphTriple[] {
   return [
-    { subject: graphDid, predicate: DID_DOC_PREDICATES.hasMethod, object: methodId },
+    { subject: graphDid, predicate: DID_DOC_PREDICATES.verificationMethod, object: methodId },
     { subject: graphDid, predicate: DID_DOC_PREDICATES.capabilityInvocation, object: methodId },
     { subject: graphDid, predicate: DID_DOC_PREDICATES.capabilityDelegation, object: methodId },
     { subject: graphDid, predicate: DID_DOC_PREDICATES.assertionMethod, object: methodId },

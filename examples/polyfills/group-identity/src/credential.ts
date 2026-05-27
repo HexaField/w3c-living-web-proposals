@@ -62,6 +62,13 @@ export interface GraphDIDWriter {
     methodId: string,
     section: DIDCapabilitySection,
   ): Promise<void>;
+  /** Return the current member method-ids of a capability section. Used by
+   *  the brick-state guard on `removeDelegate` / `revokeSection`. */
+  currentSectionMembers(graphDid: string, section: DIDCapabilitySection): Promise<string[]>;
+  /** Resolve a target string (either a graph IRI or a did:graph alias) to
+   *  the host graph's current IRI and DID. Used by `signGraph`.
+   *  Returns null for unknown targets. */
+  resolveTarget(target: string): Promise<{ graphIri: string; graphDid: string | null } | null>;
 }
 
 let graphWriter: GraphDIDWriter | null = null;
@@ -115,8 +122,11 @@ declare module '@living-web/identity' {
     grantSection(methodId: string, section: DIDCapabilitySection): Promise<void>;
     /** Revoke a method's membership in a capability section. */
     revokeSection(methodId: string, section: DIDCapabilitySection): Promise<void>;
-    /** Sign a graph snapshot — `{ graphIri, contentHash }`. */
-    signGraph(graphIri: string, contentHash: string): Promise<SignedContent>;
+    /** Sign a graph observation — `{ graphDid, graphIri, timestamp }`.
+     *  `target` is either the graph's `graph://` IRI or its `did:graph` alias;
+     *  the implementation resolves both fields. `graphDid` is null when the
+     *  target graph has no DID. */
+    signGraph(target: string): Promise<SignedContent>;
   }
 }
 
@@ -147,7 +157,20 @@ export function installCredentialAugmentation(): void {
     if (this.method !== 'graph') {
       throw new DOMException('removeDelegate is only supported for did:graph credentials', 'NotSupportedError');
     }
-    await requireGraphWriter().removeMethodFromGraph(this.did, methodId);
+    const writer = requireGraphWriter();
+    // Brick-state guard (Spec 03 §5.4): refuse to remove the last
+    // `capabilityDelegation` method — would render the DID document
+    // permanently unmodifiable.
+    const capDelegates = await writer.currentSectionMembers(this.did, 'capabilityDelegation');
+    if (capDelegates.length === 1 && capDelegates[0] === methodId) {
+      throw new DOMException(
+        `Cannot remove ${methodId}: it is the only remaining capabilityDelegation method ` +
+        `on ${this.did}. Removing it would brick the DID document. Add a replacement first ` +
+        `(or use Group.replaceSigner for an atomic handoff).`,
+        'InvalidStateError',
+      );
+    }
+    await writer.removeMethodFromGraph(this.did, methodId);
   };
 
   proto.grantSection = async function (
@@ -169,15 +192,35 @@ export function installCredentialAugmentation(): void {
     if (this.method !== 'graph') {
       throw new DOMException('revokeSection is only supported for did:graph credentials', 'NotSupportedError');
     }
-    await requireGraphWriter().revokeSectionInGraph(this.did, methodId, section);
+    const writer = requireGraphWriter();
+    if (section === 'capabilityDelegation') {
+      const members = await writer.currentSectionMembers(this.did, 'capabilityDelegation');
+      if (members.length === 1 && members[0] === methodId) {
+        throw new DOMException(
+          `Cannot revoke capabilityDelegation from ${methodId}: it is the only remaining ` +
+          `capabilityDelegation member of ${this.did}. Revoking it would brick the DID document.`,
+          'InvalidStateError',
+        );
+      }
+    }
+    await writer.revokeSectionInGraph(this.did, methodId, section);
   };
 
   proto.signGraph = async function (
     this: DIDCredential,
-    graphIri: string,
-    contentHash: string,
+    target: string,
   ): Promise<SignedContent> {
-    return this.sign({ graphIri, contentHash });
+    const writer = requireGraphWriter();
+    const resolved = await writer.resolveTarget(target);
+    if (!resolved) {
+      throw new DOMException(`signGraph: unknown target ${target}`, 'NotFoundError');
+    }
+    const timestamp = new Date().toISOString();
+    return this.sign({
+      graphDid: resolved.graphDid,
+      graphIri: resolved.graphIri,
+      timestamp,
+    });
   };
 }
 

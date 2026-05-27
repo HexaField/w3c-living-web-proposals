@@ -5,6 +5,38 @@
  * same browser-origin sync within the namespace without a relay). A real
  * implementation would substitute WebTransport + a relay; the same module
  * interface applies.
+ *
+ * ## Read-side authorisation (Spec 05 §9.2.2, Spec 09 §10.2)
+ *
+ * Production implementations that add a `PULL`/`SNAPSHOT` exchange (Spec 09
+ * §5.3 / §5.4) MUST gate the responder's reply via the governance engine's
+ * `validateAction("mountContext", requesterDid, { capabilityProof })`
+ * before serving. The reference call site:
+ *
+ * ```ts
+ * import { GraphGovernanceEngine } from '@living-web/capability-framework';
+ *
+ * async function handlePull(graph: Graph, msg: PullMessage) {
+ *   const engine = new GraphGovernanceEngine(graphContextFor(graph));
+ *   const r = await engine.validateAction('mountContext', msg.authorDid, {
+ *     capabilityProof: msg.capabilityProof,
+ *   });
+ *   if (!r.allowed) {
+ *     send({ type: 'PULL_DENIED', graphDid: graph.did, reason: r.reason });
+ *     return;   // MUST NOT send SNAPSHOT or DIFFs
+ *   }
+ *   send({ type: 'SNAPSHOT', graphDid: graph.did, snapshot: await graph.getAsSnapshot() });
+ * }
+ * ```
+ *
+ * The BroadcastChannel-based default module currently gossips live diffs only —
+ * it does not implement the PULL request/response pattern. When that
+ * protocol is added (or when this module is replaced by a relay-backed
+ * production module), the call above is the integration point.
+ *
+ * The security-critical decision is the `engine.validateAction(...)` call;
+ * the validation logic is covered by `@living-web/capability-framework`'s
+ * governance-edge-cases conformance suite (read-side authorisation tests).
  */
 
 import type { Graph, SignedTriple } from '@living-web/personal-graph';

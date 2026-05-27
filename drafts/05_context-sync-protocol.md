@@ -9,9 +9,9 @@
 
 ## Abstract
 
-This specification defines a protocol for synchronising **graphs** (named graphs, per [[PERSONAL-LINKED-DATA-GRAPHS]]) between multiple agents in a peer-to-peer manner. Synchronisation is keyed by a graph's sovereign DID (the `Graph.did` attribute defined in [[PERSONAL-LINKED-DATA-GRAPHS]] §3.3). A sovereign DID is REQUIRED for sync: a graph's `graph://<content-hash>` IRI changes whenever its triples change, so it cannot serve as the durable subscription handle that sync needs. Graphs without a sovereign DID can still be transported between agents as immutable snapshots ([[PERSONAL-LINKED-DATA-GRAPHS]] §5), but they cannot be *synced* — sync presupposes an evolving graph with a stable, content-independent identity. How a sovereign DID is attached to a graph is out of scope for this specification. This specification defines:
+This specification defines a protocol for synchronising **graphs** (named graphs, per [[PERSONAL-LINKED-DATA-GRAPHS]]) between multiple agents in a peer-to-peer manner. Synchronisation is keyed by a graph's DID (the `Graph.did` attribute defined in [[PERSONAL-LINKED-DATA-GRAPHS]] §3.3). A DID is REQUIRED for sync: a graph's `graph://<content-hash>` IRI changes whenever its triples change, so it cannot serve as the durable subscription handle that sync needs. Graphs without a DID can still be transported between agents as immutable snapshots ([[PERSONAL-LINKED-DATA-GRAPHS]] §5), but they cannot be *synced* — sync presupposes an evolving graph with a stable, content-independent identity. How a DID is attached to a graph is out of scope for this specification. This specification defines:
 
-- The **GraphDiff** format — additions and removals scoped to a specific sovereign DID, accompanied by a capability proof per [[CAPABILITY-FRAMEWORK]].
+- The **GraphDiff** format — additions and removals scoped to a specific DID, accompanied by a capability proof per [[CAPABILITY-FRAMEWORK]].
 - The **mount-and-subscribe** lifecycle — a graduated, per-graph subscription model.
 - The separation of **logical graphs** (with self-contained governance) from **sync spaces** (gossip topologies that may carry one or many graphs).
 - The Graph-API additions that user agents expose for publish, subscribe, and signal.
@@ -78,7 +78,7 @@ This specification defines:
 ### 1.4 Relationship to Other Specifications
 
 - [[DECENTRALISED-IDENTITY]] defines `did:key` and the `DIDCredential` signing surface.
-- [[PERSONAL-LINKED-DATA-GRAPHS]] defines the `Graph` interface, the `GraphManager` (`navigator.graph`), and the optional sovereign DID (`Graph.did`) on which sync subscriptions are keyed. Subscribing to a graph with no sovereign DID is not possible; the immutable-snapshot transport path ([[PERSONAL-LINKED-DATA-GRAPHS]] §5) applies instead.
+- [[PERSONAL-LINKED-DATA-GRAPHS]] defines the `Graph` interface, the `GraphManager` (`navigator.graph`), and the optional DID (`Graph.did`) on which sync subscriptions are keyed. Subscribing to a graph with no DID is not possible; the immutable-snapshot transport path ([[PERSONAL-LINKED-DATA-GRAPHS]] §5) applies instead.
 - [[CAPABILITY-FRAMEWORK]] defines the ZCAP rules that the protocol's governance integration enforces.
 
 The pluggable sync-module interface, sandboxing model, and built-in default module are defined by extension specifications and are out of scope here.
@@ -104,7 +104,7 @@ A **conforming user agent** MUST implement:
 
 <dl>
 <dt><dfn>Graph</dfn></dt>
-<dd>A named graph identified by a <code>graph://&lt;content-hash&gt;</code> IRI (optionally also by a sovereign DID). See [[PERSONAL-LINKED-DATA-GRAPHS]] §3.3.</dd>
+<dd>A named graph identified by a <code>graph://&lt;content-hash&gt;</code> IRI (optionally also by a DID). See [[PERSONAL-LINKED-DATA-GRAPHS]] §3.3.</dd>
 
 <dt><dfn>GraphDiff</dfn></dt>
 <dd>A unit of change to a specific graph: additions, removals, a revision identifier, causal dependencies, and a CapabilityProof. The unit of gossip.</dd>
@@ -170,7 +170,7 @@ Graph identity, sync topology, and module choice are kept separate:
 └─────────────────────────────────────────────────────┘
 ```
 
-**Logical layer**: Each graph is identified by its sovereign DID (required for sync) and has its own governance, shapes, flows, and data. Its current state has a `graph://<content-hash>` IRI which changes with every diff. **Authorization** lives here, per-graph.
+**Logical layer**: Each graph is identified by its DID (required for sync) and has its own governance, shapes, flows, and data. Its current state has a `graph://<content-hash>` IRI which changes with every diff. **Authorization** lives here, per-graph.
 
 **Sync layer**: Sync spaces determine what gossips with what. **Membership in a space** carries diffs to your peer; **a valid capability** lets you process them. The two are orthogonal.
 
@@ -198,7 +198,7 @@ A receiving peer in a shared space:
 ```webidl
 [Exposed=Window,Worker]
 interface GraphDiff {
-  readonly attribute USVString graphDid;          // the graph's sovereign DID
+  readonly attribute USVString graphDid;          // the graph's DID
   readonly attribute USVString revision;           // sha256 hex
   readonly attribute FrozenArray<Triple> additions;
   readonly attribute FrozenArray<Triple> removals;
@@ -236,6 +236,10 @@ interface CapabilityProof {
                                                                 // each element is a content-addressed ZCAP id
   readonly attribute FrozenArray<USVString> caveatsSatisfied;  // caveat ids evaluated at commit time
   readonly attribute boolean hasContentCaveats;                 // optimisation hint
+  /** Verifiable-credential presentations consumed by `credential` caveats
+   *  on the chain. Empty when no credential caveats apply. Each presentation
+   *  is a [[VC-DATA-MODEL-2.0]] VerifiablePresentation object. */
+  readonly attribute FrozenArray<object> presentations;
 };
 ```
 
@@ -244,6 +248,8 @@ The chain is the ordered list of ZCAPs from the committing agent's leaf capabili
 `caveatsSatisfied` records which caveats the committing agent's executor evaluated and accepted before commit. The receiving peer re-evaluates independently; this field is an audit trail, not a trust shortcut.
 
 `hasContentCaveats` is `true` if any delegation in the chain has caveats whose evaluation depends on the link's content (Predicate, Shape, Property, Content, Subject, Object — see [[CAPABILITY-FRAMEWORK]] §9). When `false`, the receiving peer MAY skip per-link caveat re-evaluation as an optimisation.
+
+`presentations` carries VerifiablePresentation objects per [[VC-DATA-MODEL-2.0]] when the chain contains `credential` caveats ([[CONSTRAINT-VOCABULARY]] §6). The receiving peer's governance engine consults this field when evaluating credential caveats; if a required credential is absent or its issuer fails verification, the caveat fails and the proof is rejected. Presentations are scoped to a single proof exchange — they are not retained beyond validation.
 
 ### 5.4 Peer
 
@@ -330,7 +336,7 @@ The `publish()` method MUST:
 
 ### 6.2 Mounting a Remote Graph
 
-Mounting opens a remote graph (identified by its sovereign DID) into the local user agent so that diffs can be exchanged with peers. This specification defines `mount()` on `GraphManager`:
+Mounting opens a remote graph (identified by its DID) into the local user agent so that diffs can be exchanged with peers. This specification defines `mount()` on `GraphManager`:
 
 ```webidl
 partial interface GraphManager {
@@ -340,7 +346,10 @@ partial interface GraphManager {
 
 dictionary MountOptions {
   MountMode mode = "read";
-  object capabilityProof;        // ZCAP chain; required for "write" or "governance"
+  /** ZCAP chain + optional VC presentations. REQUIRED for "write" and
+   *  "governance"; REQUIRED for "read" if the graph's governance binds a
+   *  capability constraint covering the `mountContext` action (per §6.2 step 2). */
+  CapabilityProofInput capabilityProof;
   USVString snapshotUri;         // optional initial snapshot to materialise from
   USVString spaceUri;            // hint: the space carrying this graph's diffs
   USVString moduleHash;          // hint: the sync module the space uses
@@ -353,10 +362,12 @@ enum MountMode { "read", "write", "governance" };
 The `mount()` method MUST:
 
 1. Reject with `"InvalidStateError"` if the graph is already mounted.
-2. If `options.mode` is `"write"` or `"governance"`, require a `capabilityProof` and validate it against the graph's governance ([[CAPABILITY-FRAMEWORK]]). Reject with `"NotAllowedError"` on failure.
-3. If the graph's per-graph store does not exist locally and `options.snapshotUri` is provided, fetch and materialise the snapshot per [[PERSONAL-LINKED-DATA-GRAPHS]] §5.5.
+2. **Authorise the mount** against the graph's governance ([[CAPABILITY-FRAMEWORK]]):
+   - If `options.mode` is `"write"` or `"governance"`, perform [[CAPABILITY-FRAMEWORK]] §7 with `action = "createLink"` (or the specific action implied by the intended operations) and the supplied `capabilityProof`. Reject with `"NotAllowedError"` on failure.
+   - If `options.mode` is `"read"`, perform [[CAPABILITY-FRAMEWORK]] §7 with `action = "mountContext"`. If the scope set contains no capability constraint covering `mountContext` (per [§4.5](#45-document-updates) of that spec), the graph's read access is unrestricted and the mount proceeds without a proof. Otherwise the caller MUST supply a `capabilityProof` valid for `mountContext`; reject with `"NotAllowedError"` if it is missing or invalid.
+3. If the graph's per-graph store does not exist locally and `options.snapshotUri` is provided, fetch and materialise the snapshot per [[PERSONAL-LINKED-DATA-GRAPHS]] §5.5. (The peer that serves the snapshot MUST itself have authorised the request per [§9](#9-governance-integration); see [§9.2](#92-the-validate-contract) for the receiver's side.)
 4. Subscribe to `spaceUri` using `moduleHash` (downloading the module if needed, with user consent — module installation semantics are out of scope here).
-5. Begin emitting and accepting `GraphDiff`s scoped to the mounted graph's sovereign DID.
+5. Begin emitting and accepting `GraphDiff`s scoped to the mounted graph's DID.
 6. Return the live `Graph`.
 
 The `unmount()` method releases the local mount entry and stops gossiping diffs for the graph. It does not delete the per-graph store; calling `mount()` again reopens it.
@@ -474,7 +485,7 @@ partitioned:  "lwsync:dedicated:" + <graph-did>
 custom:       "lwsync:named:" + <custom-name>
 ```
 
-The namespace-id is typically the sovereign DID of a root graph that other graphs participate in.
+The namespace-id is typically the DID of a root graph that other graphs participate in.
 
 ### 7.4 Space Memberships
 
@@ -528,13 +539,13 @@ This section is normative.
 
 The full handshake for an agent to subscribe to a graph they have not previously mounted:
 
-1. **Discover.** The agent obtains the graph's sovereign DID plus addressing hints (space URI, module hash, relay endpoints, snapshot URI) — typically out of band (invitation link, paper, side-channel).
-2. **Resolve.** The runtime resolves the DID per [[DID-CORE]]. If no snapshot is locally available, fetch one via the snapshot URI hint and verify it (the snapshot's `graphIri` is its content hash; the snapshot's binding to the sovereign DID is verified per the conventions established by the DID method in use).
-3. **Verify snapshot.** Verify the snapshot's signatures.
-4. **Verify capability.** If the mount mode requires authorisation, verify the agent's `capabilityProof` against the (now-resolved) graph governance.
+1. **Discover.** The agent obtains the graph's DID plus addressing hints (space URI, module hash, relay endpoints, snapshot URI). This step is **out of scope** for this specification; see [§8.6](#86-discovery-non-normative) for the non-normative discussion of how applications typically wire it up.
+2. **Resolve.** The runtime resolves the DID per [[DID-CORE]]. If no snapshot is locally available, the runtime issues a *snapshot pull* against the discovered relay/peer carrying the agent's `capabilityProof` for `mountContext` (per [§8.5](#85-read-access-and-mountcontext)). The responding peer authorises the request per [§9.2](#92-the-validate-contract) before sending bytes; on success the local runtime fetches and verifies the snapshot (the snapshot's `graphIri` is its content hash; the snapshot's binding to the DID is verified per [[GROUP-IDENTITY]] §4.6).
+3. **Verify snapshot.** Verify the snapshot's signatures per [[PERSONAL-LINKED-DATA-GRAPHS]] §5.5.
+4. **Verify mount authority locally.** Re-run the mount-mode authorisation per [§6.2](#62-mounting-a-remote-graph) step 2 against the freshly-materialised local view of the graph's governance. (Two checks: the responding peer's gate at step 2, and the local gate here. They are deliberately redundant — the local gate is the authoritative one for the resulting `Graph` instance's mount mode; the remote gate prevents data exfiltration before bytes leave the responder.)
 5. **Mount.** Open the per-graph store and materialise the snapshot via `GraphManager.fromSnapshot()` ([[PERSONAL-LINKED-DATA-GRAPHS]] §5.5). Any serialisation format defined in [[PERSONAL-LINKED-DATA-GRAPHS]] §5.3 is acceptable; the materialised graph's IRI equals the snapshot's `graphIri`.
 6. **Join space.** Subscribe to the space identified by the topology + module.
-7. **Sync.** Pull diffs from the space since the snapshot's `currentRevision`. Apply each (re-verifying CapabilityProofs).
+7. **Sync.** Pull diffs from the space since the snapshot's `currentRevision`. Apply each (re-verifying CapabilityProofs per [§9.2](#92-the-validate-contract)).
 
 The agent is now subscribed. Subsequent diffs propagate via gossip; subsequent writes by the agent are authored to the graph, packaged into GraphDiffs, signed with their capability chain, and committed to the space.
 
@@ -554,35 +565,88 @@ The runtime keeps the per-graph store in sync via the module's connection and re
 
 `subscriptiongained` and `subscriptionlost` events are dispatched on the `GraphManager` (see [§6.4](#64-graphmanager-level-sync-management)).
 
-### 8.5 Read-Only Snapshots
+### 8.5 Read Access and `mountContext`
 
-Mounting in `"read"` mode does not require a capability proof beyond the graph's general read policy. A read-only mount receives diffs but cannot author them. Applications MAY upgrade later by calling `mount()` again with a write capability proof.
+Read access is governed by the same capability framework as writes ([[CAPABILITY-FRAMEWORK]] §7.1 — Non-Triple Operations), via the `mountContext` action.
+
+**Default (no constraint):** When a graph's scope set contains no capability constraint covering `mountContext`, read access is unrestricted. Any peer may pull a snapshot or mount in `"read"` mode without presenting a proof. This is the default for newly-created graphs and the typical pattern for open communities and public artefacts.
+
+**Restricted (constraint present):** A graph that binds a capability constraint covering `mountContext` requires the requesting agent to hold (and present) a valid `mountContext` capability. Both the responding peer that serves the snapshot ([§9.2](#92-the-validate-contract)) and the local runtime at mount time ([§6.2](#62-mounting-a-remote-graph) step 2) MUST authorise the request. Common patterns:
+
+- **Membership-credential gating.** A `mountContext` capability with a `credential` caveat ([[CONSTRAINT-VOCABULARY]] §6) requiring the agent to present a VerifiablePresentation of a specific credential type before access is granted.
+- **Pre-issued read tokens.** A `mountContext` capability delegated directly to a specific `did:key` invoker — the holder presents the ZCAP chain and signs the request.
+- **Group-DID-bound read access.** A `mountContext` capability delegated to a group DID; any current `capabilityInvocation` delegate of that group may invoke it.
+
+A read-only mount receives diffs but cannot author them. Applications MAY upgrade later by calling `mount()` again with a `write` or `governance` proof.
+
+**Forward-looking diffs vs initial snapshot.** The `mountContext` check authorises *receipt of the graph's current state and ongoing diffs*. Per-diff capability checks (the existing [§9.2](#92-the-validate-contract) machinery) continue to gate which diffs are *applied* — but those checks happen on data the mounted agent already has. Restricting `mountContext` is the only point at which a peer can prevent another agent from seeing the graph at all.
+
+### 8.6 Discovery (Non-Normative)
+
+The "Discover" step in [§8.1](#81-becoming-subscribed) — locating *which peer or relay* holds a graph given only its DID — is **deliberately out of scope** for this specification.
+
+**Why.** Discovery is a substrate-level concern with multiple reasonable answers (out-of-band invitation links, DHT, gossip, mDNS, friend-of-friend traversal, blockchain registries, DNS), each with different trust, scale, and privacy trade-offs. Picking one normatively would couple this specification to a particular topology and exclude others. Two substrate properties make this defensible:
+
+1. **Content-addressed snapshots are self-verifying** ([[PERSONAL-LINKED-DATA-GRAPHS]] §5.5). Trust does not depend on which peer delivered the bytes — only on the IRI/proof checks against the bytes themselves. Discovery's job is reduced to "get the bytes from anyone".
+2. **DIDs are key-bound** ([[GROUP-IDENTITY]] §4.1). The DID identifier embeds the initial public key, and the DID-document delegate model is gated by `did-document://*` writes auditable in the graph. A malicious discovery channel cannot impersonate a graph; the worst it can do is fail to deliver.
+
+**Anticipated application-layer patterns.** Applications are expected to wire discovery in one or more of the following ways:
+
+| Pattern | When to use |
+|---|---|
+| **Invitation links** | Human onboarding — share a URL carrying the DID + a `?relay=` and/or `?snapshot=` hint per [[GROUP-IDENTITY]] §4.6. The dominant pattern for inviting people to a community, sharing a document, joining a team. |
+| **Transitive discovery via mounted graphs** | Once you have mounted one graph G, references to other graphs (in triples, via `context://participates_in`, `group://wrapsGraph`-style metadata, or application-specific predicates carrying `did:graph` objects) become discoverable: query G for hint predicates, or ask peers in G's sync space whether they also host the referenced graph. |
+| **Shared discovery graphs** | A community publishes a "directory" graph mapping `did:graph` → routing hints as triples; members participate in this graph and consult it before resolving unknown DIDs. Graph-native phonebook. |
+| **DHT bridge** | A third-party DHT keyed by DID, with peers self-publishing `(did, relay-url, last-snapshot-uri)` records. Useful for public global namespaces. |
+| **mDNS / Bluetooth / NFC** | Local-network discovery for same-LAN, same-room, or proximity scenarios. |
+| **Sync-space membership** | Already a member of a sync space carrying the target graph? Its diffs gossip past you — discover the graph by seeing them. |
+
+This specification's normative surface (`?relay=` and `?snapshot=` DID-URL parameters from [[GROUP-IDENTITY]] §4.6, plus the explicit `MountOptions.snapshotUri` / `spaceUri` / `relays` hints in [§6.2](#62-mounting-a-remote-graph)) is the *interface* applications hand information to. Where the application *got* that information — invitation link, DHT lookup, directory graph, mDNS broadcast — is layered above.
 
 ---
 
 ## 9. Governance Integration
 
-This specification integrates with [[CAPABILITY-FRAMEWORK]] at three normative points.
+This specification integrates with [[CAPABILITY-FRAMEWORK]] at four normative points.
 
-### 9.1 Three Verification Points
+### 9.1 Four Verification Points
 
-Every `GraphDiff` is governance-verified at three points:
+Read access AND every `GraphDiff` are governance-verified:
 
 | Point | Who | What is checked |
 |---|---|---|
+| **Read-mount request** | Each peer that *serves* a snapshot or accepts a read mount | `mountContext` capability for the requesting agent, per [§8.5](#85-read-access-and-mountcontext) and [§9.2](#92-the-validate-contract) |
 | **Commit time** | Committing agent's runtime | Full SHACL + ZCAP + caveats against the agent's local state, batch-scoped |
 | **Gossip time** | Each receiving peer | Re-verify capability chain, re-verify caveats with link content, re-verify SHACL conformance |
 | **Transport integrity** | Underlying transport (e.g., relay's validation) | Cryptographic signatures only — chain valid, link signatures valid, graph IRI consistent |
 
 ### 9.2 The validate() Contract
 
-A conforming sync module's `validate(graphDid, diff, author, graphState)` MUST:
+A conforming sync module exposes two `validate*` operations:
+
+#### 9.2.1 `validateDiff(graphDid, diff, author, graphState)`
+
+For every incoming `GraphDiff`, the receiving peer MUST:
 
 1. Resolve the target graph's **scope set** per [[CAPABILITY-FRAMEWORK]] §6.1 using the locally-observable participation declarations. The scope set is the target graph plus every graph reachable via mutually-accepted `context://participates_in` edges (in either direction, per [[CAPABILITY-FRAMEWORK]] §6.2).
 2. Verify the diff's `CapabilityProof.chain` against the union of constraints across the scope set ([[CAPABILITY-FRAMEWORK]] §7). The chain walk MUST query `has_zcap` across the scope set, not just the target graph, and MUST terminate at `urn:living-web:zcap:BootstrapRoot` (the chain is *cut* at constitutional boundaries — [[CAPABILITY-FRAMEWORK]] §4.3).
 3. Re-evaluate any content-dependent caveats against the actual triples in `additions` and `removals` (per [[CAPABILITY-FRAMEWORK]] §9). The deny-wins rule applies ([[CAPABILITY-FRAMEWORK]] §6.3): if any in-scope constraint rejects, the diff is rejected.
 4. Verify each triple's reifier signature against the resolved author.
 5. Return `{ accepted: true }` or `{ accepted: false, constraintKind: ..., reason: ... }`.
+
+#### 9.2.2 `validateReadAccess(graphDid, authorDid, capabilityProof?)`
+
+When a peer receives a **snapshot pull** (per the module's wire protocol — e.g., [[DEFAULT-SYNC-MODULE]] §9.4) or a **read-mode mount request**, it MUST:
+
+1. Resolve the target graph's scope set per [[CAPABILITY-FRAMEWORK]] §6.1.
+2. Invoke [[CAPABILITY-FRAMEWORK]] §7 with `action = "mountContext"` (the explicit override path; the request has no triple to derive an action from — per [[CAPABILITY-FRAMEWORK]] §7.1). Caveats that depend on triple content are skipped; `credential` and other context-only caveats are evaluated against the supplied `capabilityProof.presentations`.
+3. Return `{ accepted: true }` if either:
+   - the scope set contains no capability constraint covering `mountContext` (unrestricted read), OR
+   - the supplied `capabilityProof` chain authorises the operation.
+
+   Otherwise return `{ accepted: false, constraintKind: "capability", reason: ... }`.
+
+A peer that returns `accepted: false` MUST NOT serve the snapshot, MUST NOT forward subsequent diffs for the graph to the requesting peer, and MAY drop the requester's session.
 
 ### 9.3 Rejection Behaviour (Sync-Blocking)
 
@@ -668,7 +732,7 @@ Receiving peers MUST independently verify `CapabilityProof.chain` against the gr
 
 ### 12.2 DID Resolution Trust
 
-Resolving a sovereign DID from snapshots is subject to the trust level of the snapshot source ([[DECENTRALISED-IDENTITY]] §7.2). Security-sensitive operations SHOULD require `"local"` or `"mounted-read"` trust. Verifying a snapshot's `graphIri` is intrinsically a single hash check (the IRI is the SHA-256 of the snapshot's triples; either it matches or it does not); the snapshot's signature establishes the trust level for the surrounding data.
+Resolving a DID from snapshots is subject to the trust level of the snapshot source ([[DECENTRALISED-IDENTITY]] §7.2). Security-sensitive operations SHOULD require `"local"` or `"mounted-read"` trust. Verifying a snapshot's `graphIri` is intrinsically a single hash check (the IRI is the SHA-256 of the snapshot's triples; either it matches or it does not); the snapshot's signature establishes the trust level for the surrounding data.
 
 ### 12.3 Sync Space Membership Privacy
 
@@ -710,7 +774,7 @@ A peer's mount table is a sensitive artefact. The runtime MUST NOT disclose the 
 
 ### 13.4 DID Resolution Side Effects
 
-Resolving a sovereign DID can reveal interest in a graph. Implementations SHOULD batch resolution requests and SHOULD avoid resolving identifiers based on untrusted input.
+Resolving a DID can reveal interest in a graph. Implementations SHOULD batch resolution requests and SHOULD avoid resolving identifiers based on untrusted input.
 
 ### 13.5 Per-Graph Identity
 

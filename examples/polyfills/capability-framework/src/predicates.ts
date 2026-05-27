@@ -57,7 +57,6 @@ export const GOV = {
 export const CONTEXT = {
   PARTICIPATES_IN: 'context://participates_in',
   ACCEPTS_PARTICIPATION: 'context://accepts_participation',
-  CAPABILITY_TRANSITIVE: 'context://capability_transitive',
 } as const;
 
 /** DID-document delegate management predicates — governed via ZCAPs. */

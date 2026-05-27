@@ -3,7 +3,7 @@
  *
  *   GraphManager.createGroup(options) → mints a fresh graph + groupifies it.
  *   GraphManager.groupify(graphIri, options) → groupifies an existing graph.
- *   GraphManager.openGroup(iriOrDid) → reopens an existing groupified graph.
+ *   GraphManager.openGroup(iriOrDid) → reopens an existing group.
  *   GraphManager.listGroups() → groups registered in this session.
  */
 
@@ -40,7 +40,7 @@ async function writeGroupMetadata(graph: Graph, options: GroupOptions, creatorDi
   // group:// predicates describe the *group identity*, so the subject is the
   // graph's did:graph (which exists at this point — groupify ran already).
   if (!graph.did) {
-    throw new DOMException(`writeGroupMetadata requires a groupified graph (${graph.id})`, 'InvalidStateError');
+    throw new DOMException(`writeGroupMetadata requires a group (graph with a did:graph) (${graph.id})`, 'InvalidStateError');
   }
   const subject = graph.did;
   await graph.addTriple({ subject, predicate: RDF.TYPE, object: GROUP.TYPE });
@@ -70,7 +70,7 @@ async function writeGroupMetadata(graph: Graph, options: GroupOptions, creatorDi
 }
 
 async function createGroup(this: GraphManager, options: GroupOptions = {}): Promise<Group> {
-  // 1. Mint a fresh ungroupified graph (NO participatesIn here — we want
+  // 1. Mint a fresh graph (no DID yet) (NO participatesIn here — we want
   //    the link's subject to be the did:graph, which doesn't exist yet).
   const graph = await this.create({
     displayName: options.displayName ?? options.name ?? 'Untitled Group',

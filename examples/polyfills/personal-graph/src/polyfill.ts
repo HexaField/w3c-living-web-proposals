@@ -2,7 +2,7 @@
  * navigator.graph polyfill entry.
  *
  * Wires up `navigator.graph` → GraphManager. Per Spec 02, the only public
- * methods are `create()` and `fromSnapshot()`. Sovereign-DID attachment
+ * methods are `create()` and `fromSnapshot()`. DID attachment
  * (e.g. `did:graph`), remote-mount and sync, governance, shape validation,
  * and process flows are layered on by extension polyfills that augment
  * the GraphManager prototype at runtime.

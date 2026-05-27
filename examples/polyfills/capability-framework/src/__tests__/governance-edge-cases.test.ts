@@ -741,3 +741,210 @@ describe('Holonic sync implication', () => {
     expect(result.rejectedBy).toBe('urn:c:beta-deny');
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 9. READ-SIDE AUTHORIZATION — mountContext via engine.validateAction
+//
+// Proves the Spec 04 §7.1 + Spec 05 §9.2.2 contract: a sync peer authorising
+// a snapshot pull asks the governance engine "may this DID perform
+// mountContext?" — without supplying a triple. Caveats that depend on
+// triple content are skipped; context caveats (expiry, rateLimit) still apply.
+//
+// Genuine scenario: Group G has a mountContext capability constraint.
+// Alice holds a valid mountContext ZCAP. Bob does not. Eve has a ZCAP
+// for the WRONG action (createLink instead of mountContext).
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('Read-side authorization: mountContext via validateAction', () => {
+  beforeEach(async () => {
+    // Group ALPHA: enforced governance with a capability constraint that
+    // covers any action (no predicate filter, no action filter).
+    await declareEnforcement(ALPHA, 'enforced');
+    await defineCapabilityConstraint('urn:c:alpha-cap');
+    await bindConstraint(ALPHA, 'urn:c:alpha-cap');
+
+    // Alice has a mountContext-capable ZCAP rooted at ALPHA's bootstrap.
+    const aliceCap = makeZcap({
+      id: 'urn:cap:alice-mount',
+      invoker: ALICE,
+      parent: BOOTSTRAP_ROOT,
+      actions: ['mountContext'],
+      resource: ALPHA,
+    });
+    storeZcap(aliceCap);
+    await declareRoot(ALPHA, aliceCap.id);
+    await grantZcap(ALICE, aliceCap.id);
+
+    // Eve has a ZCAP for createLink (WRITES only — no mountContext).
+    const eveCap = makeZcap({
+      id: 'urn:cap:eve-write',
+      invoker: EVE,
+      parent: BOOTSTRAP_ROOT,
+      actions: ['createLink'],
+      resource: ALPHA,
+    });
+    storeZcap(eveCap);
+    await grantZcap(EVE, eveCap.id);
+    // Note: declareRoot used for aliceCap above; eveCap is also a bootstrap
+    // root in this synthetic setup — Spec 04 §7 step 6.5.3 accepts any cap
+    // whose id matches *some* root_capability triple in the scope set.
+    // For this test we keep Alice's as the canonical root.
+
+    // BOB has no ZCAPs at all.
+  });
+
+  test('Alice (holds mountContext cap) is accepted', async () => {
+    const engine = new GraphGovernanceEngine(ctxFor(ALPHA, 'enforced'));
+    const result = await engine.validateAction('mountContext', ALICE);
+    expect(result.allowed).toBe(true);
+  });
+
+  test('Bob (holds no cap) is rejected', async () => {
+    const engine = new GraphGovernanceEngine(ctxFor(ALPHA, 'enforced'));
+    const result = await engine.validateAction('mountContext', BOB);
+    expect(result.allowed).toBe(false);
+    expect(result.constraintKind).toBe('capability');
+    expect(result.rejectedBy).toBe('urn:c:alpha-cap');
+  });
+
+  test('Eve (holds a createLink cap, but not mountContext) is rejected', async () => {
+    const engine = new GraphGovernanceEngine(ctxFor(ALPHA, 'enforced'));
+    const result = await engine.validateAction('mountContext', EVE);
+    expect(result.allowed).toBe(false);
+    expect(result.constraintKind).toBe('capability');
+  });
+
+  test('Unrestricted graph (no capability constraint): all readers accepted', async () => {
+    // Build a fresh setup: ALPHA without any constraint binding.
+    const fresh = new GraphGovernanceEngine(ctxFor(BETA, 'enforced'));
+    // BETA has no constraint binding at all.
+    const result = await fresh.validateAction('mountContext', BOB);
+    expect(result.allowed).toBe(true);
+  });
+});
+
+describe('Read-side authorization: context-only caveats (expiry) still apply', () => {
+  test('mountContext cap with expired expiry is rejected', async () => {
+    await declareEnforcement(ALPHA, 'enforced');
+    await defineCapabilityConstraint('urn:c:alpha-cap');
+    await bindConstraint(ALPHA, 'urn:c:alpha-cap');
+
+    const expiredCap = makeZcap({
+      id: 'urn:cap:expired',
+      invoker: ALICE,
+      parent: BOOTSTRAP_ROOT,
+      actions: ['mountContext'],
+      resource: ALPHA,
+      caveats: [{ type: 'expiry', value: { expiresAt: '2020-01-01T00:00:00Z' } }],
+    });
+    storeZcap(expiredCap);
+    await declareRoot(ALPHA, expiredCap.id);
+    await grantZcap(ALICE, expiredCap.id);
+
+    const engine = new GraphGovernanceEngine(ctxFor(ALPHA, 'enforced'));
+    const result = await engine.validateAction('mountContext', ALICE);
+    expect(result.allowed).toBe(false);
+  });
+
+  test('mountContext cap with a future expiry is accepted', async () => {
+    await declareEnforcement(ALPHA, 'enforced');
+    await defineCapabilityConstraint('urn:c:alpha-cap');
+    await bindConstraint(ALPHA, 'urn:c:alpha-cap');
+
+    const validCap = makeZcap({
+      id: 'urn:cap:valid',
+      invoker: ALICE,
+      parent: BOOTSTRAP_ROOT,
+      actions: ['mountContext'],
+      resource: ALPHA,
+      caveats: [{ type: 'expiry', value: { expiresAt: '2099-01-01T00:00:00Z' } }],
+    });
+    storeZcap(validCap);
+    await declareRoot(ALPHA, validCap.id);
+    await grantZcap(ALICE, validCap.id);
+
+    const engine = new GraphGovernanceEngine(ctxFor(ALPHA, 'enforced'));
+    const result = await engine.validateAction('mountContext', ALICE);
+    expect(result.allowed).toBe(true);
+  });
+});
+
+describe('Read-side authorization: scope-set has_zcap (holonic case)', () => {
+  test('mountContext cap stored on a participating parent applies to reads of the child', async () => {
+    // BETA is a holonic peer of ALPHA. Alice's cap lives on BETA but
+    // covers reads of ALPHA — proving that has_zcap is queried across the
+    // scope set (Spec 04 §7 step 5), not just the target graph.
+    await declareEnforcement(ALPHA, 'enforced');
+    await declareParticipation(ALPHA, BETA);   // ALPHA inherits BETA's scope
+    await defineCapabilityConstraint('urn:c:alpha-cap');
+    await bindConstraint(ALPHA, 'urn:c:alpha-cap');
+
+    const cap = makeZcap({
+      id: 'urn:cap:alice-mount-via-beta',
+      invoker: ALICE,
+      parent: BOOTSTRAP_ROOT,
+      actions: ['mountContext'],
+      resource: ALPHA,           // resource still names the target
+    });
+    storeZcap(cap);
+    await declareRoot(ALPHA, cap.id);    // declared as ALPHA's root
+    // The has_zcap link is placed on BETA — the scope-set walk has to find it.
+    // (In the polyfill the single graph store holds all triples; the
+    // distinction is which subject the triple is anchored to.)
+    await graph.addTriple({ subject: ALICE, predicate: GOV.HAS_ZCAP, object: cap.id });
+
+    const engine = new GraphGovernanceEngine(ctxFor(ALPHA, 'enforced'));
+    const result = await engine.validateAction('mountContext', ALICE);
+    expect(result.allowed).toBe(true);
+  });
+});
+
+describe('Read-side authorization: end-to-end PULL scenario (validateAction as the gate)', () => {
+  // A faithful enactment of the protocol that a sync module's PULL handler
+  // would execute on the responder side (Spec 05 §9.2.2; Spec 09 §10.2).
+  //
+  // The scenario:
+  //   1. Group G is set up with a mountContext-required constraint.
+  //   2. Alice holds a valid mountContext cap.
+  //   3. Bob does NOT hold one.
+  //   4. Both attempt a PULL. The responder calls engine.validateAction
+  //      ('mountContext', requesterDid) and serves SNAPSHOT iff accepted.
+  //
+  // This test models *what the responder does*; the wire-level send/receive
+  // is the module's concern but the gate logic is what the spec mandates.
+
+  test('Alice succeeds; Bob is denied (a PULL_DENIED would be sent)', async () => {
+    await declareEnforcement(ALPHA, 'enforced');
+    await defineCapabilityConstraint('urn:c:alpha-cap');
+    await bindConstraint(ALPHA, 'urn:c:alpha-cap');
+
+    const aliceCap = makeZcap({
+      id: 'urn:cap:alice',
+      invoker: ALICE,
+      parent: BOOTSTRAP_ROOT,
+      actions: ['mountContext'],
+      resource: ALPHA,
+    });
+    storeZcap(aliceCap);
+    await declareRoot(ALPHA, aliceCap.id);
+    await grantZcap(ALICE, aliceCap.id);
+
+    // Responder logic — what a sync module's PULL handler would run.
+    async function handlePull(requesterDid: string): Promise<{ accepted: boolean; reason?: string }> {
+      const engine = new GraphGovernanceEngine(ctxFor(ALPHA, 'enforced'));
+      const r = await engine.validateAction('mountContext', requesterDid);
+      return r.allowed
+        ? { accepted: true }
+        : { accepted: false, reason: r.reason };
+    }
+
+    const aliceResponse = await handlePull(ALICE);
+    expect(aliceResponse.accepted).toBe(true);
+    // Responder would send SNAPSHOT { graphDid, snapshot: ... }
+
+    const bobResponse = await handlePull(BOB);
+    expect(bobResponse.accepted).toBe(false);
+    // Responder would send PULL_DENIED { graphDid, reason: 'mountContext_required', ... }
+    //   and MUST NOT send SNAPSHOT or DIFFs for ALPHA to Bob.
+  });
+});

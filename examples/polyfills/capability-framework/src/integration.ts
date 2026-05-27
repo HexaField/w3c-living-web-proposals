@@ -45,7 +45,7 @@ export interface GovernanceLayer {
 }
 
 export function createGovernanceLayer(graph: Graph, opts: GovernanceOptions = {}): GovernanceLayer {
-  // Long-lived governance requires a sovereign identity for the graph.
+  // Long-lived governance requires a identity for the graph.
   // A graph's IRI is a snapshot hash — it changes whenever any triple
   // (including the ZCAP triples we're about to write!) changes. So we'd
   // have no stable resource to anchor capabilities to. Require did:graph
@@ -54,7 +54,7 @@ export function createGovernanceLayer(graph: Graph, opts: GovernanceOptions = {}
   if (!graph.did) {
     throw new DOMException(
       `createGovernanceLayer requires a groupified graph (no did:graph on ${graph.id}). ` +
-      `Capabilities target the graph's sovereign DID, not its current snapshot IRI — call ` +
+      `Capabilities target the graph's DID, not its current snapshot IRI — call ` +
       `store.groupify() or store.createGroup() first.`,
       'InvalidStateError',
     );

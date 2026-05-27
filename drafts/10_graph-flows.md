@@ -401,7 +401,7 @@ LIMIT 1
 
 ### 8.4 Auto-Transition Authorship
 
-Auto-transitions fired by the runtime SHOULD be authored under a designated "system" identity (a delegate of the graph's sovereign DID dedicated to runtime operations). Implementations MAY support per-flow system identities so different graphs isolate their automation.
+Auto-transitions fired by the runtime SHOULD be authored under a designated "system" identity (a delegate of the graph.s DID dedicated to runtime operations). Implementations MAY support per-flow system identities so different graphs isolate their automation.
 
 ---
 

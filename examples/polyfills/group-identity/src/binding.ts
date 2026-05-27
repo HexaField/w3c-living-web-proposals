@@ -2,7 +2,7 @@
  * Wire did:graph into personal-graph + identity.
  *
  *   - Provide `groupifyContext(ctx, opts)` — the upgrade operation defined by
- *     [[GROUP-IDENTITY]] §4.2 that takes an ungroupified graph, mints a
+ *     [[GROUP-IDENTITY]] §4.2 that takes a graph that does not yet have a DID, mints a
  *     fresh `did:graph`, writes the binding + DID-document triples into the
  *     graph, and persists the creator's delegate credential.
  *   - Register the `did:graph` resolver on identity, drawing triples from the
@@ -53,7 +53,7 @@ export interface GroupifyOptions {
 }
 
 export interface GroupifyResult {
-  /** The host graph (now groupified — `graph.did` is set). */
+  /** The host graph (now a group — `graph.did` is set). */
   readonly graph: Graph;
   /** The newly-minted did:graph. */
   readonly did: string;
@@ -73,7 +73,7 @@ export async function groupifyContext(
   options: GroupifyOptions = {},
 ): Promise<GroupifyResult> {
   if (graph.did) {
-    throw new DOMException(`Graph ${graph.id} is already groupified (did=${graph.did})`, 'InvalidStateError');
+    throw new DOMException(`Graph ${graph.id} already has a did:graph (did=${graph.did})`, 'InvalidStateError');
   }
 
   const passphrase = options.passphrase ?? POLYFILL_PASSPHRASE;
@@ -155,7 +155,7 @@ export function installDIDGraphBinding(manager: GraphManagerLike): void {
   const tripleSource: GraphTripleSource = {
     *readGraph(did: string): Iterable<GraphTriple> {
       // The resolver receives a `did:graph:...`. Find the host graph by
-      // matching its sovereign DID.
+      // matching its DID.
       for (const g of manager.knownGraphs()) {
         if (g.did === did) {
           for (const triple of g.readAllTriples()) {
@@ -219,6 +219,37 @@ export function installDIDGraphBinding(manager: GraphManagerLike): void {
         object: methodId,
       });
       for (const m of matching) await graph.removeTriple(m);
+    },
+    async currentSectionMembers(graphDid, section: DIDCapabilitySection): Promise<string[]> {
+      const graph = findHostGraph(graphDid);
+      if (!graph) throw new Error(`Graph ${graphDid} not known locally`);
+      const matching = await graph.queryTriples({
+        subject: graphDid,
+        predicate: DID_DOC_PREDICATES[section],
+      });
+      // Dedupe — a section MAY be granted multiple times for the same method
+      // by replay; the brick-state check operates on distinct method ids.
+      return [...new Set(matching.map(t => t.data.object))];
+    },
+    async resolveTarget(target: string) {
+      // A target is either a `graph://<hash>` IRI or a `did:graph:...` alias.
+      // Look up the host graph and return its current IRI + DID.
+      if (target.startsWith('did:graph:')) {
+        const g = findHostGraph(target);
+        if (!g) return null;
+        return { graphIri: g.iri, graphDid: g.did };
+      }
+      if (target.startsWith('graph://')) {
+        for (const g of manager.knownGraphs()) {
+          if (g.iri === target) {
+            return { graphIri: g.iri, graphDid: g.did ?? null };
+          }
+        }
+        // The target IRI may name a past state of a graph; we cannot resolve
+        // its DID retroactively here.
+        return { graphIri: target, graphDid: null };
+      }
+      return null;
     },
   };
   registerGraphDIDWriter(writer);

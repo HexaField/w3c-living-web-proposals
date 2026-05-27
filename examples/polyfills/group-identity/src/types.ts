@@ -35,7 +35,6 @@ export interface GroupOptions {
 export const CONTEXT = {
   PARTICIPATES_IN: 'context://participates_in',
   ACCEPTS_PARTICIPATION: 'context://accepts_participation',
-  CAPABILITY_TRANSITIVE: 'context://capability_transitive',
 } as const;
 
 /** Group metadata predicates. */
@@ -49,7 +48,6 @@ export const GROUP = {
   PARTICIPATION_OPEN: 'group://participation_open',
   PARTICIPATION_REQUIRES_CREDENTIAL: 'group://participation_requires_credential',
   PARTICIPATION_MAX_COUNT: 'group://participation_max_count',
-  PARTICIPATION_VOTE_THRESHOLD: 'group://participation_vote_threshold',
 } as const;
 
 /** RDF predicates reused from other specs. */

@@ -47,7 +47,7 @@ export class Group {
   constructor(graph: Graph, registry: GroupRegistry, options: GroupOptions = {}) {
     if (!graph.did) {
       throw new DOMException(
-        `Group requires a groupified graph; ${graph.id} has no did:graph yet. Call store.groupify() first.`,
+        `Group requires a graph with a did:graph; ${graph.id} has no did:graph yet. Call store.groupify() first.`,
         'InvalidStateError',
       );
     }

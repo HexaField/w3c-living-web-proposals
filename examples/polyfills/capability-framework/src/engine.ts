@@ -67,8 +67,14 @@ export class GraphGovernanceEngine {
    * Validate a triple. Capability + every registered constraint-kind handler
    * is evaluated; results combine deny-wins. Capability enforcement honours
    * Open/Announced/Enforced; other constraint kinds always apply.
+   *
+   * `options.action` overrides the predicate-derived action (Spec 04 §7
+   * step 2). Used for non-triple operations such as `mountContext`.
    */
-  async validate(triple: TripleInput): Promise<GovernanceValidationResult> {
+  async validate(
+    triple: TripleInput,
+    options?: { action?: string },
+  ): Promise<GovernanceValidationResult> {
     this._ctx.enforcementMode = await this.getEnforcementMode();
 
     const scope = await resolveScopeSet(this._ctx.graphDid, this._ctx);
@@ -90,7 +96,7 @@ export class GraphGovernanceEngine {
     // ── Capability (built-in) ────────────────────────────────────────────────
     // Capability checking always runs (to record history under Announced),
     // but the outcome is gated by enforcement mode.
-    const capResult = await verifyCapability(triple, constraints, scope, this._ctx);
+    const capResult = await verifyCapability(triple, constraints, scope, this._ctx, options?.action);
     if (!capResult.allowed) {
       if (this._ctx.enforcementMode === 'open') {
         // Skip — capability denials don't reject in Open.
@@ -151,6 +157,41 @@ export class GraphGovernanceEngine {
     const ok: GovernanceValidationResult = { allowed: true };
     this._recordHistory(triple, ok);
     return ok;
+  }
+
+  /**
+   * Authorise a non-triple operation (Spec 04 §7.1, Spec 05 §9.2.2).
+   *
+   * Used by sync modules to gate read-mount requests against `mountContext`
+   * capability constraints. The polyfill constructs a synthetic TripleInput
+   * (no subject/predicate/object content) and runs `validate()` with the
+   * explicit action override; caveats that depend on triple content are
+   * naturally skipped because there is no content.
+   *
+   * Returns `{ allowed: true }` either when the action passes the chain
+   * walk OR when no constraint in the scope set covers the requested action
+   * (unrestricted-access case).
+   */
+  async validateAction(
+    action: string,
+    authorDid: string,
+    options?: { timestamp?: string; capabilityProof?: { chain: string[]; presentations?: object[] } },
+  ): Promise<GovernanceValidationResult> {
+    const synthetic: TripleInput = {
+      subject: this._ctx.graphDid,
+      predicate: `__action__://${action}`,   // never matches a real capability_predicates filter
+      object: '',
+      author: authorDid,
+      timestamp: options?.timestamp ?? new Date().toISOString(),
+    };
+    // The capabilityProof is consumed by the engine indirectly: in the
+    // polyfill, capability resolution walks `has_zcap` triples already
+    // present in the graph store. A wire-level proof from a remote peer
+    // would be re-inserted into the local store (or a transient scope) by
+    // the sync module before this call; the responsibility for that
+    // staging is the sync module's, not the engine's.
+    void options;
+    return this.validate(synthetic, { action });
   }
 
   /**

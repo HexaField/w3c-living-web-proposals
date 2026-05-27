@@ -480,7 +480,7 @@ for (const ctx of [parent, ...childrenOfParent]) {
 }
 ```
 
-This is intentional: each graph is sovereign over its own data, and cross-graph enumeration is an explicit operation, not an implicit one.
+This is intentional: each graph owns its own data, and cross-graph enumeration is an explicit operation, not an implicit one.
 
 ---
 

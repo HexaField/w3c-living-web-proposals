@@ -181,18 +181,41 @@ All messages are CBOR-encoded with a common envelope:
 ### 5.3 PULL
 
 ```
-{ "graphDid": "<sovereign-did>", "fromRevision": "..." | null }
+{
+  "graphDid":       "<group-did>",
+  "fromRevision":   "..." | null,
+  "authorDid":      "<did:key:...>",          // requesting agent's DID
+  "capabilityProof": <CapabilityProof CBOR>   // OPTIONAL; see below
+}
 ```
 
-The recipient responds with a `SNAPSHOT` (if `fromRevision` is `null` or unknown) or a sequence of `DIFF` messages.
+`authorDid` identifies the requesting agent. Each peer that receives a PULL MUST authorise it via the `validateReadAccess` operation defined in [[CONTEXT-SYNC]] §9.2.2, passing `action = "mountContext"`:
+
+- If the target graph's scope set contains no capability constraint covering `mountContext`, the request is accepted unconditionally and `capabilityProof` MAY be omitted.
+- Otherwise the recipient MUST require a valid `capabilityProof` for `mountContext`; if absent or invalid, the recipient MUST NOT respond with a SNAPSHOT or any DIFFs for this graph to this requester. It MAY respond with a PULL_DENIED message (§5.4.1) for diagnostics.
+
+On success the recipient responds with a `SNAPSHOT` (if `fromRevision` is `null` or unknown) or a sequence of `DIFF` messages.
 
 ### 5.4 SNAPSHOT
 
 ```
-{ "graphDid": "<sovereign-did>", "snapshot": <GraphSnapshot CBOR> }
+{ "graphDid": "<group-did>", "snapshot": <GraphSnapshot CBOR> }
 ```
 
 The `snapshot` is the graph snapshot as defined in [[PERSONAL-LINKED-DATA-GRAPHS]] §5.
+
+#### 5.4.1 PULL_DENIED
+
+```
+{
+  "graphDid":       "<group-did>",
+  "reason":         "mountContext_required" | "mountContext_invalid"
+                  | "credential_required"   | "rate_limited"  | <impl-defined>,
+  "constraintId":   "<urn:c:...>"           // OPTIONAL; the constraint that rejected
+}
+```
+
+A peer MAY send `PULL_DENIED` after rejecting a `PULL` to inform the requester why. This is best-effort diagnostics; recipients of `PULL_DENIED` MUST NOT treat it as an authoritative statement about the graph's policy (other peers may have different local state) and MUST NOT loop trying alternative proofs without user gesture.
 
 ### 5.5 SIGNAL
 
@@ -351,26 +374,40 @@ Receiving peers verify both signatures. Snapshots without at least one valid sig
 
 ## 10. validate() Implementation
 
-### 10.1 Behaviour
+### 10.1 Behaviour (`validateDiff`)
 
-The default module's `validate(graphDid, diff, author, graphState)` implements the contract in [[CONTEXT-SYNC]] §9.2 by invoking the [[CAPABILITY-FRAMEWORK]] engine through the runtime:
+The default module's `validateDiff(graphDid, diff, author, graphState)` implements the diff-side contract in [[CONTEXT-SYNC]] §9.2.1 by invoking the [[CAPABILITY-FRAMEWORK]] engine through the runtime:
 
 1. Resolve the `graphDid`'s governance engine via the `graphState` `GraphReader` handle.
 2. For each triple in `diff.additions` and `diff.removals`:
    1. Construct a `TripleInput` carrying the triple, the `author`, the diff's `timestamp`, and the resolved capability chain from `diff.capabilityProof`.
    2. Call the engine's `validate(triple, ctx)`.
-   3. If the result is `{ allowed: false, ... }`, return `{ accepted: false, module: <result.module>, constraintId: <result.rejectedBy>, reason: <result.reason> }`.
+   3. If the result is `{ allowed: false, ... }`, return `{ accepted: false, constraintKind: <result.constraintKind>, constraintId: <result.rejectedBy>, reason: <result.reason> }`.
 3. Otherwise, return `{ accepted: true }`.
 
 The engine internally applies the capability-chain verification ([[CAPABILITY-FRAMEWORK]] §7), caveat evaluation ([[CAPABILITY-FRAMEWORK]] §9), and all registered constraint-kind plug-ins ([[CONSTRAINT-VOCABULARY]]).
 
-### 10.2 Enforcement Mode
+### 10.2 Behaviour (`validateReadAccess`)
 
-The module MUST read the graph's current `governance://enforcement_mode` via `graphState` before each validation pass and route accordingly per [[CONTEXT-SYNC]] §9.4.
+The default module's `validateReadAccess(graphDid, authorDid, capabilityProof?, graphState)` implements the read-side contract in [[CONTEXT-SYNC]] §9.2.2. It MUST be called by the receiving peer **before** serving a `SNAPSHOT` or any `DIFF` for `graphDid` in response to a `PULL` from `authorDid`:
 
-### 10.3 Rejection Handling
+1. Resolve the `graphDid`'s governance engine via `graphState`.
+2. Determine whether the graph's scope set contains a capability constraint covering `mountContext` (i.e., a constraint with `constraint_kind = "capability"`, `capability_enforcement = "required"`, and either no `capability_predicates` restriction or the action `"mountContext"` in scope per [[CAPABILITY-FRAMEWORK]] §7.1). If none, return `{ accepted: true }` — read access is unrestricted.
+3. Otherwise, invoke the engine's `validate({ author: authorDid, capabilityProof, ... }, { action: "mountContext" })` ([[CAPABILITY-FRAMEWORK]] §7 with the explicit action override per §7.1).
+4. Return `{ accepted: true }` or `{ accepted: false, constraintKind, constraintId, reason }`.
 
-Per [[CONTEXT-SYNC]] §9.3, rejected diffs MUST NOT be stored or forwarded.
+On rejection the peer:
+- MUST NOT respond with `SNAPSHOT` or any `DIFF` for `graphDid` to `authorDid`.
+- MUST NOT forward subsequent diffs for `graphDid` to `authorDid` until the requester presents a valid proof (a fresh PULL with a stronger proof MAY succeed).
+- MAY respond with `PULL_DENIED` ([§5.4.1](#541-pull_denied)) for diagnostics.
+
+### 10.3 Enforcement Mode
+
+The module MUST read the graph's current `governance://enforcement_mode` via `graphState` before each validation pass and route accordingly per [[CONTEXT-SYNC]] §9.4. Note that `mountContext` constraints apply in all modes — Open mode disables capability checks only for *writes*; read-access constraints still apply.
+
+### 10.4 Rejection Handling
+
+Per [[CONTEXT-SYNC]] §9.3, rejected diffs MUST NOT be stored or forwarded. Per [§10.2](#102-behaviour-validatereadaccess) above, snapshots and diffs MUST NOT be served to peers whose read-access requests fail validation.
 
 ---
 

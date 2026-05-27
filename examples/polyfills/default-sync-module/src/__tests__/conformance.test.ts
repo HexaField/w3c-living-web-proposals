@@ -184,7 +184,7 @@ describe('Cross-graph sync over BroadcastChannel', () => {
     const idB = new EphemeralIdentity();
     await idB.ensureReady();
     const storageB = new GraphStorage(`peer-b-${crypto.randomUUID()}`);
-    // Peer B has its own internal id but the same sovereign did:graph.
+    // Peer B has its own internal id but the same did:graph.
     const b = new Graph(`peerB-${crypto.randomUUID()}`, 'Shared (peer B)', idB, storageB);
     b.setDid(sharedDid);
 

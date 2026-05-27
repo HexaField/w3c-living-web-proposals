@@ -198,3 +198,104 @@ describe('DefaultGroupRegistry', () => {
     expect(r.list().length).toBe(1);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// §5.4 DIDCredential extensions — signGraph payload + brick-state guards.
+// `groupifyContext` returns the creator's DIDCredential directly; tests use
+// that handle rather than re-fetching from the identity store.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('§5.4 signGraph', () => {
+  it('signs { graphDid, graphIri, timestamp } for a did:graph target', async () => {
+    const m = await newManager();
+    const { groupifyContext } = await import('../binding.js');
+    const graph = await m.create({ displayName: 'sg' });
+    const { credential, did } = await groupifyContext(graph);
+
+    const sig = await credential.signGraph(did);
+    const data = sig.data as { graphDid: string; graphIri: string; timestamp: string };
+    expect(data.graphDid).toBe(did);
+    expect(data.graphIri).toBe(graph.iri);
+    expect(typeof data.timestamp).toBe('string');
+    expect(new Date(data.timestamp).toString()).not.toBe('Invalid Date');
+  });
+
+  it('signs the same fields when target is the graph IRI (alias)', async () => {
+    const m = await newManager();
+    const { groupifyContext } = await import('../binding.js');
+    const graph = await m.create({ displayName: 'sg2' });
+    const { credential, did } = await groupifyContext(graph);
+
+    const sig = await credential.signGraph(graph.iri);
+    const data = sig.data as { graphDid: string; graphIri: string };
+    expect(data.graphDid).toBe(did);
+    expect(data.graphIri).toBe(graph.iri);
+  });
+
+  it('rejects with NotFoundError for an unknown target', async () => {
+    const m = await newManager();
+    const { groupifyContext } = await import('../binding.js');
+    const graph = await m.create({ displayName: 'sg3' });
+    const { credential } = await groupifyContext(graph);
+    await expect(credential.signGraph('did:graph:does-not-exist')).rejects.toThrow();
+  });
+});
+
+describe('§5.4 brick-state guards on removeDelegate / revokeSection', () => {
+  it('removeDelegate refuses to remove the sole capabilityDelegation member', async () => {
+    const m = await newManager();
+    const { groupifyContext } = await import('../binding.js');
+    const graph = await m.create({ displayName: 'brick' });
+    const { credential } = await groupifyContext(graph);
+    expect(credential.methodId).toBeTruthy();
+
+    // Freshly-groupified: exactly one capabilityDelegation member (the creator).
+    // Removing it must brick-guard.
+    await expect(credential.removeDelegate(credential.methodId!))
+      .rejects.toThrow(/brick/i);
+  });
+
+  it('revokeSection(capabilityDelegation) refuses for the sole member', async () => {
+    const m = await newManager();
+    const { groupifyContext } = await import('../binding.js');
+    const graph = await m.create({ displayName: 'brick2' });
+    const { credential } = await groupifyContext(graph);
+    await expect(
+      credential.revokeSection(credential.methodId!, 'capabilityDelegation'),
+    ).rejects.toThrow(/brick/i);
+  });
+
+  it('removeDelegate succeeds once a replacement capabilityDelegation member exists', async () => {
+    const m = await newManager();
+    const { groupifyContext } = await import('../binding.js');
+    const { randomPrivateKey, ed25519, encodeEd25519Multibase } = await import('@living-web/identity');
+    const graph = await m.create({ displayName: 'brick3' });
+    const { credential, did } = await groupifyContext(graph);
+
+    // Add a second capabilityDelegation member.
+    const sk = randomPrivateKey();
+    const pk = await ed25519.getPublicKeyAsync(sk);
+    const newId = `${did}#${encodeEd25519Multibase(pk)}`;
+    await credential.addDelegate({
+      id: newId,
+      publicKey: pk,
+      sections: ['capabilityDelegation'],
+    });
+
+    // Now removing the original is allowed — the new delegate keeps the section alive.
+    await expect(credential.removeDelegate(credential.methodId!)).resolves.toBeUndefined();
+  });
+
+  it('revokeSection on a non-capabilityDelegation section has no brick guard', async () => {
+    const m = await newManager();
+    const { groupifyContext } = await import('../binding.js');
+    const graph = await m.create({ displayName: 'brick4' });
+    const { credential } = await groupifyContext(graph);
+
+    // Revoking the sole member's assertionMethod (a non-capabilityDelegation
+    // section) is fine — the document is not bricked.
+    await expect(
+      credential.revokeSection(credential.methodId!, 'assertionMethod'),
+    ).resolves.toBeUndefined();
+  });
+});
