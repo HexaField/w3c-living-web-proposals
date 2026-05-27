@@ -208,9 +208,11 @@ describe('Scope resolution', () => {
       object: GRAPH_DID,
     });
 
-    const { resolveAncestry } = await import('../index.js');
-    const ancestry = await resolveAncestry(GRAPH_DID, makeContext());
-    expect(ancestry).toEqual([GRAPH_DID, 'did:graph:parent']);
+    const { resolveScopeSet } = await import('../index.js');
+    const scope = await resolveScopeSet(GRAPH_DID, makeContext());
+    expect([...scope.graphs.keys()].sort()).toEqual([GRAPH_DID, 'did:graph:parent'].sort());
+    expect(scope.graphs.get(GRAPH_DID)).toBe(0);
+    expect(scope.graphs.get('did:graph:parent')).toBe(1);
   });
 
   test('ignores participation without mutual acceptance', async () => {
@@ -220,9 +222,9 @@ describe('Scope resolution', () => {
       object: 'did:graph:parent',
     });
     // No accepts_participation triple — the parent is not honoured.
-    const { resolveAncestry } = await import('../index.js');
-    const ancestry = await resolveAncestry(GRAPH_DID, makeContext());
-    expect(ancestry).toEqual([GRAPH_DID]);
+    const { resolveScopeSet } = await import('../index.js');
+    const scope = await resolveScopeSet(GRAPH_DID, makeContext());
+    expect([...scope.graphs.keys()]).toEqual([GRAPH_DID]);
   });
 });
 

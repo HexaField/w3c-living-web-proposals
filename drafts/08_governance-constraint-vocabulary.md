@@ -414,10 +414,10 @@ Temporal enforcement requires the engine to scan recent triples by a specific au
 <dd>Sporny, M., et al., "Verifiable Credentials Data Model v2.0", W3C Recommendation. https://www.w3.org/TR/vc-data-model-2.0/</dd>
 
 <dt>[CAPABILITY-FRAMEWORK]</dt>
-<dd><a href="./03_graph-capability-framework.md">Graph Capability Framework</a>.</dd>
+<dd><a href="./04_graph-capability-framework.md">Graph Capability Framework</a>.</dd>
 
 <dt>[SHAPE-VALIDATION]</dt>
-<dd><a href="./06_dynamic-graph-shape-validation.md">Dynamic Graph Shape Validation</a>.</dd>
+<dd><a href="./07_dynamic-graph-shape-validation.md">Dynamic Graph Shape Validation</a>.</dd>
 </dl>
 
 ### 12.2 Informative References
@@ -427,7 +427,7 @@ Temporal enforcement requires the engine to scan recent triples by a specific au
 <dd><a href="./02_personal-linked-data-graphs.md">Personal Linked Data Graphs</a>.</dd>
 
 <dt>[CONTEXT-SYNC]</dt>
-<dd><a href="./04_context-sync-protocol.md">Graph Synchronisation Protocol</a>.</dd>
+<dd><a href="./05_context-sync-protocol.md">Graph Synchronisation Protocol</a>.</dd>
 
 <dt>[SHACL]</dt>
 <dd>Knublauch, H. and D. Kontokostas, "Shapes Constraint Language (SHACL)", W3C Recommendation, July 2017. https://www.w3.org/TR/shacl/</dd>

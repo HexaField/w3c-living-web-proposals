@@ -36,27 +36,27 @@ async function evalCaveat(
     case 'expiry': {
       const { expiresAt } = c.value as { expiresAt: string };
       if (expiresAt && new Date(expiresAt).getTime() < now) {
-        return { allowed: false, module: 'caveat', reason: 'Capability expired' };
+        return { allowed: false, constraintKind: 'caveat', reason: 'Capability expired' };
       }
       return { allowed: true };
     }
     case 'predicate': {
       const { allowed, denied } = c.value as { allowed?: string[]; denied?: string[] };
       if (denied?.includes(triple.predicate)) {
-        return { allowed: false, module: 'caveat', reason: `Predicate ${triple.predicate} denied` };
+        return { allowed: false, constraintKind: 'caveat', reason: `Predicate ${triple.predicate} denied` };
       }
       if (allowed && !allowed.includes(triple.predicate)) {
-        return { allowed: false, module: 'caveat', reason: `Predicate ${triple.predicate} not allowed` };
+        return { allowed: false, constraintKind: 'caveat', reason: `Predicate ${triple.predicate} not allowed` };
       }
       return { allowed: true };
     }
     case 'property': {
       const { allowed, denied } = c.value as { allowed?: string[]; denied?: string[] };
       if (denied?.includes(triple.predicate)) {
-        return { allowed: false, module: 'caveat', reason: `Property ${triple.predicate} denied` };
+        return { allowed: false, constraintKind: 'caveat', reason: `Property ${triple.predicate} denied` };
       }
       if (allowed && !allowed.includes(triple.predicate)) {
-        return { allowed: false, module: 'caveat', reason: `Property ${triple.predicate} not allowed` };
+        return { allowed: false, constraintKind: 'caveat', reason: `Property ${triple.predicate} not allowed` };
       }
       return { allowed: true };
     }
@@ -64,7 +64,7 @@ async function evalCaveat(
       // Shape conformance is checked by the shape-validation layer; here we only
       // verify the caveat references a known shape IRI.
       const { shapeIri } = c.value as { shapeIri: string };
-      if (!shapeIri) return { allowed: false, module: 'caveat', reason: 'Shape caveat missing shapeIri' };
+      if (!shapeIri) return { allowed: false, constraintKind: 'caveat', reason: 'Shape caveat missing shapeIri' };
       return { allowed: true };
     }
     case 'rateLimit': {
@@ -76,7 +76,7 @@ async function evalCaveat(
       if (recent.length >= maxPerWindow) {
         return {
           allowed: false,
-          module: 'caveat',
+          constraintKind: 'caveat',
           reason: `Rate limit: ${maxPerWindow} per ${windowSeconds}s exceeded`,
         };
       }
@@ -89,7 +89,7 @@ async function evalCaveat(
       const key = `${triple.author}@cardinality`;
       const current = cardinalityCounters.get(key) ?? 0;
       if (current >= max) {
-        return { allowed: false, module: 'caveat', reason: `Cardinality cap ${max} exceeded` };
+        return { allowed: false, constraintKind: 'caveat', reason: `Cardinality cap ${max} exceeded` };
       }
       cardinalityCounters.set(key, current + 1);
       return { allowed: true };
@@ -97,14 +97,14 @@ async function evalCaveat(
     case 'subject': {
       const { pattern } = c.value as { pattern: string };
       if (!globMatch(pattern, triple.subject)) {
-        return { allowed: false, module: 'caveat', reason: `Source does not match ${pattern}` };
+        return { allowed: false, constraintKind: 'caveat', reason: `Source does not match ${pattern}` };
       }
       return { allowed: true };
     }
     case 'object': {
       const { pattern } = c.value as { pattern: string };
       if (!globMatch(pattern, triple.object)) {
-        return { allowed: false, module: 'caveat', reason: `Target does not match ${pattern}` };
+        return { allowed: false, constraintKind: 'caveat', reason: `Target does not match ${pattern}` };
       }
       return { allowed: true };
     }
@@ -120,7 +120,7 @@ async function evalCaveat(
       // we look up an existing rdf://type triple's author and compare.
       const existing = await ctx.queryTriples({ subject: triple.subject, predicate: 'rdf://type' });
       if (existing.length > 0 && existing[0].author !== triple.author) {
-        return { allowed: false, module: 'caveat', reason: 'authorOnly: not the original author' };
+        return { allowed: false, constraintKind: 'caveat', reason: 'authorOnly: not the original author' };
       }
       return { allowed: true };
     }

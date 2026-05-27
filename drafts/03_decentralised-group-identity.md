@@ -1220,9 +1220,9 @@ console.log(doc.trustLevel);   // "local" | "mounted-read" | "external" | "cache
 
 **[PERSONAL-LINKED-DATA-GRAPHS]** [Personal Linked Data Graphs](./02_personal-linked-data-graphs.md).
 
-**[CAPABILITY-FRAMEWORK]** [Graph Capability Framework](./03_graph-capability-framework.md).
+**[CAPABILITY-FRAMEWORK]** [Graph Capability Framework](./04_graph-capability-framework.md).
 
-**[CONTEXT-SYNC]** [Graph Synchronisation Protocol](./04_context-sync-protocol.md).
+**[CONTEXT-SYNC]** [Graph Synchronisation Protocol](./05_context-sync-protocol.md).
 
 **[DID-CORE]** Decentralized Identifiers (DIDs) v1.0. W3C Recommendation, 19 July 2022. https://www.w3.org/TR/did-core/
 
@@ -1236,10 +1236,10 @@ console.log(doc.trustLevel);   // "local" | "mounted-read" | "external" | "cache
 
 ### 17.2 Informative References
 
-**[GRAPH-FLOWS]** [Graph Flows](./09_graph-flows.md).
+**[GRAPH-FLOWS]** [Graph Flows](./10_graph-flows.md).
 
-**[CONSTRAINT-VOCABULARY]** [Governance Constraint Vocabulary](./07_governance-constraint-vocabulary.md).
+**[CONSTRAINT-VOCABULARY]** [Governance Constraint Vocabulary](./08_governance-constraint-vocabulary.md).
 
-**[SHAPE-VALIDATION]** [Dynamic Graph Shape Validation](./06_dynamic-graph-shape-validation.md).
+**[SHAPE-VALIDATION]** [Dynamic Graph Shape Validation](./07_dynamic-graph-shape-validation.md).
 
 **[VC-DATA-MODEL-2.0]** Verifiable Credentials Data Model v2.0. W3C Recommendation. https://www.w3.org/TR/vc-data-model-2.0/

@@ -578,29 +578,34 @@ Every `GraphDiff` is governance-verified at three points:
 
 A conforming sync module's `validate(graphDid, diff, author, graphState)` MUST:
 
-1. Verify the diff's `CapabilityProof.chain` against the graph's governance ([[CAPABILITY-FRAMEWORK]] §7).
-2. Re-evaluate any content-dependent caveats against the actual triples in `additions` and `removals` (per [[CAPABILITY-FRAMEWORK]] §9).
-3. Verify each triple's reifier signature against the resolved author.
-4. Return `{ accepted: true }` or `{ accepted: false, module: ..., reason: ... }`.
+1. Resolve the target graph's **scope set** per [[CAPABILITY-FRAMEWORK]] §6.1 using the locally-observable participation declarations. The scope set is the target graph plus every graph reachable via mutually-accepted `context://participates_in` edges (in either direction, per [[CAPABILITY-FRAMEWORK]] §6.2).
+2. Verify the diff's `CapabilityProof.chain` against the union of constraints across the scope set ([[CAPABILITY-FRAMEWORK]] §7). The chain walk MUST query `has_zcap` across the scope set, not just the target graph, and MUST terminate at `urn:living-web:zcap:BootstrapRoot` (the chain is *cut* at constitutional boundaries — [[CAPABILITY-FRAMEWORK]] §4.3).
+3. Re-evaluate any content-dependent caveats against the actual triples in `additions` and `removals` (per [[CAPABILITY-FRAMEWORK]] §9). The deny-wins rule applies ([[CAPABILITY-FRAMEWORK]] §6.3): if any in-scope constraint rejects, the diff is rejected.
+4. Verify each triple's reifier signature against the resolved author.
+5. Return `{ accepted: true }` or `{ accepted: false, constraintKind: ..., reason: ... }`.
 
-### 9.3 Rejection Behaviour
+### 9.3 Rejection Behaviour (Sync-Blocking)
 
 A diff that fails validation MUST NOT be:
 
 - Stored in the local per-graph store.
-- Forwarded to other peers (the receiving peer should not re-broadcast).
+- Forwarded to other peers (the receiving peer MUST NOT re-broadcast).
+
+This is **sync-blocking based on governance rules**: an invalid diff stops propagating at every peer that rejects it. Combined with deterministic, scope-set-aware validation, the network converges on a state where rejected writes do not reach any honest peer.
 
 Implementations SHOULD log rejected diffs for audit but MUST NOT retain rejected triple content beyond what is needed for the audit.
 
+**Holonic implication.** Because the scope set is computed from mutually-accepted participation declarations in either direction, a write to graph A that violates a constraint on holonically-linked graph B is rejected and not propagated. Holonic governance is enforceable at the sync layer without any additional protocol — the scope-set computation already covers it.
+
 ### 9.4 Enforcement Mode Awareness
 
-The runtime SHALL inspect the graph's `governance://enforcement_mode` ([[CAPABILITY-FRAMEWORK]] §5) before applying capability checks:
+The runtime SHALL inspect the target graph's `governance://enforcement_mode` ([[CAPABILITY-FRAMEWORK]] §5) before applying capability checks:
 
-- **Open**: Skip ZCAP checks; accept diffs without capability proofs.
+- **Open**: Skip ZCAP checks for the target graph. Non-capability constraints (temporal, content, credential, …) from any graph in the scope set still apply per their own rules. A diff that fails a non-capability constraint is still rejected, even when the target graph is in Open mode.
 - **Announced**: Verify but do not reject on capability failure; log.
 - **Enforced**: Verify and reject.
 
-Constraint kinds supplied by extension specifications (e.g., content, temporal, credential) are applied in all modes per their own rules.
+Each graph in the scope set is evaluated under **its own** enforcement mode for capability constraints it bound. A diff to graph A may be capability-accepted under A's Open mode while being capability-rejected under a participating graph B's Enforced mode that has a constraint reaching A via the scope set. Deny-wins applies across the scope set; a diff is accepted only if every applicable constraint accepts.
 
 ---
 
@@ -820,7 +825,7 @@ for (const s of spaces) {
 - **[DID-CORE]** Sporny, M., et al., "Decentralized Identifiers (DIDs) v1.0", W3C Recommendation, July 2022. https://www.w3.org/TR/did-core/
 - **[DECENTRALISED-IDENTITY]** [Decentralised Identity Integration for the Web Platform](./01_decentralised-identity-web-platform.md).
 - **[PERSONAL-LINKED-DATA-GRAPHS]** [Personal Linked Data Graphs](./02_personal-linked-data-graphs.md).
-- **[CAPABILITY-FRAMEWORK]** [Graph Capability Framework](./03_graph-capability-framework.md).
+- **[CAPABILITY-FRAMEWORK]** [Graph Capability Framework](./04_graph-capability-framework.md).
 
 ### 15.2 Informative References
 

@@ -1,9 +1,20 @@
 /**
- * Scope resolution across nested graphs.
+ * Scope-set resolution across participating graphs (Spec 03 §6).
  *
- * Walks `context://participates_in` links upward (from the writing graph
- * toward its parent graphs). Mutually-declared `context://accepts_participation`
- * is verified before honouring a participation claim.
+ * BFS-walks `context://participates_in` edges from the target graph,
+ * honouring mutual `context://accepts_participation` on the other side.
+ * Returns the full set of graphs whose constraints apply to writes in the
+ * target (the *scope set*), with per-graph depth recorded for audit.
+ *
+ * Hierarchical vs holonic falls out of which participation declarations
+ * exist — same mechanism, just different declaration patterns:
+ *   - A→B only: B's constraints bind writes in A. (Hierarchical.)
+ *   - A→B AND B→A: each graph's constraints bind the other. (Holonic.)
+ *
+ * Constraints from every graph in the scope set accumulate. There is NO
+ * "most-specific overrides" rule — that was the override anti-pattern.
+ * Conflict resolution is deny-wins across the accumulated set (handled in
+ * engine.ts, not here).
  */
 
 import { GOV, CONTEXT } from './predicates.js';
@@ -13,62 +24,86 @@ import type {
   ValidationContext,
 } from './types.js';
 
-const MAX_ANCESTRY_DEPTH = 100;
+const MAX_SCOPE_SET_SIZE = 100;
 const VALID_KINDS = new Set<ConstraintKind>(['capability', 'temporal', 'content', 'credential']);
 
-/**
- * Walk from the writing graph up through participates_in links.
- * Each parent must reciprocally declare accepts_participation for the claim
- * to be honoured.
- */
-export async function resolveAncestry(
-  contextDid: string,
-  ctx: ValidationContext,
-): Promise<string[]> {
-  const ancestry: string[] = [contextDid];
-  const visited = new Set<string>([contextDid]);
-  let current = contextDid;
+export interface ScopeSet {
+  /** Every graph DID in the scope, mapped to its minimum-depth reach from the target. */
+  graphs: Map<string, number>;
+  /** True if the scope-set size limit was hit (engine should reject with constraintKind:"scope-overflow"). */
+  overflow: boolean;
+}
 
-  for (let i = 0; i < MAX_ANCESTRY_DEPTH; i++) {
+/**
+ * BFS walk from `targetGraphDid` over participates_in edges with mutual
+ * acceptance. Multi-parent (a graph participating in several others) is
+ * supported; cycles are detected via the visited set; the resulting
+ * Map<did, minDepth> is the scope set.
+ */
+export async function resolveScopeSet(
+  targetGraphDid: string,
+  ctx: ValidationContext,
+): Promise<ScopeSet> {
+  const scope = new Map<string, number>();
+  scope.set(targetGraphDid, 0);
+  const frontier: string[] = [targetGraphDid];
+
+  while (frontier.length > 0) {
+    const current = frontier.shift()!;
+    const currentDepth = scope.get(current)!;
+
     const participations = await ctx.queryTriples({
       subject: current,
       predicate: CONTEXT.PARTICIPATES_IN,
     });
-    if (participations.length === 0) break;
-    const parent = participations[0].data.object;
-    if (visited.has(parent)) break;
-    // Verify mutual acceptance (best-effort: in this polyfill we only check that the
-    // accepts_participation triple exists locally).
-    const accepts = await ctx.queryTriples({
-      subject: parent,
-      predicate: CONTEXT.ACCEPTS_PARTICIPATION,
-      object: current,
-    });
-    if (accepts.length === 0) {
-      // Unilateral participation — skip
-      break;
+
+    for (const p of participations) {
+      const target = p.data.object;
+      if (scope.has(target)) continue;
+
+      // Mutual-acceptance check.
+      const accepts = await ctx.queryTriples({
+        subject: target,
+        predicate: CONTEXT.ACCEPTS_PARTICIPATION,
+        object: current,
+      });
+      if (accepts.length === 0) continue;
+
+      // (A full implementation would verify the accepts_participation reifier
+      // author is in `target`'s capabilityDelegation set at validation time.
+      // The polyfill records this as a TODO; tests cover the structural path
+      // — the cryptographic delegate-set check is covered by the group-identity
+      // polyfill's own conformance tests.)
+
+      if (scope.size >= MAX_SCOPE_SET_SIZE) {
+        return { graphs: scope, overflow: true };
+      }
+      scope.set(target, currentDepth + 1);
+      frontier.push(target);
     }
-    visited.add(parent);
-    ancestry.push(parent);
-    current = parent;
   }
-  return ancestry;
+
+  return { graphs: scope, overflow: false };
 }
 
+/**
+ * Collect every constraint bound to any graph in the scope set, tagged with
+ * that graph's depth (for audit attribution). All collected constraints
+ * apply equally — no precedence, no override.
+ */
 export async function collectConstraints(
-  ancestry: string[],
+  scope: ScopeSet,
   ctx: ValidationContext,
 ): Promise<GraphConstraint[]> {
   const constraints: GraphConstraint[] = [];
-  for (let depth = 0; depth < ancestry.length; depth++) {
-    const contextDid = ancestry[depth];
+  for (const [graphDid, depth] of scope.graphs) {
     const bindings = await ctx.queryTriples({
-      subject: contextDid,
+      subject: graphDid,
       predicate: GOV.HAS_CONSTRAINT,
     });
     for (const binding of bindings) {
       const constraintId = binding.data.object;
-      const constraint = await resolveConstraint(constraintId, contextDid, depth, ctx);
+      const constraint = await resolveConstraint(constraintId, graphDid, depth, ctx);
       if (constraint) constraints.push(constraint);
     }
   }
@@ -89,27 +124,26 @@ async function resolveConstraint(
   if (!kindRaw || !VALID_KINDS.has(kindRaw as ConstraintKind)) return null;
   if (props[GOV.ENTRY_TYPE] && props[GOV.ENTRY_TYPE] !== GOV.CONSTRAINT) return null;
 
-  const actualScope = props[GOV.CONSTRAINT_SCOPE] || scope;
   return {
     id: constraintId,
     kind: kindRaw as ConstraintKind,
-    scope: actualScope,
+    scope,
     depth,
     properties: props,
   };
 }
 
-export function applyPrecedence(constraints: GraphConstraint[]): GraphConstraint[] {
-  const byKind = new Map<string, GraphConstraint[]>();
-  for (const c of constraints) {
-    const existing = byKind.get(c.kind) ?? [];
-    existing.push(c);
-    byKind.set(c.kind, existing);
-  }
-  const result: GraphConstraint[] = [];
-  for (const list of byKind.values()) {
-    const minDepth = Math.min(...list.map(c => c.depth));
-    result.push(...list.filter(c => c.depth === minDepth));
-  }
-  return result;
+/**
+ * Audit-attribution helper: of a set of *rejecting* constraints, return the
+ * one with lowest depth (most-authoritative); ties broken by lexicographically
+ * greater constraint id. Per Spec 03 §6.3, this affects only the audit field
+ * `rejectedBy`, never the accept/reject decision (which is pure deny-wins).
+ */
+export function pickAuditAttribution(rejecting: GraphConstraint[]): GraphConstraint | null {
+  if (rejecting.length === 0) return null;
+  return rejecting.reduce((best, c) => {
+    if (c.depth < best.depth) return c;
+    if (c.depth > best.depth) return best;
+    return c.id > best.id ? c : best;
+  });
 }

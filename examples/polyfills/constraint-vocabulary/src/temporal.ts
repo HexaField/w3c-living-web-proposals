@@ -79,7 +79,7 @@ export const temporalConstraintHandler: ConstraintHandler = {
             const remaining = Math.ceil(minInterval - elapsed);
             return {
               allowed: false,
-              module: 'temporal',
+              constraintKind: 'temporal',
               reason: `Rate limit: wait ${remaining}s`,
               rejectedBy: constraint.id,
             };
@@ -100,7 +100,7 @@ export const temporalConstraintHandler: ConstraintHandler = {
         if (countInWindow >= maxCount) {
           return {
             allowed: false,
-            module: 'temporal',
+            constraintKind: 'temporal',
             reason: `Rate limit: ${maxCount} per ${windowSeconds}s exceeded`,
             rejectedBy: constraint.id,
           };

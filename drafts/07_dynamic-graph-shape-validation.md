@@ -708,5 +708,5 @@ await channel.addShape("FormalItem", JSON.stringify({
 <dd><a href="https://www.w3.org/TR/json-ld11/">JSON-LD 1.1</a>. W3C Recommendation.</dd>
 
 <dt>[CAPABILITY-FRAMEWORK]</dt>
-<dd><a href="./03_graph-capability-framework.md">Graph Capability Framework</a>.</dd>
+<dd><a href="./04_graph-capability-framework.md">Graph Capability Framework</a>.</dd>
 </dl>

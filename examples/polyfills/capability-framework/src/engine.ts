@@ -1,15 +1,27 @@
 /**
- * GraphGovernanceEngine — orchestrator for a single graph (did:graph).
+ * GraphGovernanceEngine — orchestrator for a single graph (Spec 03 §11).
  *
- * Capability checks are built in. All other constraint kinds (temporal,
- * content, credential, etc.) are supplied as plug-in handlers registered
- * via `registerConstraintKind()`. Scope inheritance walks
- * `context://participates_in` links upward.
+ * Architecture:
+ *   - Scope-set resolution (§6.1): every graph reachable via mutually-accepted
+ *     `participates_in` edges contributes constraints. Multi-parent and
+ *     holonic (bidirectional) participation are first-class — same predicate,
+ *     just different declaration patterns.
+ *   - Constraints **accumulate** across the scope set. NO "most-specific wins"
+ *     override (Spec 03 §4.2).
+ *   - Composition is **deny-wins** per kind, then ANDed across kinds
+ *     (Spec 03 §6.3).
+ *   - Audit attribution: the rejecting constraint with lowest depth, ties
+ *     broken by lex-greater id, is recorded in `rejectedBy`. This does not
+ *     affect the decision.
+ *   - Capability is built in (`verifyCapability`); other kinds (temporal,
+ *     content, credential, …) are supplied as handler plug-ins (§9.4).
+ *   - Open mode skips capability enforcement only; non-capability kinds
+ *     still apply (Spec 03 §5.1, §5.3).
  */
 
 import { GOV } from './predicates.js';
-import { resolveAncestry, collectConstraints, applyPrecedence } from './scope.js';
-import { verifyCapability } from './capability.js';
+import { resolveScopeSet, collectConstraints, pickAuditAttribution, type ScopeSet } from './scope.js';
+import { verifyCapability, inferAction } from './capability.js';
 import type {
   GraphConstraint,
   GovernanceValidationResult,
@@ -27,6 +39,7 @@ export class GraphGovernanceEngine {
   private _handlers = new Map<string, ConstraintHandler>();
   private _history: ValidationHistoryEntry[] = [];
   private _historyMaxSize: number;
+  private _actionPrefixes: Array<[string, string]> = [];
 
   constructor(ctx: ValidationContext, opts?: { historyMaxSize?: number }) {
     this._ctx = ctx;
@@ -51,51 +64,119 @@ export class GraphGovernanceEngine {
   }
 
   /**
-   * Validate a triple against capability + all registered constraint kinds.
-   * Capability checks honour the enforcement mode (open/announced/enforced).
-   * Registered constraint-kind handlers are always enforced.
+   * Validate a triple. Capability + every registered constraint-kind handler
+   * is evaluated; results combine deny-wins. Capability enforcement honours
+   * Open/Announced/Enforced; other constraint kinds always apply.
    */
   async validate(triple: TripleInput): Promise<GovernanceValidationResult> {
     this._ctx.enforcementMode = await this.getEnforcementMode();
 
-    const ancestry = await resolveAncestry(this._ctx.graphDid, this._ctx);
-    const allConstraints = await collectConstraints(ancestry, this._ctx);
-    const constraints = applyPrecedence(allConstraints);
+    const scope = await resolveScopeSet(this._ctx.graphDid, this._ctx);
+    if (scope.overflow) {
+      const result: GovernanceValidationResult = {
+        allowed: false,
+        constraintKind: 'scope-overflow',
+        reason: `Scope set exceeded 100 graphs`,
+      };
+      this._recordHistory(triple, result);
+      return result;
+    }
 
-    // Capability (built-in) — honours enforcement mode.
-    const capResult = await verifyCapability(triple, constraints, ancestry, this._ctx);
+    const constraints = await collectConstraints(scope, this._ctx);
+
+    const rejectingConstraints: GraphConstraint[] = [];
+    let firstRejection: GovernanceValidationResult | null = null;
+
+    // ── Capability (built-in) ────────────────────────────────────────────────
+    // Capability checking always runs (to record history under Announced),
+    // but the outcome is gated by enforcement mode.
+    const capResult = await verifyCapability(triple, constraints, scope, this._ctx);
     if (!capResult.allowed) {
       if (this._ctx.enforcementMode === 'open') {
-        // skip rejection
+        // Skip — capability denials don't reject in Open.
       } else if (this._ctx.enforcementMode === 'announced') {
+        // Record but don't reject.
         this._recordHistory(triple, { ...capResult, allowed: true, announcedRejection: capResult.reason });
       } else {
-        this._recordHistory(triple, capResult);
-        return capResult;
+        // Enforced — accumulate into deny-wins set.
+        firstRejection = firstRejection ?? capResult;
+        if (capResult.rejectedBy) {
+          const c = constraints.find(x => x.id === capResult.rejectedBy);
+          if (c) rejectingConstraints.push(c);
+        }
       }
     }
 
-    // Plug-in constraint kinds (always enforced).
-    const handlerConstraints = constraints.filter(c => c.kind !== 'capability');
-    for (const cc of handlerConstraints) {
+    // ── Plug-in constraint kinds (always enforced) ───────────────────────────
+    // For each constraint with a registered handler, evaluate. Same-kind
+    // constraints accumulate; deny-wins per kind.
+    const nonCapConstraints = constraints.filter(c => c.kind !== 'capability');
+    for (const cc of nonCapConstraints) {
       const handler = this._handlers.get(cc.kind);
-      if (!handler) continue;
+      if (!handler) {
+        // Unknown kind — fail-closed (Spec 03 §4.1, §13.8).
+        const result: GovernanceValidationResult = {
+          allowed: false,
+          constraintKind: cc.kind,
+          reason: `Unknown constraint kind '${cc.kind}' has no registered handler`,
+          rejectedBy: cc.id,
+        };
+        rejectingConstraints.push(cc);
+        firstRejection = firstRejection ?? result;
+        continue;
+      }
       const r = await handler.validate(triple, cc, this._ctx);
       if (!r.allowed) {
-        this._recordHistory(triple, r);
-        return r;
+        rejectingConstraints.push(cc);
+        firstRejection = firstRejection ?? {
+          ...r,
+          constraintKind: r.constraintKind ?? cc.kind,
+          rejectedBy: r.rejectedBy ?? cc.id,
+        };
       }
     }
 
-    const result: GovernanceValidationResult = { allowed: true };
-    this._recordHistory(triple, result);
-    return result;
+    if (rejectingConstraints.length > 0) {
+      const audit = pickAuditAttribution(rejectingConstraints);
+      const result: GovernanceValidationResult = {
+        allowed: false,
+        constraintKind: audit?.kind ?? firstRejection?.constraintKind,
+        reason: firstRejection?.reason ?? 'rejected',
+        rejectedBy: audit?.id ?? firstRejection?.rejectedBy,
+      };
+      this._recordHistory(triple, result);
+      return result;
+    }
+
+    const ok: GovernanceValidationResult = { allowed: true };
+    this._recordHistory(triple, ok);
+    return ok;
+  }
+
+  /**
+   * Register a predicate prefix → action mapping (Spec 03 §4.5.4.1).
+   * Throws if the prefix overlaps an existing registration.
+   */
+  registerActionPrefix(prefix: string, action: string): void {
+    for (const [existing] of this._actionPrefixes) {
+      if (existing.startsWith(prefix) || prefix.startsWith(existing)) {
+        throw new Error(`Action prefix '${prefix}' overlaps existing '${existing}'`);
+      }
+    }
+    this._actionPrefixes.push([prefix, action]);
+  }
+
+  /** Surface the action derivation helper for callers that need to inspect it. */
+  inferAction(triple: TripleInput): string {
+    return inferAction(triple, this._actionPrefixes);
   }
 
   async constraintsFor(contextDid: string = this._ctx.graphDid): Promise<GraphConstraint[]> {
-    const ancestry = await resolveAncestry(contextDid, this._ctx);
-    const allConstraints = await collectConstraints(ancestry, this._ctx);
-    return applyPrecedence(allConstraints);
+    // Note: caller-supplied graph is the new scope-set origin.
+    const scope = contextDid === this._ctx.graphDid
+      ? await resolveScopeSet(this._ctx.graphDid, this._ctx)
+      : await resolveScopeSet(contextDid, this._ctx);
+    return collectConstraints(scope, this._ctx);
   }
 
   async myCapabilities(myDid: string): Promise<CapabilityInfo[]> {
@@ -125,6 +206,11 @@ export class GraphGovernanceEngine {
       });
     }
     return caps;
+  }
+
+  /** Resolve the writing graph's current scope set (Spec 03 §6.1). */
+  async resolveScope(): Promise<ScopeSet> {
+    return resolveScopeSet(this._ctx.graphDid, this._ctx);
   }
 
   registerConstraintKind(handler: ConstraintHandler): void {

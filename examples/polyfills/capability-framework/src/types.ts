@@ -45,7 +45,8 @@ export interface GraphConstraint {
 
 export interface GovernanceValidationResult {
   readonly allowed: boolean;
-  readonly module?: string;
+  /** Spec 03 §11 — the constraint kind that decided this result. */
+  readonly constraintKind?: string;
   readonly reason?: string;
   readonly rejectedBy?: string;
   /** When the constraint was advisory (Announced mode), the recorded reason. */

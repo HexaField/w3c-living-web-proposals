@@ -72,7 +72,7 @@ export const credentialConstraintHandler: ConstraintHandler = {
     if (!found) {
       return {
         allowed: false,
-        module: 'credential',
+        constraintKind: 'credential',
         reason: `Missing required credential of type ${requiredType}`,
         rejectedBy: constraint.id,
       };

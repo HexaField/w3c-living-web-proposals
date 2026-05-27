@@ -24,16 +24,16 @@ Ten W3C-format draft specifications, arranged so each spec depends only on the o
 
 | # | Spec | Description |
 |---|------|-------------|
-| 01 | [Decentralised Identity](drafts/01_decentralised-identity-web-platform.md) | Extends `navigator.credentials` with `did:key` (individuals) AND `did:graph` (graphs); DID-document delegates for shared signing — **no multisig, no threshold cryptography** |
-| 02 | [Personal Linked Data Graphs](drafts/02_personal-linked-data-graphs.md) | `navigator.graph` — **GraphStore** = mount table; **Context** = named graph with `did:graph:...` identity; graph snapshots for portable, signed serialisation |
-| 03 | [Graph Capability Framework](drafts/03_graph-capability-framework.md) | Root Capability; ZCAPs target `did:graph:...`; Open/Announced/Enforced enforcement modes; caveat type system; scope inheritance; governance of DID delegates |
-| 04 | [Context Sync Protocol](drafts/04_context-sync-protocol.md) | ContextDiff (graph-DID-keyed); mount-and-subscribe lifecycle; sync spaces decoupled from logical contexts |
-| 05 | [Sync Module Architecture](drafts/05_sync-module-architecture.md) | Pluggable WASM module interface, capability sandbox, lifecycle, user consent |
-| 06 | [Dynamic Graph Shape Validation](drafts/06_dynamic-graph-shape-validation.md) | SHACL extension with action semantics under stable `shape://actions/`; cross-context shape inheritance via `context://participates_in` |
-| 07 | [Governance Constraint Vocabulary](drafts/07_governance-constraint-vocabulary.md) | The standard constraint kinds that plug into the capability framework: temporal, content, credential, shape |
-| 08 | [Default Sync Module](drafts/08_default-sync-module.md) | The built-in module: OR-Set CRDT, WebTransport relay protocol, NAT traversal, snapshot promotion |
-| 09 | [Graph Flows](drafts/09_graph-flows.md) | Declarative state machines: SPARQL ASK guards, temporal constraints, role requirements, composite flows |
-| 10 | [Decentralised Group Identity](drafts/10_decentralised-group-identity.md) | A group **is** a `did:graph` context; participation (`context://participates_in`) and signing authority (DID-document delegates) kept structurally distinct |
+| 01 | [Decentralised Identity](drafts/01_decentralised-identity-web-platform.md) | Extends `navigator.credentials` with `did:key` (individuals); DID-document delegate model for shared signing — **no multisig, no threshold cryptography** |
+| 02 | [Personal Linked Data Graphs](drafts/02_personal-linked-data-graphs.md) | `navigator.graph` — content-addressed `graph://<hash>` IRIs + optional `did` slot; RDF 1.2 reifiers carrying per-triple provenance; lossless RDF 1.2 snapshots |
+| 03 | [Decentralised Group Identity](drafts/03_decentralised-group-identity.md) | `did:graph` method + DID-document-as-triples model; groupification attaches a DID to an existing graph; participation (`context://participates_in`) and signing authority (DID-document delegates) kept structurally distinct. **Substrate dependency for spec 04.** |
+| 04 | [Graph Capability Framework](drafts/04_graph-capability-framework.md) | Root Capability; ZCAPs target a graph's DID; Open/Announced/Enforced enforcement modes; immutable-caveats attenuation; deny-wins scope-set accumulation; hierarchical AND holonic governance via the same `participates_in`/`accepts_participation` mechanism |
+| 05 | [Context Sync Protocol](drafts/05_context-sync-protocol.md) | GraphDiff (graph-DID-keyed); mount-and-subscribe lifecycle; sync spaces decoupled from logical graphs; sync-blocking respects the full scope-set governance |
+| 06 | [Sync Module Architecture](drafts/06_sync-module-architecture.md) | Pluggable WASM module interface, capability sandbox, lifecycle, user consent |
+| 07 | [Dynamic Graph Shape Validation](drafts/07_dynamic-graph-shape-validation.md) | SHACL extension with action semantics under stable `shape://actions/`; cross-graph shape inheritance via `context://participates_in` |
+| 08 | [Governance Constraint Vocabulary](drafts/08_governance-constraint-vocabulary.md) | The standard constraint kinds that plug into the capability framework: temporal, content, credential, shape |
+| 09 | [Default Sync Module](drafts/09_default-sync-module.md) | The built-in module: OR-Set CRDT, WebTransport relay protocol, NAT traversal, snapshot promotion |
+| 10 | [Graph Flows](drafts/10_graph-flows.md) | Declarative state machines: SPARQL ASK guards, temporal constraints, role requirements, composite flows |
 
 ### Key Design Decisions
 

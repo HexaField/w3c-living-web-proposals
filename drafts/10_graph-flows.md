@@ -797,13 +797,13 @@ await community.addFlow("VotingPeriod", JSON.stringify({
 <dd><a href="./02_personal-linked-data-graphs.md">Personal Linked Data Graphs</a>.</dd>
 
 <dt>[CAPABILITY-FRAMEWORK]</dt>
-<dd><a href="./03_graph-capability-framework.md">Graph Capability Framework</a>.</dd>
+<dd><a href="./04_graph-capability-framework.md">Graph Capability Framework</a>.</dd>
 
 <dt>[CONTEXT-SYNC]</dt>
-<dd><a href="./04_context-sync-protocol.md">Graph Synchronisation Protocol</a>.</dd>
+<dd><a href="./05_context-sync-protocol.md">Graph Synchronisation Protocol</a>.</dd>
 
 <dt>[SHAPE-VALIDATION]</dt>
-<dd><a href="./06_dynamic-graph-shape-validation.md">Dynamic Graph Shape Validation</a>.</dd>
+<dd><a href="./07_dynamic-graph-shape-validation.md">Dynamic Graph Shape Validation</a>.</dd>
 </dl>
 
 ### 17.2 Informative References
@@ -813,10 +813,10 @@ await community.addFlow("VotingPeriod", JSON.stringify({
 <dd><a href="https://www.w3.org/TR/sparql12-query/">SPARQL 1.2 Query Language</a>. W3C Working Draft.</dd>
 
 <dt>[CONSTRAINT-VOCABULARY]</dt>
-<dd><a href="./07_governance-constraint-vocabulary.md">Governance Constraint Vocabulary</a>.</dd>
+<dd><a href="./08_governance-constraint-vocabulary.md">Governance Constraint Vocabulary</a>.</dd>
 
 <dt>[DEFAULT-SYNC-MODULE]</dt>
-<dd><a href="./08_default-sync-module.md">Default Sync Module</a>.</dd>
+<dd><a href="./09_default-sync-module.md">Default Sync Module</a>.</dd>
 
 <dt>[DECENTRALISED-IDENTITY]</dt>
 <dd><a href="./01_decentralised-identity-web-platform.md">Decentralised Identity Integration for the Web Platform</a>.</dd>

@@ -426,10 +426,10 @@ Snapshot promotion announces "agent X took a snapshot of graph G at time T". Thi
 - **[RFC8174]** Leiba, B., "Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words", BCP 14, RFC 8174, May 2017.
 - **[WEBTRANSPORT]** "WebTransport", W3C Working Draft. https://www.w3.org/TR/webtransport/
 - **[PERSONAL-LINKED-DATA-GRAPHS]** [Personal Linked Data Graphs](./02_personal-linked-data-graphs.md).
-- **[CAPABILITY-FRAMEWORK]** [Graph Capability Framework](./03_graph-capability-framework.md).
-- **[CONTEXT-SYNC]** [Graph Synchronisation Protocol](./04_context-sync-protocol.md).
-- **[SYNC-MODULE]** [Sync Module Architecture](./05_sync-module-architecture.md).
-- **[CONSTRAINT-VOCABULARY]** [Governance Constraint Vocabulary](./07_governance-constraint-vocabulary.md).
+- **[CAPABILITY-FRAMEWORK]** [Graph Capability Framework](./04_graph-capability-framework.md).
+- **[CONTEXT-SYNC]** [Graph Synchronisation Protocol](./05_context-sync-protocol.md).
+- **[SYNC-MODULE]** [Sync Module Architecture](./06_sync-module-architecture.md).
+- **[CONSTRAINT-VOCABULARY]** [Governance Constraint Vocabulary](./08_governance-constraint-vocabulary.md).
 
 ### 13.2 Informative References
 

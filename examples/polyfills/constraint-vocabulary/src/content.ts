@@ -62,7 +62,7 @@ export const contentConstraintHandler: ConstraintHandler = {
       if (!isNaN(maxLength) && text.length > maxLength) {
         return {
           allowed: false,
-          module: 'content',
+          constraintKind: 'content',
           reason: `Content exceeds maximum length of ${maxLength} characters`,
           rejectedBy: constraint.id,
         };
@@ -76,7 +76,7 @@ export const contentConstraintHandler: ConstraintHandler = {
         if (testRegex(pattern, text) === true) {
           return {
             allowed: false,
-            module: 'content',
+            constraintKind: 'content',
             reason: 'Content matches blocked pattern',
             rejectedBy: constraint.id,
           };
@@ -90,7 +90,7 @@ export const contentConstraintHandler: ConstraintHandler = {
       if (urls && urls.length > 0) {
         return {
           allowed: false,
-          module: 'content',
+          constraintKind: 'content',
           reason: 'URLs are not permitted',
           rejectedBy: constraint.id,
         };
@@ -108,7 +108,7 @@ export const contentConstraintHandler: ConstraintHandler = {
             if (domain && !allowedDomains.includes(domain)) {
               return {
                 allowed: false,
-                module: 'content',
+                constraintKind: 'content',
                 reason: `URL domain ${domain} is not in the allowed list`,
                 rejectedBy: constraint.id,
               };
