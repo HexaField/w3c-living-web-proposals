@@ -35,6 +35,14 @@ Ten W3C-format draft specifications, arranged so each spec depends only on the o
 | 09 | [Default Sync Module](drafts/09_default-sync-module.md) | PRE-DRAFT | The built-in module: OR-Set CRDT, WebTransport relay protocol, NAT traversal, snapshot promotion, `PULL` gated by `validateReadAccess`. |
 | 10 | [Graph Flows](drafts/10_graph-flows.md) | PRE-DRAFT | Declarative state machines: SPARQL ASK guards, temporal constraints, role requirements, composite flows. |
 
+### Considered but Not Yet Scoped
+
+The following capabilities are anticipated extensions of this substrate. They are not (yet) drafted as numbered specs but are explicitly held in mind so the foundational specs above stay compatible with them.
+
+- **Multi-device sync.** A single user agent's state (graphs, mounted DIDs, identity credentials, sync subscriptions) replicated across the user's own devices — the experience of logging into a browser profile or joining a Brave-style sync chain — implemented end-to-end peer-to-peer via the [Sync Module Architecture](drafts/06_sync-module-architecture.md), with no operator in the trust path. Conceptually a graph the user participates in with themselves; the open question is the bootstrap (pairing) UX and the per-device key model.
+- **Peer-to-peer relationship VC proofs (contacts).** A contacts list built from mutually-signed Verifiable Credentials — each contact entry is co-attested by both parties rather than one-sidedly asserted. References the First Person Project's [Verifiable Relational Proofs](https://www.firstperson.network/white-paper) approach. What's missing is the standardised credential format and the UX patterns for connection establishment, proof exchange, and lifecycle management of relationships.
+- **Agent DID sub-keys across identity schemes.** A user's `did:key` acting as the **anchoring sovereign identity** with sub-keys (verification methods in its DID document) that are themselves DIDs from other methods — `did:matrix`, `did:nostr`, `did:web`, `did:plc`, etc. — letting a single identity participate natively on multiple existing networks without those networks needing to know about each other. The DID document model in Spec 03 already permits this structurally (a `verificationMethod` is just a key reference); what's missing is the method-resolver plumbing and the cross-network credential-exchange patterns.
+
 ### Key Design Decisions
 
 | Aspect | Decision |
