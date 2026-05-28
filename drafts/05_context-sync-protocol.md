@@ -104,7 +104,7 @@ A **conforming user agent** MUST implement:
 
 <dl>
 <dt><dfn>Graph</dfn></dt>
-<dd>A named graph identified by a <code>graph://&lt;content-hash&gt;</code> IRI (optionally also by a DID). See [[PERSONAL-LINKED-DATA-GRAPHS]] §3.3.</dd>
+<dd>A substrate-level graph identified by a <code>graph://&lt;content-hash&gt;</code> IRI and (when persistent) a DID — the unit that this protocol mounts and synchronises. See [[PERSONAL-LINKED-DATA-GRAPHS]] §3.3. Distinct from an internal <em>named graph</em>: a Graph's triples MAY include quads whose graph-name is any IRI, and those internal named graphs are content within the Graph, not separately mountable substrate objects ([§4.3](#43-scope-of-a-mount)).</dd>
 
 <dt><dfn>GraphDiff</dfn></dt>
 <dd>A unit of change to a specific graph: additions, removals, a revision identifier, causal dependencies, and a CapabilityProof. The unit of gossip.</dd>
@@ -188,6 +188,16 @@ A receiving peer in a shared space:
 - **Lifecycle churn.** Ephemeral threads with three messages and two participants gain nothing from a dedicated DHT.
 - **Flexibility.** Some communities want privacy isolation. Others want simplicity. The right tradeoff is per-community.
 - **Migration.** A graph's privacy can crystallise over time. Decoupled topology can migrate the graph to a more-isolated space as governance tightens.
+
+### 4.3 Scope of a Mount
+
+A mount carries exactly one graph — the graph named by the `graphDid` passed to [`mount()`](#62-mounting-a-remote-graph). What sits *inside* that graph and what it *references* are content-layer concerns, not sync-layer ones.
+
+**Internal named graphs.** The mounted graph's triples MAY include quads whose graph-name is any IRI — `urn:section:foo`, `app://workspace/notes`, another `graph://...` value, anything. These are RDF named graphs within the mounted graph's content; they are *part of* the mounted graph and travel with it. They do not have their own `graphDid`, do not require their own sync subscription, and are not separately addressable from outside the mounted graph.
+
+**References to other graphs.** A triple whose subject or object is a `graph://<hash>` IRI or a `did:graph:...` DID is a **reference** in the [[PERSONAL-LINKED-DATA-GRAPHS]] §6 sense. The reference is data — an identifier that another graph may resolve, mount, or ignore at its discretion. Mounting graph G does not implicitly mount or fetch any graph G refers to: that decision is the application's, exercised by an explicit call to `navigator.graph.mount()` for each referenced graph the application chooses to bring into local state. SPARQL queries that span multiple graphs assemble the dataset explicitly via `options.namedGraphs` per [[PERSONAL-LINKED-DATA-GRAPHS]] §6.4.
+
+These two patterns are how applications compose multi-graph structures cheaply: an application can hold a graph that references a thousand others without paying any sync cost for the ones it has not chosen to mount, and can use internal named graphs freely as an organisational tool without each one becoming a substrate object.
 
 ---
 
