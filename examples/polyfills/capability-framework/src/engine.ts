@@ -1,22 +1,18 @@
 /**
- * GraphGovernanceEngine — orchestrator for a single graph (Spec 03 §11).
+ * GraphGovernanceEngine — orchestrator for a single graph (Spec 04 §11).
  *
  * Architecture:
- *   - Scope-set resolution (§6.1): every graph reachable via mutually-accepted
- *     `participates_in` edges contributes constraints. Multi-parent and
- *     holonic (bidirectional) participation are first-class — same predicate,
- *     just different declaration patterns.
- *   - Constraints **accumulate** across the scope set. NO "most-specific wins"
- *     override (Spec 03 §4.2).
- *   - Composition is **deny-wins** per kind, then ANDed across kinds
- *     (Spec 03 §6.3).
- *   - Audit attribution: the rejecting constraint with lowest depth, ties
- *     broken by lex-greater id, is recorded in `rejectedBy`. This does not
- *     affect the decision.
+ *   - Per-graph validation (Spec 04 §6): each graph carries its own
+ *     constraints and validates writes against its own local state.
+ *     Cross-graph composition is application-layer (Spec 04 Appendix A).
+ *   - Same-kind constraints accumulate within the graph; deny-wins per
+ *     kind (Spec 04 §4.2, §6.3).
+ *   - Audit attribution: the rejecting constraint with lex-greater id is
+ *     recorded in `rejectedBy` (audit only — the decision is deny-wins).
  *   - Capability is built in (`verifyCapability`); other kinds (temporal,
- *     content, credential, …) are supplied as handler plug-ins (§9.4).
- *   - Open mode skips capability enforcement only; non-capability kinds
- *     still apply (Spec 03 §5.1, §5.3).
+ *     content, credential, …) are supplied as handler plug-ins (Spec 04 §9.3).
+ *   - Open mode skips capability enforcement only; other constraint kinds
+ *     still apply (Spec 04 §5.1, §5.3).
  */
 
 import { GOV } from './predicates.js';
@@ -191,8 +187,8 @@ export class GraphGovernanceEngine {
    * naturally skipped because there is no content.
    *
    * Returns `{ allowed: true }` either when the action passes the chain
-   * walk OR when no constraint in the scope set covers the requested action
-   * (unrestricted-access case).
+   * walk OR when the graph carries no constraint covering the requested
+   * action (unrestricted-access case).
    */
   async validateAction(
     action: string,
@@ -235,10 +231,7 @@ export class GraphGovernanceEngine {
   }
 
   async constraintsFor(contextDid: string = this._ctx.graphDid): Promise<GraphConstraint[]> {
-    // Note: caller-supplied graph is the new scope-set origin.
-    const scope = contextDid === this._ctx.graphDid
-      ? await resolveScopeSet(this._ctx.graphDid, this._ctx)
-      : await resolveScopeSet(contextDid, this._ctx);
+    const scope = await resolveScopeSet(contextDid, this._ctx);
     return collectConstraints(scope, this._ctx);
   }
 
@@ -271,7 +264,7 @@ export class GraphGovernanceEngine {
     return caps;
   }
 
-  /** Resolve the writing graph's current scope set (Spec 04 §6.1). */
+  /** Returns the trivial single-graph "scope" — kept for API stability. */
   async resolveScope(): Promise<ScopeSet> {
     return resolveScopeSet(this._ctx.graphDid, this._ctx);
   }

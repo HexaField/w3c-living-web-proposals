@@ -186,10 +186,11 @@ describe('Enforcement mode', () => {
   });
 });
 
-describe('Scope resolution', () => {
-  test('walks context://participates_in upward', async () => {
-    // Set up: child graph participates in parent. Use makeContext queries
-    // against `graph` which holds the participation triple.
+describe('Per-graph scope (Spec 04 §6)', () => {
+  test('scope contains exactly the target graph; participation declarations have no governance effect', async () => {
+    // Even with a mutual participates_in / accepts_participation pair, the
+    // scope is just the target graph. Participation is a content-discovery
+    // signal in this framework, not a governance composition.
     await graph.addTriple({
       subject: GRAPH_DID,
       predicate: CONTEXT.PARTICIPATES_IN,
@@ -203,21 +204,8 @@ describe('Scope resolution', () => {
 
     const { resolveScopeSet } = await import('../index.js');
     const scope = await resolveScopeSet(GRAPH_DID, makeContext());
-    expect([...scope.graphs.keys()].sort()).toEqual([GRAPH_DID, 'did:graph:parent'].sort());
-    expect(scope.graphs.get(GRAPH_DID)).toBe(0);
-    expect(scope.graphs.get('did:graph:parent')).toBe(1);
-  });
-
-  test('ignores participation without mutual acceptance', async () => {
-    await graph.addTriple({
-      subject: GRAPH_DID,
-      predicate: CONTEXT.PARTICIPATES_IN,
-      object: 'did:graph:parent',
-    });
-    // No accepts_participation triple — the parent is not honoured.
-    const { resolveScopeSet } = await import('../index.js');
-    const scope = await resolveScopeSet(GRAPH_DID, makeContext());
     expect([...scope.graphs.keys()]).toEqual([GRAPH_DID]);
+    expect(scope.graphs.get(GRAPH_DID)).toBe(0);
   });
 });
 

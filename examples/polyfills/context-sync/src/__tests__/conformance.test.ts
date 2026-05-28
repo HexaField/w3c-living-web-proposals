@@ -21,6 +21,8 @@ import {
   GraphDiff,
   createContextDiff,
   computeRevision,
+  computeCommitId,
+  verifyBundleSignature,
   deriveSpaceUri,
 } from '../index.js';
 
@@ -29,11 +31,13 @@ describe('§5.1 GraphDiff', () => {
     const diff = new GraphDiff({
       graphDid: 'did:graph:z6Mkhabc',
       revision: 'deadbeef',
+      commitId: 'cafebabe',
       additions: [],
       removals: [],
       dependencies: [],
       author: 'did:key:author',
       timestamp: '2023-11-15T22:13:20.000Z',
+      signature: 'sig-stub',
     });
     expect(Object.isFrozen(diff)).toBe(true);
     expect(Object.isFrozen(diff.additions)).toBe(true);
@@ -41,14 +45,38 @@ describe('§5.1 GraphDiff', () => {
     expect(Object.isFrozen(diff.dependencies)).toBe(true);
   });
 
-  it('carries the originating graph DID', () => {
-    const diff = createContextDiff({
+  it('carries the originating graph DID', async () => {
+    const diff = await createContextDiff({
       graphDid: 'did:graph:z6Mkhabc',
       additions: [],
       removals: [],
       author: 'did:key:author',
+      sign: async () => 'sig-stub',
     });
     expect(diff.graphDid).toBe('did:graph:z6Mkhabc');
+  });
+
+  it('records the commit identity binding author/timestamp/leafCap', async () => {
+    const d1 = await createContextDiff({
+      graphDid: 'did:graph:z6Mkhabc',
+      additions: [],
+      removals: [],
+      author: 'did:key:authorA',
+      timestamp: '2023-11-15T22:13:20.000Z',
+      sign: async () => 'sig-A',
+    });
+    const d2 = await createContextDiff({
+      graphDid: 'did:graph:z6Mkhabc',
+      additions: [],
+      removals: [],
+      author: 'did:key:authorB',
+      timestamp: '2023-11-15T22:13:20.000Z',
+      sign: async () => 'sig-B',
+    });
+    // Same triple-set → same revision.
+    expect(d1.revision).toBe(d2.revision);
+    // Different authors → different commitId (Spec 05 §5.2.2).
+    expect(d1.commitId).not.toBe(d2.commitId);
   });
 });
 
@@ -74,6 +102,64 @@ describe('§5.2 Revision', () => {
     expect(computeRevision('did:graph:z6Mkha', [], [], [])).not.toBe(
       computeRevision('did:graph:z6Mkhb', [], [], []),
     );
+  });
+});
+
+describe('§5.2.2 commitId + signature', () => {
+  it('commitId is deterministic for the same inputs', () => {
+    const c1 = computeCommitId('rev-abc', 'did:key:alice', '2026-01-01T00:00:00.000Z', 'leaf:cap-1');
+    const c2 = computeCommitId('rev-abc', 'did:key:alice', '2026-01-01T00:00:00.000Z', 'leaf:cap-1');
+    expect(c1).toBe(c2);
+  });
+
+  it('commitId changes when leaf cap id changes', () => {
+    const a = computeCommitId('rev-abc', 'did:key:alice', '2026-01-01T00:00:00.000Z', 'leaf:cap-1');
+    const b = computeCommitId('rev-abc', 'did:key:alice', '2026-01-01T00:00:00.000Z', 'leaf:cap-2');
+    expect(a).not.toBe(b);
+  });
+
+  it('verifyBundleSignature rejects when revision was tampered', async () => {
+    const diff = await createContextDiff({
+      graphDid: 'did:graph:victim',
+      additions: [],
+      removals: [],
+      author: 'did:key:alice',
+      sign: async () => 'sig-stub',
+    });
+    // Mutate the bundle: pretend revision is something else.
+    const tampered = new GraphDiff({ ...diff, revision: '0'.repeat(64) });
+    const r = await verifyBundleSignature(tampered, async () => true);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe('revision_mismatch');
+  });
+
+  it('verifyBundleSignature rejects when signature does not verify', async () => {
+    const diff = await createContextDiff({
+      graphDid: 'did:graph:victim',
+      additions: [],
+      removals: [],
+      author: 'did:key:alice',
+      sign: async () => 'sig-stub',
+    });
+    const r = await verifyBundleSignature(diff, async () => false);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toBe('signature_invalid');
+  });
+
+  it('verifyBundleSignature passes when the verifier accepts the recomputed commitId', async () => {
+    const diff = await createContextDiff({
+      graphDid: 'did:graph:victim',
+      additions: [],
+      removals: [],
+      author: 'did:key:alice',
+      sign: async () => 'sig-stub',
+    });
+    const r = await verifyBundleSignature(diff, async (commitId, sig) => {
+      expect(commitId).toBe(diff.commitId);
+      expect(sig).toBe('sig-stub');
+      return true;
+    });
+    expect(r.ok).toBe(true);
   });
 });
 

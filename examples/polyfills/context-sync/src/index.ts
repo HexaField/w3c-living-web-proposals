@@ -4,6 +4,7 @@ export {
   SignalEvent,
   PeerEvent,
   SyncStateChangeEvent,
+  SubscriptionEvent,
 } from './types.js';
 
 export type {
@@ -19,7 +20,13 @@ export type {
 } from './types.js';
 
 export { deriveSpaceUri } from './space.js';
-export { createContextDiff, computeRevision } from './diff.js';
+export {
+  createContextDiff,
+  computeRevision,
+  computeCommitId,
+  verifyBundleSignature,
+  type SignCommitFn,
+} from './diff.js';
 
 export { installContextSyncExtension } from './extension.js';
 export {

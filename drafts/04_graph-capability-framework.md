@@ -9,7 +9,9 @@
 
 ## Abstract
 
-This specification defines a capability-based authorisation framework for linked data **graphs** as defined in [[PERSONAL-LINKED-DATA-GRAPHS]]. It defines a **root capability** minted at graph creation, a delegation algebra for [[ZCAP-LD]] capabilities targeting graph DIDs, a **caveat type system** with immutable per-delegation attenuation, three explicit **enforcement modes** (Open / Announced / Enforced), and a **scope-set** mechanism by which constraints from mutually-participating graphs accumulate over writes to any graph in the set. Participation declarations are directional and consent-gated; declaring participation in both directions creates a **holonic** relationship where governance flows both ways, while a single-direction declaration creates a conventional **hierarchical** relationship. The framework is *vocabulary-neutral*: it defines the structure of capability chains and caveats, and an extension point through which specific constraint kinds (temporal, content, credential, shape) plug in via other specifications or applications. Authority is constituted, not granted — no principal sits above the structure; capability chains trace to each graph's own root capability. A ZCAP's `invoker` is a DID — typically an individual's `did:key` — and the framework treats a graph's DID (per [[PERSONAL-LINKED-DATA-GRAPHS]] §3.3, populated by mechanisms such as [[GROUP-IDENTITY]]) as an additional invoker form: when a capability is invoked by a delegate of a graph's DID, the framework consults that DID's document to verify the signer.
+This specification defines a capability-based authorisation framework for linked data **graphs** as defined in [[PERSONAL-LINKED-DATA-GRAPHS]]. It defines a **root capability** minted at graph creation, a delegation algebra for [[ZCAP-LD]] capabilities targeting graph DIDs, a **caveat type system** with immutable per-delegation attenuation, and three explicit **enforcement modes** (Open / Announced / Enforced). The framework is *vocabulary-neutral*: it defines the structure of capability chains and caveats, and an extension point through which specific constraint kinds (temporal, content, credential, shape) plug in via other specifications or applications. Authority is constituted, not granted — no principal sits above the structure; capability chains trace to each graph's own root capability. A ZCAP's `invoker` is a DID — typically an individual's `did:key` — and the framework treats a graph's DID (per [[PERSONAL-LINKED-DATA-GRAPHS]] §3.3, populated by mechanisms such as [[GROUP-IDENTITY]]) as an additional invoker form: when a capability is invoked by a delegate of a graph's DID, the framework consults that DID's document to verify the signer.
+
+**Each persistent graph is its own governance boundary.** All constraints, capabilities, and revocations that govern writes to a graph live in that graph's own triples, and validation runs against the target graph's local state alone. Patterns that span multiple graphs — shared authority, federated rule sets — are composed at the application layer from the substrate's primitives, with mutual DID-document delegation as the canonical mechanism ([Appendix A](#appendix-a-cross-graph-patterns-at-the-application-layer)).
 
 ---
 
@@ -26,11 +28,11 @@ This document is a draft Community Group Report. It has no official W3C standing
 3. [Terminology](#3-terminology)
 4. [Data Model](#4-data-model)
 5. [Enforcement Modes](#5-enforcement-modes)
-6. [Scope Resolution (Graph Participation)](#6-scope-resolution-graph-participation)
+6. [Constraint Collection and Composition](#6-constraint-collection-and-composition)
 7. [ZCAP Verification Algorithm](#7-zcap-verification-algorithm)
 8. [Capability Attenuation](#8-capability-attenuation)
 9. [Caveat Type System](#9-caveat-type-system)
-10. [DID-Document Writes Are Governance Writes](#10-did-document-writes-are-governance-writes)
+10. [Governance of DID-Document Writes](#10-governance-of-did-document-writes)
 11. [Governance API on Graph](#11-governance-api-on-graph)
 12. [Rule Evolution](#12-rule-evolution)
 13. [Security Considerations](#13-security-considerations)
@@ -79,12 +81,13 @@ Communities crystallise authorisation over time, not all at once. This specifica
 
 1. **Ontology-agnostic.** The framework references predicates and DIDs, never application-specific entity names.
 2. **Rules as data.** Governance rules are triples. Modifying rules uses the same mechanisms as content.
-3. **Bidirectional governance via mutual participation.** Constraints flow along consent-gated `context://participates_in` edges. A single-direction declaration produces conventional hierarchical inheritance (parent rules bind child); bidirectional declarations produce holonic governance (both rule sets bind both graphs). One mechanism covers both ([§6](#6-scope-resolution-graph-participation)).
-4. **Constraints accumulate; never silently override.** A child's same-kind constraint does NOT replace an ancestor's. Both apply. Same-kind composition is **deny-wins**. Children cannot escape ancestor rules by re-declaring loosely.
+3. **Per-graph validation.** Each graph carries its own constraints, capabilities, and revocations, and validates writes against its own local state. This is what makes peers' accept/reject decisions deterministic and convergent.
+4. **Same-kind composition is deny-wins.** When a graph carries multiple constraints of the same kind, the write is accepted only if every one accepts. Across kinds, results are ANDed.
 5. **Consensus-enforced.** All peers run the same logic on the same data, producing deterministic accept/reject decisions.
 6. **Fail-closed.** When in doubt the engine MUST reject.
-7. **Constitutionalisation.** Each constituent graph's root capability is bootstrapped from its creating graph's delegation but becomes the new graph's own root. The creating graph cannot reach into the new graph's root chain after bootstrap; the bootstrap delegation chain is *cut* at the boundary ([§4.3](#43-governance-bootstrap-root-capability), [§7](#7-zcap-verification-algorithm)).
+7. **Constitutionalisation.** A new graph's root capability is signed by an authorised delegate of its parent graph (or by the creator's `did:key` for standalone graphs). Once written, the bootstrap delegation becomes the new graph's own root: the chain is *cut* there, and the new graph is sovereign over its own evolution from that moment ([§4.3](#43-governance-bootstrap-root-capability), [§7](#7-zcap-verification-algorithm)).
 8. **Immutable caveats.** Each delegation MAY add caveats but MUST NOT modify or remove caveats present on its parent ([§8](#8-capability-attenuation)).
+9. **Cross-graph patterns at the application layer.** Shared authority across multiple graphs is composed from the substrate's primitives — most directly via mutual DID-document delegation ([Appendix A](#appendix-a-cross-graph-patterns-at-the-application-layer)).
 
 ### 1.6 Relationship to Other Specifications
 
@@ -108,7 +111,7 @@ Specific constraint kinds (temporal, content, credential, shape) are out of scop
 
 The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" are to be interpreted as described in [[RFC2119]] and [[RFC8174]].
 
-A conforming **governance engine** is a software component that implements the algorithms in Sections [§6](#6-scope-resolution-graph-participation), [§7](#7-zcap-verification-algorithm), and [§8](#8-capability-attenuation), supports all three enforcement modes ([§5](#5-enforcement-modes)), and exposes the API defined in [§11](#11-governance-api-on-graph).
+A conforming **governance engine** is a software component that implements the algorithms in Sections [§6](#6-constraint-collection-and-composition), [§7](#7-zcap-verification-algorithm), and [§8](#8-capability-attenuation), supports all three enforcement modes ([§5](#5-enforcement-modes)), and exposes the API defined in [§11](#11-governance-api-on-graph).
 
 A conforming **constraint-kind plug-in** (as may be supplied by another specification or by applications) MUST implement the verification interface defined in [§9.3](#93-plug-in-mechanism).
 
@@ -132,16 +135,7 @@ A conforming implementation **REQUIRES** access to graphs with DIDs whose docume
 <dd>A set of triples with <code>governance://</code> predicates defining a rule. Classified by <em>kind</em>; specific kinds are out of scope for this specification (see [§9.3](#93-plug-in-mechanism)).</dd>
 
 <dt>Constraint Binding</dt>
-<dd>A triple linking a constraint to the graph it governs: <code>&lt;graph-did&gt; -[governance://has_constraint]→ &lt;constraint&gt;</code>.</dd>
-
-<dt>Scope Set</dt>
-<dd>The set of graphs whose constraints apply to a write in some target graph: the target plus every graph reachable from it by walking <code>context://participates_in</code> edges that are confirmed by the corresponding <code>context://accepts_participation</code> declaration on the other side. The set is unordered; depth is recorded per-graph for audit only ([§6](#6-scope-resolution-graph-participation)).</dd>
-
-<dt>Hierarchical Participation</dt>
-<dd>The case where exactly one of two graphs declares <code>participates_in</code> the other (with mutual acceptance). Only the participatee's constraints bind the participator's writes; not vice versa.</dd>
-
-<dt>Holonic Participation</dt>
-<dd>The case where both graphs declare <code>participates_in</code> each other (with mutual acceptance on both sides). Each graph's constraints bind writes in the other. The same mechanism as hierarchical participation, just declared in both directions.</dd>
+<dd>A triple linking a constraint to the graph it governs: <code>&lt;graph-did&gt; -[governance://has_constraint]→ &lt;constraint&gt;</code>. A constraint binds only the graph it is attached to; it does not propagate to or from related graphs.</dd>
 
 <dt>Root Capability</dt>
 <dd>The ZCAP minted when a graph comes into existence. Initially held by the creator; delegatable like any other ZCAP.</dd>
@@ -183,7 +177,7 @@ Every constraint instance MUST have:
 
 The framework recognises the kind `"capability"` natively (defined in [§4.5](#45-capability-constraints-zcap-based)). All other kinds are supplied by other specifications or application-defined plug-ins ([§9.3](#93-plug-in-mechanism)). The framework engine MUST treat unknown kinds conservatively: if a registered plug-in handles the kind, defer to it; otherwise REJECT the operation (fail-closed).
 
-A constraint applies to the graph to which it is bound by `governance://has_constraint` and — via [§6](#6-scope-resolution-graph-participation) — to writes in every graph in that graph's scope set.
+A constraint applies to the graph to which it is bound by `governance://has_constraint` and to writes in that graph only (see [§6](#6-constraint-collection-and-composition)).
 
 ### 4.2 Constraint Binding
 
@@ -193,31 +187,18 @@ A constraint is attached to a graph via:
 <graph-did> -[governance://has_constraint]→ <constraint-id>
 ```
 
-A graph MAY have zero or more constraint bindings.
+A graph MAY have zero or more constraint bindings. A constraint governs writes to the graph it is bound to.
 
-**Scope-set inheritance.** Constraints flow along `context://participates_in` edges with mutual acceptance (see [§6](#6-scope-resolution-graph-participation) for the algorithm and [§6.2](#62-hierarchical-vs-holonic-participation) for the distinction between hierarchical and holonic configurations). A write to graph W is evaluated against the constraints bound to *every* graph in W's scope set.
+**Same-kind composition is deny-wins.** Multiple constraints of the same `constraint_kind` are evaluated independently; the write is rejected if any of them rejects. Constraints accumulate within the graph and compose conjunctively.
 
-```
-Graph P
-  └── governance://has_constraint → [credential requirement: proof of humanity]
-
-Graph C  (declares context://participates_in → P inside C; P accepts)
-  └── governance://has_constraint → [temporal: 30s cooldown]
-  └── writes here are subject to BOTH constraints (P's credential rule + C's temporal rule)
-```
-
-**Constraints accumulate.** When constraints of the same `constraint_kind` exist on multiple graphs in the scope set, **all of them apply**. There is no replacement, override, or "most-specific wins" rule. A child's same-kind constraint adds to, but never displaces, an ancestor's. To relax a constraint inherited from another graph, an authorised agent on the inheriting graph MUST modify the originating constraint at its source — children cannot escape ancestor rules by re-declaring them loosely.
-
-**Deny-wins same-kind composition.** When multiple same-kind constraints evaluate the same write and produce different results, the write is rejected if *any* of them reject ([§6.3](#63-precedence-and-conflict-resolution)).
-
-A parent cannot reach into a child's graph to modify the child's constraints. Once a child is bootstrapped, it owns its own rules. Constraint inheritance is one-way per declaration: writes in graph A are bound by graph B's rules only if A `participates_in` B with mutual acceptance from B. Bidirectional binding requires both directions of declaration.
+**Cross-graph composition is application-level** ([Appendix A](#appendix-a-cross-graph-patterns-at-the-application-layer)). For example, the parent's bootstrap helper MAY copy current constraint triples into a new child graph's initial state; a child MAY subscribe to a parent's rule-update events and apply them under its own `updateGovernance`.
 
 ### 4.3 Governance Bootstrap (Root Capability)
 
 When a graph is created and immediately given a DID per [[GROUP-IDENTITY]], a **root capability** is minted as a ZCAP. The bootstrap is signed:
 
 - By the creator's `did:key` if the graph is created standalone.
-- By a `capabilityDelegation` delegate of a participating graph's DID if the new graph is created as a participant of that graph. In this case, the creator MUST already hold `updateGovernance` on the participating graph at the moment of bootstrap, because bootstrap involves writing `accepts_participation` into the parent (a governed write per [§5](#5-enforcement-modes)).
+- By a `capabilityDelegation` delegate of an existing graph's DID if the new graph is created under that graph's authority (constitutional bootstrap). The signing key need only hold `capabilityDelegation` standing on the parent's DID at the moment of bootstrap; no write into the parent is required.
 
 The root capability is recorded in the new graph as a flattened [[ZCAP-LD]] document. Using the namespace `zcap = https://w3id.org/zcap/v1#`:
 
@@ -237,15 +218,15 @@ The root capability is recorded in the new graph as a flattened [[ZCAP-LD]] docu
 `<urn:living-web:zcap:BootstrapRoot>` is a **sentinel value** defined by this specification (not a resolvable ZCAP). When the chain-walk algorithm ([§7](#7-zcap-verification-algorithm)) encounters a capability whose `parentCapability` is `BootstrapRoot`, it terminates the walk after validating:
 
 1. `cap.id` matches `<graph-did> -[governance://root_capability]→ ?` for the graph being written to (i.e., this is genuinely the local root).
-2. The bootstrap proof was produced either by the creator's `did:key` (standalone case) or by a key that was at the time a `capabilityDelegation` delegate of a graph the new graph then declared participation in (constituted case). After constitutionalisation, that key's standing in the new graph is *cut* — no current delegate status of the parent confers any standing on writes within the child.
+2. The bootstrap proof was produced either by the creator's `did:key` (standalone case) or by a key that was, at the time, a `capabilityDelegation` delegate on the parent graph's DID document (constitutional case).
 
-The root capability is **constitutionalised**: the bootstrap delegation becomes the new graph's own root. The creating graph cannot subsequently modify the new graph's governance, and the chain walk does NOT walk past `BootstrapRoot` into the parent's chain. Delegations from the new graph's root evolve independently.
+Bootstrap is a **one-way constitutional act**. The bootstrap delegation becomes the new graph's own root; the chain walk terminates at `BootstrapRoot` and never crosses into the parent's chain. From that moment, the new graph is sovereign — its delegations evolve independently of the parent's.
 
-**Bootstrap atomicity (normative).** When a child graph is created as a participant of a parent graph, the runtime MUST treat the following as a single atomic diff: (a) the child's `governance://root_capability` triple, (b) the child's `context://participates_in <parent.did>` triple, and (c) the parent's `context://accepts_participation <child.did>` triple. Peers MUST NOT process any of these triples in isolation: either all three are accepted into local state together, or none are. Without atomicity, there exists a window in which the child has declared participation but the parent has not yet accepted (or vice versa), during which the scope-set algorithm ([§6.1](#61-scope-set-resolution)) would not yet include the parent's constraints — writes to the child during that window could escape parent rules. Atomicity closes this gap and is the load-bearing invariant for the constitutionalisation guarantee.
+Applications that want the child to start with a snapshot of the parent's current rules MAY have the bootstrap helper copy the parent's constraint triples into the new graph's initial state. The copies become the child's own rules, evolving under the child's own governance.
 
 ### 4.4 Governance Constraint Conflicts
 
-When constraints disagree on a write, the result is determined by [§6.3](#63-precedence-and-conflict-resolution). The canonical rule is **deny-wins**: if any same-kind constraint evaluating the write rejects, the write is rejected. The audit field `rejectedBy` is attributed to the rejecting constraint at the lowest delegation depth (the most-authoritative); ties are broken by lexicographically greater constraint ID. This affects only the audit record; the rejection itself is decided by deny-wins, not by precedence.
+When constraints disagree on a write, the result is determined by [§6.3](#63-composition-deny-wins). The canonical rule is **deny-wins**: if any same-kind constraint evaluating the write rejects, the write is rejected. The audit field `rejectedBy` is attributed to one of the rejecting constraints (lexicographically greater id as a tiebreaker). This affects only the audit record; the rejection itself is decided by deny-wins.
 
 ### 4.5 Capability Constraints (ZCAP-based)
 
@@ -264,9 +245,9 @@ Optional:
 <constraint-id> -[governance://capability_predicates]→ <comma-separated predicate URIs>
 ```
 
-Restricts which predicates require capability verification. If absent or empty, all predicates within scope require verification.
+Restricts which predicates require capability verification. If absent or empty, all predicates in the graph require verification.
 
-The presence of a capability constraint in scope makes capability verification mandatory for matching writes (subject to the enforcement mode in [§5](#5-enforcement-modes)). Earlier drafts defined a `capability_enforcement` field with `"required"` / `"optional"` values; the `"optional"` semantics overlap with Announced mode without adding capability, so the field has been removed. A graph that wants capability checking to be advisory uses Announced mode; a graph that wants no capability checking declares no capability constraint.
+Capability checking is mandatory for matching writes whenever a graph carries a capability constraint, subject to the enforcement mode in [§5](#5-enforcement-modes). To make capability checking advisory, use Announced mode; to disable it, declare no capability constraint.
 
 #### 4.5.2 Self-Reference: Why `resource` MUST Be the Graph DID
 
@@ -318,7 +299,7 @@ A ZCAP is linked to its holder by the predicate `governance://has_zcap` whose ob
 <agent-did> -[governance://has_zcap]→ <cap-id>
 ```
 
-The engine resolves a `has_zcap` link by querying for all triples sharing the `<cap-id>` subject (within the scope set, per [§7](#7-zcap-verification-algorithm)).
+The engine resolves a `has_zcap` link by querying for all triples sharing the `<cap-id>` subject (in the writing graph, per [§7](#7-zcap-verification-algorithm)).
 
 #### 4.5.4 Actions
 
@@ -411,75 +392,43 @@ In Announced mode, caveats are checked and the result is recorded but never caus
 
 ---
 
-## 6. Scope Resolution (Graph Participation)
+## 6. Constraint Collection and Composition
 
-This section defines how the governance engine determines which graphs' constraints apply to an incoming write.
+This section defines how the governance engine assembles the constraints that apply to an incoming write.
 
-### 6.1 Scope-Set Resolution
+### 6.1 Per-Graph Scope
 
-Given an incoming write to graph `W`:
+A write to graph W is evaluated against **the constraints bound to W**. Each graph is its own governance boundary; validation is a purely local operation that reads only from W.
 
-1. Let *scopeSet* = set containing `W`, with `depth[W] = 0`.
-2. Let *frontier* = queue initialised with `W`.
-3. While *frontier* is non-empty:
-   1. Pop *current*.
-   2. Query *current*'s triples for all `<current> -[context://participates_in]→ ?target`.
-   3. For each *target* not already in *scopeSet*:
-      - **Mutual-acceptance check.** Query *target*'s triples for `<target> -[context://accepts_participation]→ <current>`. The accepts_participation triple's reifier author MUST be a key listed in `capabilityDelegation` on *target*'s DID document at the time of validation. If absent or signed by a non-delegate, **ignore the participation claim** and continue (do NOT add *target*).
-      - **Cycle handling.** If *target* is in *scopeSet*, skip (already counted at lower depth).
-      - Add *target* to *scopeSet* with `depth[target] = depth[current] + 1`. Enqueue *target*.
-4. Return *scopeSet* (with depths).
+This is what makes peer decisions deterministic and convergent: every honest peer with the same view of W reaches the same accept/reject conclusion, with no partial-mount divergence or transitive sync dependencies. Cross-graph patterns are composed at the application layer ([Appendix A](#appendix-a-cross-graph-patterns-at-the-application-layer)).
 
-Implementations MUST enforce a maximum *scopeSet* size of 100 graphs. Beyond this, validation REJECTs with `module: "scope-overflow"`.
+### 6.2 Constraint Collection
 
-**The set is unordered for evaluation purposes.** Every graph in the *scopeSet* contributes its constraints with equal standing. The recorded `depth` is for audit attribution only (per [§6.3](#63-precedence-and-conflict-resolution)). When a graph is reachable via multiple paths (multi-parent DAG), the *minimum* depth among those paths is recorded.
+To collect the constraints that apply to a write in W:
 
-**Why participation is mutually declared.** A graph unilaterally claiming participation in another would allow inheritance hijacking — a malicious graph could declare participation in a high-trust target to claim its credentials. The target's mutual `accepts_participation` link, signed by an authorised delegate, prevents this.
+1. Let *constraints* = empty list.
+2. Query W's triples for `<W> -[governance://has_constraint]→ ?c`.
+3. For each `?c`, resolve to a constraint instance and add to *constraints*.
+4. Return *constraints*.
 
-### 6.2 Hierarchical vs Holonic Participation
-
-Participation is **directional**: `A -[participates_in]→ B` means *A is joining B's governance*. When mutually accepted, B's constraints bind writes in A. The reverse is not implied.
-
-- **Hierarchical** (one direction only): Only `A → B` declared and accepted. B's rules bind A's writes; A's rules do not bind B's writes. Conventional parent-child semantics.
-
-- **Holonic** (both directions): BOTH `A → B` AND `B → A` declared, BOTH accepted by the corresponding target. Each graph's rules bind writes in the other. Symmetric governance. This is the substrate's expression of holonic structure: two graphs that are each whole-and-part with respect to the other.
-
-The same mechanism — `participates_in` + `accepts_participation` — covers both. The semantics fall out of which declarations exist. The §6.1 algorithm produces the correct *scopeSet* in both cases without special-casing.
-
-Bidirectional declaration is the more general case; hierarchical is the case where only one direction is asserted. There is no separate "mode" predicate.
-
-### 6.3 Precedence and Conflict Resolution
+### 6.3 Composition: Deny-Wins
 
 Validation outcome — accept or reject — is determined by the **deny-wins** rule:
 
-- **Within a constraint kind**, the write is REJECTED if *any* in-scope constraint of that kind rejects it. There is no "most-specific overrides".
-- **Across kinds**, all kinds are evaluated; deny-wins applies per kind, then the overall result is REJECT if any kind rejected.
-- **Constraints accumulate**: a child's same-kind constraint does NOT replace an ancestor's. Both apply, both must accept.
+- **Within a constraint kind**, the write is REJECTED if *any* constraint of that kind rejects it. Same-kind constraints accumulate conjunctively.
+- **Across kinds**, every kind is evaluated; deny-wins applies per kind; the overall result is REJECT if any kind rejected.
 
-The recorded `depth` is used **only for audit attribution**, not for outcome:
+When a write is rejected, the audit result names a rejecting constraint, with ties broken by lexicographically greater constraint id.
 
-- When the write is rejected, `rejectedBy` is the lowest-depth (most-authoritative) constraint that rejected. Ties broken by lexicographically greater constraint ID.
-- The accept/reject decision itself does not depend on depth.
+### 6.4 Caching
 
-### 6.4 Constraint Collection
-
-Given *scopeSet* with depths:
-
-1. Let *constraints* = empty list.
-2. For each graph G in *scopeSet*:
-   1. Query G's triples for `<G> -[governance://has_constraint]→ ?c`.
-   2. Resolve each `?c` to a constraint instance, tag with `depth[G]`, add to *constraints*.
-3. Return *constraints*.
-
-### 6.5 Caching
-
-Implementations SHOULD cache *scopeSet* results and invalidate when any participation link (`participates_in` / `accepts_participation`) or constraint binding in any in-scope graph changes.
+Implementations SHOULD cache the constraint list for W and invalidate it when any constraint binding (`governance://has_constraint`) or constraint definition in W changes.
 
 ---
 
 ## 7. ZCAP Verification Algorithm
 
-**Input:** An operation descriptor (either a triple to be written, or a non-triple operation), the author's DID, the target graph W (whose `did` is `W.did`), the *scopeSet* from [§6.1](#61-scope-set-resolution), the current local state of all in-scope graphs, the enforcement mode, and an OPTIONAL explicit `action` override.
+**Input:** An operation descriptor (either a triple to be written, or a non-triple operation), the author's DID, the target graph W (whose `did` is `W.did`), the current local state of W, the enforcement mode, and an OPTIONAL explicit `action` override.
 
 **Algorithm:**
 
@@ -487,30 +436,23 @@ Implementations SHOULD cache *scopeSet* results and invalidate when any particip
 
 2. **Determine action.** If the caller supplied an explicit `action` override, use it directly (this is the standard path for *non-triple* operations such as a read-mount authorisation check, which has no predicate to derive from). Otherwise let *action* be the action implied by the operation's predicate per [§4.5.4.1](#4541-action-derivation).
 
-3. **Collect capability constraints.** From [§6.4](#64-constraint-collection), select constraints with `constraint_kind = "capability"`. If none, return ACCEPT.
+3. **Collect capability constraints.** From [§6.2](#62-constraint-collection), select W's constraints with `constraint_kind = "capability"`. If none, return ACCEPT.
 
 4. **Predicate-coverage check.** If any selected constraint's `governance://capability_predicates` is non-empty and the triple's predicate is in none of them, capability checking does not apply to this predicate — return ACCEPT (other constraints still evaluate).
 
-5. **Find the author's capabilities.** Query for `<author> -[governance://has_zcap]→ ?cap` across **every graph in the scopeSet** (not just W), dedupe by `cap-id`, and resolve each. A capability whose `invoker` is a graph G's DID is also eligible *if* the author is currently in G's `capabilityInvocation` set on G's DID document at validation time.
+5. **Find the author's capabilities.** Query for `<author> -[governance://has_zcap]→ ?cap` in W's triples, dedupe by `cap-id`, and resolve each. A capability whose `invoker` is a graph G's DID is also eligible *if* the author is currently in G's `capabilityInvocation` set on G's DID document at validation time.
 
 6. **Evaluate each candidate capability.** A capability passes if all of the following succeed; any failure means skip and try the next candidate.
    1. **Action match.** *action* MUST be in `cap.actions`.
-   2. **Resource match.** `cap.resource` MUST equal:
-      - W's DID (the stable, content-independent identifier), OR
-      - W's current `iri` (deliberately snapshot-scoped capability), OR
-      - the DID of any other graph in *scopeSet*.
-
-      IRI-resourced capabilities whose IRI no longer matches the current state of any in-scope graph do not apply.
-
-      **Capability accumulation across the scope set.** Because the resource match accepts any graph in *scopeSet* — not just W — capabilities issued in any participating graph contribute to authorisation in W. In hierarchical participation (`A → B` only), B is in A's scope set but A is *not* in B's, so B-resourced caps authorise A's writes but A-resourced caps do not authorise B's writes. In holonic participation (`A ↔ B`), both are in each other's scope set, so caps issued by either authorise writes in the other. This mirrors the symmetric way constraints accumulate ([§4.2](#42-constraint-binding)) and is the load-bearing mechanism for cross-graph holonic authority.
-   3. **Revocation check.** If a valid revocation triple targets `cap.id` and is locally observable, skip.
+   2. **Resource match.** `cap.resource` MUST equal W's DID (the stable, content-independent identifier) OR W's current `iri` (a deliberately snapshot-scoped capability). IRI-resourced capabilities whose IRI no longer matches W's current state do not apply.
+   3. **Revocation check.** If a valid revocation triple targets `cap.id` and is locally observable in W, skip.
    4. **Caveat check.** Evaluate each caveat against the triple + action + context ([§9](#9-caveat-type-system)). If any caveat fails, skip.
    5. **Chain verification.** Walk the parent chain starting from `cap`:
       1. If chain depth exceeds 10, skip.
       2. Verify the current capability's proof signature: the proof's signing key MUST be the parent capability's `invoker` (or, if that invoker is a graph DID, a current `capabilityDelegation` delegate on that DID's document at validation time).
-      3. **Delegation right.** The parent's `actions` MUST contain `delegateCapability`. A capability that does not convey delegation rights MUST NOT be used to issue children — the chain is broken at this step. (Exception: the BootstrapRoot terminus in step 6.5.4 is not subject to this check, since `BootstrapRoot` is a sentinel, not a capability with actions.)
-      4. **Bootstrap termination.** If `parentCapability == urn:living-web:zcap:BootstrapRoot`, validate that `cap.id` matches `<G> -[governance://root_capability]→ ?` for some graph G in *scopeSet*. If so, the chain is **cut here** — verification succeeds without further walking. The chain MUST NOT continue into any other graph's capability chain, even if the bootstrap proof was originally produced by an external graph's delegate ([§4.3](#43-governance-bootstrap-root-capability)).
-      5. Otherwise resolve `parentCapability` by querying for triples with subject `<parentCapability>` across the scopeSet. If unresolvable, skip the candidate.
+      3. **Delegation right.** The parent's `actions` MUST contain `delegateCapability`. A capability without delegation rights cannot issue children; the chain breaks here. (The `BootstrapRoot` terminus in the next step is exempt, as it is a sentinel, not a capability with actions.)
+      4. **Bootstrap termination.** If `parentCapability == urn:living-web:zcap:BootstrapRoot`, validate that `cap.id` matches `<W> -[governance://root_capability]→ ?`. On match, verification succeeds and the walk terminates ([§4.3](#43-governance-bootstrap-root-capability)).
+      5. Otherwise resolve `parentCapability` by querying for triples with subject `<parentCapability>` in W. If unresolvable, skip the candidate.
       6. Verify attenuation ([§8](#8-capability-attenuation)) between `cap` and parent.
       7. Verify parent is not revoked.
       8. Set `cap = parent`; increment depth; continue from step 6.5.2.
@@ -522,10 +464,10 @@ Implementations SHOULD cache *scopeSet* results and invalidate when any particip
 The same algorithm authorises non-triple operations — most notably the `mountContext` action invoked by [[CONTEXT-SYNC]] when a peer requests a read mount or a snapshot pull of a graph it does not yet hold. In that case:
 
 - The caller supplies `action = "mountContext"` explicitly (step 2 takes the override).
-- The operation has no `subject`/`predicate`/`object` triple, so step 4 (predicate-coverage check) is skipped, and in step 6.4 the engine MUST skip caveats whose handler reports `appliesToNonTripleOps = false` ([§9.3](#93-plug-in-mechanism)). The framework-core `expiry` caveat applies to non-triple operations. Plug-in caveats declare their own applicability; see [[CONSTRAINT-VOCABULARY]] §7 for the table covering the standard vocabulary.
-- All other steps proceed unchanged: scope-set construction, `has_zcap` lookup, chain walk (including delegation-right check), bootstrap termination, revocation, attenuation.
+- Step 4 (predicate-coverage check) is skipped. In step 6.4, the engine MUST skip caveats whose handler reports `appliesToNonTripleOps = false` ([§9.3](#93-plug-in-mechanism)). The framework-core `expiry` caveat applies; plug-in caveats declare their own applicability (see [[CONSTRAINT-VOCABULARY]] §7).
+- All other steps proceed unchanged.
 
-The presence of a `mountContext`-bearing capability constraint in the scope set (§4.5 / §6.4) is what *makes* a graph's read access governed. Graphs with no such constraint accept any read.
+A `mountContext`-bearing capability constraint on W (§4.5) is what makes W's read access governed; graphs with no such constraint accept any read.
 
 ---
 
@@ -534,7 +476,7 @@ The presence of a `mountContext`-bearing capability constraint in the scope set 
 A delegated capability MUST be a strict subset of its parent across:
 
 - **Actions.** `child.actions ⊆ parent.actions`.
-- **Resource.** `child.resource` equals `parent.resource`, OR `child.resource` is a graph in the scope set of `parent.resource` (i.e., delegation may narrow to a more specific graph within the same governance domain, never broaden).
+- **Resource.** `child.resource` equals `parent.resource`. Delegations stay within the graph the parent governs.
 - **Caveats (immutable).** Every caveat present on the parent MUST appear **byte-identical** on the child. The child MAY add new caveats. The child MUST NOT modify or remove any caveat present on the parent.
 
 The runtime MUST verify attenuation during chain walk. A capability that violates attenuation invalidates the chain.
@@ -616,13 +558,13 @@ For non-triple operations ([§7.1](#71-non-triple-operations)), the engine MUST 
 
 ---
 
-## 10. DID-Document Writes Are Governance Writes
+## 10. Governance of DID-Document Writes
 
-A graph's DID document is itself a set of triples in the graph (per [[GROUP-IDENTITY]] §4.4). Writes to those triples use the `did-document://*` predicate family, which the action-derivation rule in [§4.5.4.1](#4541-action-derivation) maps to the `updateDIDDocument` action — and are therefore governed by the standard chain walk in [§7](#7-zcap-verification-algorithm).
+A graph's DID document is a set of triples in the graph (per [[GROUP-IDENTITY]] §4.4). Writes to those triples use the `did-document://*` predicate family, which the action-derivation rule in [§4.5.4.1](#4541-action-derivation) maps to the `updateDIDDocument` action — and are therefore governed by the standard chain walk in [§7](#7-zcap-verification-algorithm).
 
 This specification defines only the action and its derivation. The DID-document predicates themselves (`add-method`, `remove-method`, `grant-section`, `revoke-section`), the delegate-section semantics (`capabilityInvocation`, `capabilityDelegation`, `assertionMethod`, `authentication`), brick-state guards for sole-delegate removal, and self-rotation atomicity are defined by [[GROUP-IDENTITY]] §5. The bootstrap root capability ([§4.3](#43-governance-bootstrap-root-capability)) includes `updateDIDDocument` by default so the creator can add the initial delegate set without further ceremony.
 
-This specification defines no multisig, threshold-signing, or aggregate-key schemes for the graph DID itself. Shared authority is expressed through the delegate set in the DID document; "this graph said it" is satisfied by any current delegate's signature.
+Shared authority over the graph DID is expressed through the delegate set in the DID document: "this graph said it" is satisfied by any current delegate's signature. Multisig, threshold signing, and aggregate-key schemes are out of scope.
 
 ---
 
@@ -648,7 +590,7 @@ enum EnforcementMode { "open", "announced", "enforced" };
 
 dictionary CapabilityProofInput {
   /** Ordered ZCAP delegation chain (leaf → root), as content-addressed references
-   *  resolvable within the scope set. */
+   *  resolvable in the target graph. */
   required sequence<USVString> chain;
   /** Optional verifiable-credential presentations consumed by `credential` caveats
    *  on the chain (per [[CONSTRAINT-VOCABULARY]] §7.10). */
@@ -666,8 +608,7 @@ dictionary GovernanceValidationResult {
 dictionary GraphConstraint {
   required USVString id;
   required USVString kind;
-  required USVString scope;       // graph DID this constraint is bound to
-  unsigned long depth;            // depth in the scope set (audit attribution)
+  required USVString scope;       // graph DID this constraint is bound to (= the target graph)
   record<USVString, USVString> properties;
 };
 
@@ -688,7 +629,7 @@ Evaluates whether the current identity would be permitted to add the triple. Exe
 
 ### 11.2 `constraintsFor()`
 
-Returns all constraints applying to a graph, including those inherited via the scope chain.
+Returns the constraints attached to the named graph (per [§6.2](#62-constraint-collection)). Constraints are per-graph; there is no inherited or cross-graph component.
 
 ### 11.3 `myCapabilities()`
 
@@ -760,7 +701,7 @@ Inheritance via `context://participates_in` MUST be mutual. Implementations that
 
 ### 13.7 Constraint Flooding
 
-Limit the number of constraints evaluated per validation (RECOMMENDED: 1000 per scope chain).
+Limit the number of constraints evaluated per validation (RECOMMENDED: 1000 per graph).
 
 ### 13.8 Unknown Constraint Kinds
 
@@ -864,31 +805,30 @@ const modCap = await admin.signCapability({
 ### 15.4 Bootstrap a Child Graph (Constitutionalisation)
 
 ```javascript
-// PRECONDITION: the creator currently holds `updateGovernance` on community.did.
-// Without it, the runtime cannot write the `accepts_participation` triple into
-// community and the bootstrap will reject.
+// PRECONDITION: the creator must currently hold capabilityDelegation
+// standing on community.did, so they can sign the new graph's root cap
+// on community's behalf.
 
 const general = await navigator.graph.create({ displayName: "#general" });
 await general.groupify();   // attaches general.did (per GROUP-IDENTITY)
-await general.addTriple(new Triple(general.did, "context://participates_in", community.did));
 
 // The runtime:
 //   1. Mints the new graph and attaches general.did via groupification.
 //   2. Issues a bootstrap ZCAP signed by an authorised `capabilityDelegation`
 //      delegate of community.did, with parentCapability = urn:living-web:zcap:BootstrapRoot.
-//   3. Constitutionalises it as <general.did> -[governance://root_capability]→ <cap-id>.
-//   4. The participates_in triple links general's governance to community's scope set.
-//   5. The runtime writes <community.did> -[context://accepts_participation]→ <general.did>
-//      INTO community (requiring updateGovernance on community — see precondition).
+//   3. Records it as <general.did> -[governance://root_capability]→ <cap-id>.
+//   4. (Optional) copies community's current constraint triples into general's
+//      initial state, so general starts with the same rules. Once copied,
+//      general owns and evolves them under its own governance.
 //
-// From now on, general governs itself. Community's constraints still apply to writes
-// in general via the scope-set inheritance, but community delegates cannot reach into
-// general's root chain — the bootstrap chain is cut at BootstrapRoot.
+// From this point general governs itself.
 //
-// To make this a HOLONIC link (community's writes also bound by general's rules):
-//   await community.addTriple(new Triple(community.did, "context://participates_in", general.did));
-//   await general.addTriple(new Triple(general.did, "context://accepts_participation", community.did));
-// (Each side declared independently; same predicates, just in both directions.)
+// To declare membership in community's neighbourhood (for content discovery,
+// federated reads, UI navigation), add the content link:
+//
+//   await general.addTriple(new Triple(general.did, "context://participates_in", community.did));
+//
+// To share authority across the two graphs, see Appendix A.
 ```
 
 ### 15.5 Revoking a Capability (Ban)
@@ -925,9 +865,46 @@ Referenced from outside this framework:
 
 | Predicate | Defined in | Description |
 |---|---|---|
-| `context://participates_in` | [[PERSONAL-LINKED-DATA-GRAPHS]] | Child declares participation in parent (in the child's graph) |
-| `context://accepts_participation` | [[PERSONAL-LINKED-DATA-GRAPHS]] | Parent confirms acceptance (in the parent's graph) |
-| `did-document://*` | [[GROUP-IDENTITY]] §4.5 | DID-document write predicates; map to the `updateDIDDocument` action ([§10](#10-did-document-writes-are-governance-writes)) |
+| `context://participates_in` | [[PERSONAL-LINKED-DATA-GRAPHS]] | A graph names another graph it considers itself part of. Content-discovery / navigation signal. |
+| `did-document://*` | [[GROUP-IDENTITY]] §4.5 | DID-document write predicates; map to the `updateDIDDocument` action ([§10](#10-governance-of-did-document-writes)) |
+
+---
+
+## Appendix A. Cross-Graph Patterns at the Application Layer
+
+The substrate validates each graph in isolation. This appendix records the application-layer patterns that compose multi-graph behaviour from the framework's primitives.
+
+### A.1 Shared Authority via Mutual DID-Document Delegation
+
+The canonical "holonic" pattern: **graph A's DID document lists graph B's DID as a `capabilityDelegation` delegate, and vice versa.**
+
+- A current delegate of B can sign delegations as A, and a current delegate of A can sign delegations as B.
+- Caps remain resourced to the graph they govern (A-caps authorise A; B-caps authorise B); the symmetry lives in the *signing authority*.
+- Each side can revoke the linkage unilaterally by removing the other's DID from its `capabilityDelegation` section.
+
+This expresses peer authority between two graphs while keeping each graph's validation purely local.
+
+### A.2 Federated Rule Sets via Bootstrap Copy
+
+A community that wants its subgraphs to start with the same rules has the bootstrap helper copy the parent's current constraint triples into the new graph's initial state. The copies become the child's own — modifiable under its own `updateGovernance`, including divergence.
+
+For ongoing propagation, the parent publishes rule-update events; subscribing children apply them through their own governance. Application of an update is the child's choice, preserving constitutionalisation.
+
+### A.3 Joint Authority via a Shared Graph
+
+When a write needs the explicit authority of two graphs (e.g., a joint statement by orgs A and B), express it as a single graph — the joint working group's own — whose DID document includes both A's and B's DIDs as `capabilityDelegation` delegates per §A.1. The joint graph validates writes against its own rules; two-org provenance is recorded by who signed.
+
+### A.4 Content Discovery via `context://participates_in`
+
+`context://participates_in` (defined in [[PERSONAL-LINKED-DATA-GRAPHS]]) declares membership in a neighbourhood, used for navigation, federated read mounts, federated search, and UI. It is a content-layer signal: governance evaluation in this framework does not consult it.
+
+### A.5 Out of Scope
+
+- **Automatic rule cascade** at validation time. Cascade is opt-in by the child via §A.2.
+- **Global cross-graph quotas.** Cross-community rate or volume limits belong with whoever issues the credentials gating participation.
+- **Cross-graph capability invocation** beyond §A.1. Caps remain graph-scoped; sharing is via identity, not resource.
+
+Future versions of this specification MAY add richer cross-graph composition primitives once partial-mount and convergence concerns have a worked solution.
 
 ---
 

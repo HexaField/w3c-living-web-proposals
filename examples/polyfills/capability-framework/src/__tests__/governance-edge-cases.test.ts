@@ -35,7 +35,6 @@ import {
   type TripleInput,
   type ValidationContext,
   type ZCAPDocument,
-  type ConstraintHandler,
   type Caveat,
 } from '../index.js';
 
@@ -53,8 +52,7 @@ import {
 
 const ALPHA  = 'did:graph:alpha';   // primary writing graph
 const BETA   = 'did:graph:beta';    // participating partner
-const GAMMA  = 'did:graph:gamma';   // second participant (multi-parent)
-const DELTA  = 'did:graph:delta';   // transitive ancestor
+const GAMMA  = 'did:graph:gamma';   // second graph (per-graph isolation tests)
 
 const OWNER  = 'did:key:z6Mkowner';
 const ALICE  = 'did:key:z6Mkalice';
@@ -174,94 +172,29 @@ function mkTriple(predicate: string, opts?: { author?: string; subject?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 1. SCOPE-SET RESOLUTION
+// 1. PER-GRAPH SCOPE (Spec 04 §6)
+//
+// Validation is purely local to the writing graph. Participation declarations
+// have no governance effect — they are content/discovery signals only. Holonic
+// patterns live at the application layer via DID-document mutual delegation
+// (Spec 04 Appendix A), tested separately.
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('Scope-set resolution', () => {
-  test('single graph: scope-set is just the graph itself', async () => {
+describe('Per-graph scope (Spec 04 §6)', () => {
+  test('scope contains exactly the target graph at depth 0', async () => {
     const scope = await resolveScopeSet(ALPHA, ctxFor(ALPHA));
     expect([...scope.graphs.keys()]).toEqual([ALPHA]);
     expect(scope.graphs.get(ALPHA)).toBe(0);
     expect(scope.overflow).toBe(false);
   });
 
-  test('hierarchical (one direction): participator reaches target; target alone does not reach participator', async () => {
+  test('participates_in declarations do NOT extend the scope', async () => {
     await declareParticipation(ALPHA, BETA);
-
+    await declareParticipation(BETA, ALPHA);  // bidirectional too
     const fromAlpha = await resolveScopeSet(ALPHA, ctxFor(ALPHA));
-    expect([...fromAlpha.graphs.keys()].sort()).toEqual([ALPHA, BETA].sort());
-    expect(fromAlpha.graphs.get(BETA)).toBe(1);
-
+    expect([...fromAlpha.graphs.keys()]).toEqual([ALPHA]);
     const fromBeta = await resolveScopeSet(BETA, ctxFor(BETA));
     expect([...fromBeta.graphs.keys()]).toEqual([BETA]);
-  });
-
-  test('holonic (both directions): each graph reaches the other', async () => {
-    await declareParticipation(ALPHA, BETA);
-    await declareParticipation(BETA, ALPHA);
-
-    const fromAlpha = await resolveScopeSet(ALPHA, ctxFor(ALPHA));
-    expect([...fromAlpha.graphs.keys()].sort()).toEqual([ALPHA, BETA].sort());
-
-    const fromBeta = await resolveScopeSet(BETA, ctxFor(BETA));
-    expect([...fromBeta.graphs.keys()].sort()).toEqual([ALPHA, BETA].sort());
-  });
-
-  test('multi-parent: a graph participating in two others has both at depth 1', async () => {
-    await declareParticipation(ALPHA, BETA);
-    await declareParticipation(ALPHA, GAMMA);
-
-    const scope = await resolveScopeSet(ALPHA, ctxFor(ALPHA));
-    expect([...scope.graphs.keys()].sort()).toEqual([ALPHA, BETA, GAMMA].sort());
-    expect(scope.graphs.get(BETA)).toBe(1);
-    expect(scope.graphs.get(GAMMA)).toBe(1);
-  });
-
-  test('transitive participation: A→B→C reaches all three', async () => {
-    await declareParticipation(ALPHA, BETA);
-    await declareParticipation(BETA, DELTA);
-
-    const scope = await resolveScopeSet(ALPHA, ctxFor(ALPHA));
-    expect([...scope.graphs.keys()].sort()).toEqual([ALPHA, BETA, DELTA].sort());
-    expect(scope.graphs.get(BETA)).toBe(1);
-    expect(scope.graphs.get(DELTA)).toBe(2);
-  });
-
-  test('cycle: visited-set guards against infinite loops', async () => {
-    await declareParticipation(ALPHA, BETA);
-    await declareParticipation(BETA, ALPHA);   // cycle (also = holonic)
-    const scope = await resolveScopeSet(ALPHA, ctxFor(ALPHA));
-    expect([...scope.graphs.keys()].sort()).toEqual([ALPHA, BETA].sort());
-  });
-
-  test('missing acceptance: unilateral participation is ignored', async () => {
-    await graph.addTriple({ subject: ALPHA, predicate: CONTEXT.PARTICIPATES_IN, object: BETA });
-    // no accepts_participation on BETA side
-    const scope = await resolveScopeSet(ALPHA, ctxFor(ALPHA));
-    expect([...scope.graphs.keys()]).toEqual([ALPHA]);
-  });
-
-  test('multi-parent depth: a graph reached via two paths records the minimum depth', async () => {
-    // ALPHA → BETA, ALPHA → GAMMA, BETA → DELTA, GAMMA → DELTA — DELTA reachable at depth 2 via either path
-    await declareParticipation(ALPHA, BETA);
-    await declareParticipation(ALPHA, GAMMA);
-    await declareParticipation(BETA, DELTA);
-    await declareParticipation(GAMMA, DELTA);
-    const scope = await resolveScopeSet(ALPHA, ctxFor(ALPHA));
-    expect(scope.graphs.get(DELTA)).toBe(2);
-  });
-
-  test('scope-overflow: BFS halts at 100 graphs and signals overflow', async () => {
-    // Build a chain of 105 participations.
-    for (let i = 0; i < 104; i++) {
-      const a = `did:graph:n${i}`;
-      const b = `did:graph:n${i + 1}`;
-      await graph.addTriple({ subject: a, predicate: CONTEXT.PARTICIPATES_IN, object: b });
-      await graph.addTriple({ subject: b, predicate: CONTEXT.ACCEPTS_PARTICIPATION, object: a });
-    }
-    const scope = await resolveScopeSet('did:graph:n0', ctxFor('did:graph:n0'));
-    expect(scope.overflow).toBe(true);
-    expect(scope.graphs.size).toBeLessThanOrEqual(100);
   });
 });
 
@@ -270,37 +203,34 @@ describe('Scope-set resolution', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('Constraint accumulation and deny-wins', () => {
-  test('same-kind constraints from parent + child both appear (no override)', async () => {
-    await declareParticipation(ALPHA, BETA);
-    await defineKindConstraint('urn:c:alpha-temporal', 'temporal');
-    await bindConstraint(ALPHA, 'urn:c:alpha-temporal');
-    await defineKindConstraint('urn:c:beta-temporal', 'temporal');
-    await bindConstraint(BETA, 'urn:c:beta-temporal');
+  test('multiple same-kind constraints on one graph all appear', async () => {
+    await defineKindConstraint('urn:c:alpha-temporal-1', 'temporal');
+    await bindConstraint(ALPHA, 'urn:c:alpha-temporal-1');
+    await defineKindConstraint('urn:c:alpha-temporal-2', 'temporal');
+    await bindConstraint(ALPHA, 'urn:c:alpha-temporal-2');
 
     const scope = await resolveScopeSet(ALPHA, ctxFor(ALPHA));
     const constraints = await collectConstraints(scope, ctxFor(ALPHA));
 
     const temporalIds = constraints.filter(c => c.kind === 'temporal').map(c => c.id).sort();
-    expect(temporalIds).toEqual(['urn:c:alpha-temporal', 'urn:c:beta-temporal']);
+    expect(temporalIds).toEqual(['urn:c:alpha-temporal-1', 'urn:c:alpha-temporal-2']);
   });
 
-  test('deny-wins: either parent or child rejecting causes rejection', async () => {
-    await declareParticipation(ALPHA, BETA);
-    await defineKindConstraint('urn:c:parent-deny', 'temporal');
-    await bindConstraint(BETA, 'urn:c:parent-deny');
+  test('deny-wins: any same-kind constraint rejecting causes rejection', async () => {
+    await defineKindConstraint('urn:c:temporal-deny', 'temporal');
+    await bindConstraint(ALPHA, 'urn:c:temporal-deny');
 
     const engine = new GraphGovernanceEngine(ctxFor(ALPHA));
-    const denyHandler: ConstraintHandler = {
+    engine.registerConstraintKind({
       kind: 'temporal',
-      validate: async (_t, c) => c.id === 'urn:c:parent-deny'
-        ? { allowed: false, constraintKind: 'temporal', reason: 'parent denies', rejectedBy: c.id }
-        : { allowed: true },
-    };
-    engine.registerConstraintKind(denyHandler);
+      validate: async (_t, c) => ({
+        allowed: false, constraintKind: 'temporal', reason: 'rejected', rejectedBy: c.id,
+      }),
+    });
 
     const result = await engine.validate(mkTriple('urn:p:msg', { object: 'hi' }));
     expect(result.allowed).toBe(false);
-    expect(result.rejectedBy).toBe('urn:c:parent-deny');
+    expect(result.rejectedBy).toBe('urn:c:temporal-deny');
   });
 
   test('different kinds accumulate; any kind rejecting causes rejection', async () => {
@@ -324,19 +254,17 @@ describe('Constraint accumulation and deny-wins', () => {
     expect(result.constraintKind).toBe('content');
   });
 
-  test('audit attribution: lowest-depth rejecting constraint wins rejectedBy', async () => {
-    await declareParticipation(ALPHA, BETA);
-    await defineKindConstraint('urn:c:child-deny', 'temporal');
-    await bindConstraint(ALPHA, 'urn:c:child-deny');
-    await defineKindConstraint('urn:c:parent-deny', 'temporal');
-    await bindConstraint(BETA, 'urn:c:parent-deny');
+  test('audit attribution: among rejecting constraints, lex-greater id wins rejectedBy', async () => {
+    await defineKindConstraint('urn:c:a-deny', 'temporal');
+    await bindConstraint(ALPHA, 'urn:c:a-deny');
+    await defineKindConstraint('urn:c:z-deny', 'temporal');
+    await bindConstraint(ALPHA, 'urn:c:z-deny');
 
     const scope = await resolveScopeSet(ALPHA, ctxFor(ALPHA));
     const constraints = await collectConstraints(scope, ctxFor(ALPHA));
     const rejecting = constraints.filter(c => c.kind === 'temporal');
     const attribution = pickAuditAttribution(rejecting);
-    // child-deny is depth 0; parent-deny is depth 1. Lowest depth wins.
-    expect(attribution?.id).toBe('urn:c:child-deny');
+    expect(attribution?.id).toBe('urn:c:z-deny');
   });
 
   test('unknown constraint kind without registered handler: fail-closed', async () => {
@@ -348,28 +276,44 @@ describe('Constraint accumulation and deny-wins', () => {
     expect(result.allowed).toBe(false);
     expect(result.constraintKind).toBe('temporal');
   });
+
+  test('constraints on one graph do NOT affect writes to another graph (per-graph isolation)', async () => {
+    // BETA has a deny-all temporal constraint; ALPHA has none. Even with a
+    // mutual participation declaration, ALPHA writes are not affected.
+    await declareParticipation(ALPHA, BETA);
+    await defineKindConstraint('urn:c:beta-deny', 'temporal');
+    await bindConstraint(BETA, 'urn:c:beta-deny');
+
+    const engine = new GraphGovernanceEngine(ctxFor(ALPHA));
+    engine.registerConstraintKind({
+      kind: 'temporal',
+      validate: async () => ({ allowed: false, constraintKind: 'temporal', reason: 'never' }),
+    });
+    const result = await engine.validate(mkTriple('urn:p:x'));
+    // ALPHA has no constraints of its own; BETA's are NOT pulled in. Accept.
+    expect(result.allowed).toBe(true);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 3. CAPABILITY across scope-set has_zcap + BootstrapRoot
+// 3. CAPABILITY: per-graph resource match + BootstrapRoot
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('Capability invocation across the scope set', () => {
-  test('cap whose resource is a participating parent applies to writes in the child', async () => {
+describe('Capability invocation (per-graph)', () => {
+  test('cap whose resource is the target graph authorises writes', async () => {
     await declareEnforcement(ALPHA, 'enforced');
-    await declareParticipation(ALPHA, BETA);
     await defineCapabilityConstraint('urn:c:alpha-cap');
     await bindConstraint(ALPHA, 'urn:c:alpha-cap');
 
     const rootCap = makeZcap({
-      id: 'urn:cap:beta-root',
+      id: 'urn:cap:alpha-root',
       invoker: ALICE,
       parent: BOOTSTRAP_ROOT,
       actions: ['createLink'],
-      resource: BETA,   // resource is the parent graph
+      resource: ALPHA,
     });
     storeZcap(rootCap);
-    await declareRoot(BETA, rootCap.id);
+    await declareRoot(ALPHA, rootCap.id);
     await grantZcap(ALICE, rootCap.id);
 
     const engine = new GraphGovernanceEngine(ctxFor(ALPHA, 'enforced'));
@@ -377,7 +321,33 @@ describe('Capability invocation across the scope set', () => {
     expect(result.allowed).toBe(true);
   });
 
-  test('cap not in scope set: rejected even if action+caveats match', async () => {
+  test('cap resourced to a DIFFERENT graph does NOT authorise writes — even with mutual participation', async () => {
+    // Per-graph isolation: a cap with resource = BETA cannot authorise
+    // writes in ALPHA, regardless of any participation declarations.
+    // Cross-graph authority is expressed via DID-document mutual
+    // delegation (Spec 04 Appendix A), not via cross-graph cap reuse.
+    await declareEnforcement(ALPHA, 'enforced');
+    await declareParticipation(ALPHA, BETA);  // mutual — has no effect
+    await defineCapabilityConstraint('urn:c:alpha-cap');
+    await bindConstraint(ALPHA, 'urn:c:alpha-cap');
+
+    const betaCap = makeZcap({
+      id: 'urn:cap:beta-root',
+      invoker: ALICE,
+      parent: BOOTSTRAP_ROOT,
+      actions: ['createLink'],
+      resource: BETA,   // resource is a different graph
+    });
+    storeZcap(betaCap);
+    await declareRoot(BETA, betaCap.id);
+    await grantZcap(ALICE, betaCap.id);
+
+    const engine = new GraphGovernanceEngine(ctxFor(ALPHA, 'enforced'));
+    const result = await engine.validate(mkTriple('urn:p:x'));
+    expect(result.allowed).toBe(false);
+  });
+
+  test('cap resourced to a wholly unrelated graph: rejected', async () => {
     await declareEnforcement(ALPHA, 'enforced');
     await defineCapabilityConstraint('urn:c:alpha-cap');
     await bindConstraint(ALPHA, 'urn:c:alpha-cap');
@@ -387,11 +357,10 @@ describe('Capability invocation across the scope set', () => {
       invoker: ALICE,
       parent: BOOTSTRAP_ROOT,
       actions: ['createLink'],
-      resource: GAMMA,   // GAMMA is NOT in alpha's scope
+      resource: GAMMA,
     });
     storeZcap(cap);
     await grantZcap(ALICE, cap.id);
-    // GAMMA isn't even reachable, so its root_capability doesn't help.
 
     const engine = new GraphGovernanceEngine(ctxFor(ALPHA, 'enforced'));
     const result = await engine.validate(mkTriple('urn:p:x'));
@@ -432,7 +401,6 @@ describe('Capability invocation across the scope set', () => {
       resource: ALPHA,
     });
     storeZcap(fakeBootstrap);
-    // NOT declared as root_capability of ALPHA — chain validation should fail.
     await grantZcap(EVE, fakeBootstrap.id);
 
     const engine = new GraphGovernanceEngine(ctxFor(ALPHA, 'enforced'));
@@ -440,16 +408,14 @@ describe('Capability invocation across the scope set', () => {
     expect(result.allowed).toBe(false);
   });
 
-  test('constitutionalisation: parent\'s key in BootstrapRoot does not grant standing in the child later', async () => {
-    // Bootstrap of ALPHA was signed by a parent-delegate key. After bootstrap,
-    // that key has no standing in ALPHA for ordinary writes — only the
-    // root_capability invoker (and their delegates) do.
+  test('constitutionalisation: parent\'s authority does not bleed into the child', async () => {
+    // ALPHA's root was bootstrap-signed by a delegate of some parent graph.
+    // After bootstrap, that parent has NO governance reach into ALPHA — the
+    // chain is cut at BootstrapRoot and parent constraints don't apply.
     await declareEnforcement(ALPHA, 'enforced');
-    await declareParticipation(ALPHA, BETA);
     await defineCapabilityConstraint('urn:c:alpha-cap');
     await bindConstraint(ALPHA, 'urn:c:alpha-cap');
 
-    // ALPHA's root was bootstrap-issued; invoker is ALICE (the founder).
     const alphaRoot = makeZcap({
       id: 'urn:cap:alpha-root',
       invoker: ALICE,
@@ -461,8 +427,8 @@ describe('Capability invocation across the scope set', () => {
     await declareRoot(ALPHA, alphaRoot.id);
     await grantZcap(ALICE, alphaRoot.id);
 
-    // EVE is a legitimate delegate of BETA (the parent), but BETA's authority
-    // does not bleed into ALPHA's root chain. EVE has no cap on ALPHA.
+    // EVE is a legitimate delegate of some other graph. With no cap on
+    // ALPHA, EVE cannot write to ALPHA.
     const result = await new GraphGovernanceEngine(ctxFor(ALPHA, 'enforced'))
       .validate(mkTriple('urn:p:x', { author: EVE }));
     expect(result.allowed).toBe(false);
@@ -732,12 +698,19 @@ describe('Enforcement modes', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 8. HOLONIC SYNC IMPLICATION
+// 8. CROSS-GRAPH ISOLATION (replaces former "holonic sync implication")
+//
+// Per Spec 04 §6, validation is purely local to the writing graph. A constraint
+// on a participating graph does NOT bind writes elsewhere. Holonic patterns
+// live at the application layer via DID-document mutual delegation (Spec 04
+// Appendix A); they do not show up at the validation algorithm.
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('Holonic sync implication', () => {
-  test('write to A is rejected by a constraint on holonically-linked B', async () => {
-    // ALPHA and BETA are holonic peers; BETA has a temporal-deny that fires.
+describe('Cross-graph isolation (Spec 04 §6)', () => {
+  test('write to A is NOT affected by a constraint on participating B', async () => {
+    // ALPHA and BETA mutually declare participation. BETA has a deny-all
+    // temporal constraint. ALPHA has no constraints. A write to ALPHA must
+    // succeed — BETA's constraints do not reach into ALPHA.
     await declareParticipation(ALPHA, BETA);
     await declareParticipation(BETA, ALPHA);
     await defineKindConstraint('urn:c:beta-deny', 'temporal');
@@ -746,11 +719,10 @@ describe('Holonic sync implication', () => {
     const engine = new GraphGovernanceEngine(ctxFor(ALPHA, 'enforced'));
     engine.registerConstraintKind({
       kind: 'temporal',
-      validate: async (_t, c) => ({ allowed: false, constraintKind: 'temporal', reason: 'holonic deny', rejectedBy: c.id }),
+      validate: async () => ({ allowed: false, constraintKind: 'temporal', reason: 'should not fire' }),
     });
     const result = await engine.validate(mkTriple('urn:p:x'));
-    expect(result.allowed).toBe(false);
-    expect(result.rejectedBy).toBe('urn:c:beta-deny');
+    expect(result.allowed).toBe(true);
   });
 });
 
@@ -881,33 +853,51 @@ describe('Read-side authorization: context-only caveats (expiry) still apply', (
   });
 });
 
-describe('Read-side authorization: scope-set has_zcap (holonic case)', () => {
-  test('mountContext cap stored on a participating parent applies to reads of the child', async () => {
-    // BETA is a holonic peer of ALPHA. Alice's cap lives on BETA but
-    // covers reads of ALPHA — proving that has_zcap is queried across the
-    // scope set (Spec 04 §7 step 5), not just the target graph.
+describe('Read-side authorization: per-graph cap resolution', () => {
+  test('mountContext cap resourced to the target graph authorises reads', async () => {
     await declareEnforcement(ALPHA, 'enforced');
-    await declareParticipation(ALPHA, BETA);   // ALPHA inherits BETA's scope
     await defineCapabilityConstraint('urn:c:alpha-cap');
     await bindConstraint(ALPHA, 'urn:c:alpha-cap');
 
     const cap = makeZcap({
-      id: 'urn:cap:alice-mount-via-beta',
+      id: 'urn:cap:alice-mount',
       invoker: ALICE,
       parent: BOOTSTRAP_ROOT,
       actions: ['mountContext'],
-      resource: ALPHA,           // resource still names the target
+      resource: ALPHA,
     });
     storeZcap(cap);
-    await declareRoot(ALPHA, cap.id);    // declared as ALPHA's root
-    // The has_zcap link is placed on BETA — the scope-set walk has to find it.
-    // (In the polyfill the single graph store holds all triples; the
-    // distinction is which subject the triple is anchored to.)
+    await declareRoot(ALPHA, cap.id);
     await graph.addTriple({ subject: ALICE, predicate: GOV.HAS_ZCAP, object: cap.id });
 
     const engine = new GraphGovernanceEngine(ctxFor(ALPHA, 'enforced'));
     const result = await engine.validateAction('mountContext', ALICE);
     expect(result.allowed).toBe(true);
+  });
+
+  test('mountContext cap resourced to a DIFFERENT graph does NOT authorise reads of ALPHA', async () => {
+    // Per-graph isolation at the read side too. A cap targeting BETA does
+    // not authorise mountContext on ALPHA, even with mutual participation.
+    await declareEnforcement(ALPHA, 'enforced');
+    await declareParticipation(ALPHA, BETA);
+    await declareParticipation(BETA, ALPHA);
+    await defineCapabilityConstraint('urn:c:alpha-cap');
+    await bindConstraint(ALPHA, 'urn:c:alpha-cap');
+
+    const cap = makeZcap({
+      id: 'urn:cap:alice-mount-beta',
+      invoker: ALICE,
+      parent: BOOTSTRAP_ROOT,
+      actions: ['mountContext'],
+      resource: BETA,
+    });
+    storeZcap(cap);
+    await declareRoot(BETA, cap.id);
+    await graph.addTriple({ subject: ALICE, predicate: GOV.HAS_ZCAP, object: cap.id });
+
+    const engine = new GraphGovernanceEngine(ctxFor(ALPHA, 'enforced'));
+    const result = await engine.validateAction('mountContext', ALICE);
+    expect(result.allowed).toBe(false);
   });
 });
 

@@ -27,8 +27,8 @@ Ten W3C-format draft specifications, arranged so each spec depends only on the o
 | 01 | [Decentralised Identity](drafts/01_decentralised-identity-web-platform.md) | DRAFT | Extends `navigator.credentials` with `did:key` (individuals); resolver-registry extension point that later specs (e.g. spec 03's `did:graph`) plug into; one `DIDCredential` interface — no separate code paths for "individual" vs "collective" identity |
 | 02 | [Personal Linked Data Graphs](drafts/02_personal-linked-data-graphs.md) | DRAFT | `navigator.graph` — content-addressed `graph://<hash>` IRIs + optional `did` slot; RDF 1.2 reifiers carrying per-triple provenance; lossless RDF 1.2 snapshots (`nquads-canonical` / `nquads` / `turtle` / `jsonld` all round-trip); holonic SPARQL across mounted graphs |
 | 03 | [Decentralised Group Identity](drafts/03_decentralised-group-identity.md) | DRAFT | The `did:graph` method + DID-document-as-triples model. **Groupification** attaches a content-independent DID to an existing graph (in place, one-way); the resulting graph is a **group**. Two concerns kept structurally distinct: *participation* (who is part of it, `context://participates_in`) vs *signing authority* (who can sign as it, DID-document `capabilityInvocation` delegates). |
-| 04 | [Graph Capability Framework](drafts/04_graph-capability-framework.md) | DRAFT | Root Capability + ZCAP delegation algebra. ZCAPs target a graph's DID; Open / Announced / Enforced enforcement modes; **immutable-caveats** attenuation; **deny-wins** scope-set accumulation; hierarchical AND holonic governance via the same `participates_in`/`accepts_participation` mechanism; BootstrapRoot chain-cut at constitutional boundaries; `mountContext` action gates read access. |
-| 05 | [Context Sync Protocol](drafts/05_context-sync-protocol.md) | PRE-DRAFT | `GraphDiff` (graph-DID-keyed); mount-and-subscribe lifecycle; sync spaces decoupled from logical graphs; **read-side `mountContext` gate** + **write-side scope-set validation** — sync-blocking propagates rejection at every honest peer; discovery deliberately out of scope (non-normative patterns documented). |
+| 04 | [Graph Capability Framework](drafts/04_graph-capability-framework.md) | DRAFT | Root Capability + ZCAP delegation algebra. ZCAPs target a graph's DID; Open / Announced / Enforced enforcement modes; **immutable-caveats** attenuation; **deny-wins** same-kind composition; each graph is its own governance boundary — validation is purely local with no cross-graph queries; BootstrapRoot chain-cut at constitutional boundaries; `mountContext` action gates read access. Holonic patterns (shared authority across graphs) are application-layer compositions via mutual DID-document delegation. |
+| 05 | [Context Sync Protocol](drafts/05_context-sync-protocol.md) | PRE-DRAFT | `GraphDiff` (graph-DID-keyed); mount-and-subscribe lifecycle; sync spaces decoupled from logical graphs; **read-side `mountContext` gate** + **write-side per-graph validation** — sync-blocking propagates rejection at every honest peer; discovery deliberately out of scope (non-normative patterns documented). |
 | 06 | [Sync Module Architecture](drafts/06_sync-module-architecture.md) | PRE-DRAFT | Pluggable WASM module interface, capability sandbox, lifecycle, user consent. |
 | 07 | [Dynamic Graph Shape Validation](drafts/07_dynamic-graph-shape-validation.md) | PRE-DRAFT | SHACL extension with action semantics under stable `shape://actions/`; cross-graph shape inheritance via `context://participates_in`. |
 | 08 | [Governance Constraint Vocabulary](drafts/08_governance-constraint-vocabulary.md) | PRE-DRAFT | Standard constraint kinds that plug into the capability framework: temporal, content, credential, shape. |
@@ -50,10 +50,10 @@ The following capabilities are anticipated extensions of this substrate. They ar
 | **Two layers of graph identity** | Every graph has a `graph://<content-hash>` **IRI** (snapshot address; changes on every mutation). A graph that has been **groupified** (Spec 03) additionally has a `did:graph:...` **DID** (content-independent identity; survives mutations). A graph with a DID is a **group**; "group" is a usage term, not a separate data type. |
 | **Triple provenance** | RDF 1.2 reifiers carry author, timestamp, and signature inline on each triple — SPARQL-visible, no bespoke wrapper. Reifiers are part of the graph and round-trip through every snapshot serialisation. |
 | **Identity for collectives** | A `did:graph`. Multiple verification methods in the DID document; any current `capabilityInvocation` delegate signs as the DID. **No multisig, no threshold cryptography** — shared authority is the delegate set, not the identifier. A `did:graph` with one delegate is structurally identical to one with one hundred. |
-| **Participation vs signing authority** | Kept structurally distinct (Spec 03 §7). *Participation* (`context://participates_in` + reciprocal `accepts_participation`) governs what rules apply to your writes; *signing authority* (DID-document `capabilityInvocation` delegates) governs whose signature counts as the group's. The CEO can sign; every employee participates — they are different sections of the data model. |
+| **Participation vs signing authority** | Kept structurally distinct (Spec 03 §7). *Participation* (`context://participates_in` + reciprocal `accepts_participation`) records membership — used for content discovery, navigation, federated reads — and has no governance effect. *Signing authority* (DID-document `capabilityInvocation` delegates) governs whose signature counts as the group's. The CEO can sign; every employee participates — they are different sections of the data model. |
 | **Authorisation** | ZCAPs target a graph's **DID** for long-lived authority (IRIs are reserved for snapshot-scoped capabilities). Capability chains trace to each graph's own root capability; the chain is **cut** at `BootstrapRoot` (parent governance cannot reach into a constitutionalised child). |
-| **Governance composition** | Constraints **accumulate** across the scope set with **deny-wins** semantics — children cannot escape ancestor rules by re-declaring loosely. Caveats are **immutable** under delegation: children may add, but never modify or remove parent caveats. |
-| **Hierarchical vs holonic** | Single mechanism (`participates_in` + `accepts_participation`) covers both. Asymmetric declaration → conventional parent→child inheritance. Bidirectional declaration → each graph's rules bind writes in the other. |
+| **Governance composition** | Each persistent graph is its own governance boundary; constraints attach to one graph and govern writes to that graph only. Within a graph, same-kind constraints **accumulate** with **deny-wins** semantics. Caveats are **immutable** under delegation: children may add, but never modify or remove parent caveats. |
+| **Cross-graph authority** | Cross-graph patterns ("holonic" structures, shared authority, federated rule sets) are application-layer compositions on top of substrate primitives — most directly via **mutual DID-document delegation** (graph A lists graph B's DID as a `capabilityDelegation` delegate, and vice versa). The substrate itself validates per-graph; this keeps validation purely local, with no partial-mount divergence or transitive sync dependencies. See Spec 04 Appendix A. |
 | **Snapshot transfer** | A graph is serialisable as a signed `GraphSnapshot`. All four RDF 1.2 serialisations (`nquads-canonical` / `nquads` / `turtle` / `jsonld`) round-trip losslessly — content-addressed, self-verifying, and bring the graph's governance, shapes, and flows along. |
 | **Sync model** | `GraphDiff`s propagate through configurable sync spaces. Three standard topologies: Unified, Privacy-Tiered, Fully Partitioned. The receiving peer enforces governance — both write-side (per-diff capability validation) and read-side (`mountContext` gate on snapshot pulls). Sync-blocking propagates rejection at every honest peer. |
 | **Discovery** | Deliberately out of scope. Resolution accepts DID-URL `?relay=` and `?snapshot=` hints; how applications *get* those hints (invitation links, DHT, mDNS, shared discovery graphs, friend-of-friend) is the application layer's call. The substrate is robust to the discovery channel because snapshots are self-verifying and DIDs are key-bound. |
@@ -135,7 +135,7 @@ console.log(announcement.author);   // team.did
 </details>
 
 <details>
-<summary>04 — Graph Capability Framework (Root Capability + enforcement modes + holonic governance)</summary>
+<summary>04 — Graph Capability Framework (Root Capability + enforcement modes + per-graph governance)</summary>
 
 ```javascript
 // Groups have governance from creation. Default mode is "open".
@@ -155,13 +155,12 @@ const contractorCap = await community.delegateCapability({
   ]
 });
 
-// Holonic link: A↔B participation makes the two share a governance surface.
-// Each graph's constraints apply to writes in the other. Same predicates as
-// hierarchical, just declared in both directions.
-await community.graph.addTriple(new Triple(community.did, "context://participates_in", peer.did));
-await community.graph.addTriple(new Triple(community.did, "context://accepts_participation", peer.did));
-await peer.graph.addTriple(new Triple(peer.did, "context://participates_in", community.did));
-await peer.graph.addTriple(new Triple(peer.did, "context://accepts_participation", community.did));
+// Shared authority across graphs (the "holonic" pattern) is expressed via
+// mutual DID-document delegation — graph A lists graph B's DID as a
+// capabilityDelegation delegate and vice versa. Caps stay resourced to each
+// graph; validation remains purely per-graph. See Spec 04 Appendix A.
+await community.addDelegate({ method: peer.did, sections: ["capabilityDelegation"] });
+await peer.addDelegate({ method: community.did, sections: ["capabilityDelegation"] });
 ```
 </details>
 
@@ -185,7 +184,7 @@ const mounted = await otherManager.mount(published.graphDid, {
   relays:     published.relays
 });
 // Now subscribed — diffs flow both ways; each peer re-validates incoming
-// diffs against the graph's scope-set governance.
+// diffs against the graph's own governance (purely local; no cross-graph queries).
 
 // Read-only mounts of a graph with a `mountContext` constraint require a
 // proof too — the receiving peer's `validateReadAccess` gates the snapshot.

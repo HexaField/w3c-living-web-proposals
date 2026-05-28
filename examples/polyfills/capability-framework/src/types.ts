@@ -48,10 +48,8 @@ export interface CaveatHandler {
 export interface GraphConstraint {
   readonly id: string;
   readonly kind: ConstraintKind;
-  /** The graph (did:graph) this constraint is attached to. */
+  /** The graph (did:graph) this constraint is attached to — always the target graph. */
   readonly scope: string;
-  /** Depth in the holonic scope chain (0 = directly on the writing graph). */
-  readonly depth: number;
   readonly properties: Record<string, string>;
 }
 

@@ -66,7 +66,7 @@ Built on these primitives:
 1. This is a DID method specification (for `did:graph`).
 2. It is a delegate-model specification (the DID-document delegate semantics that make `did:graph` useful).
 3. It is a pattern document (how to use the substrate together to express collective identity), with particular attention to **two concerns that MUST be kept structurally distinct**:
-   - **Participation** — who is *part of* this collective? Declared from below via `context://participates_in`. ([[CAPABILITY-FRAMEWORK]] §6 defines the scope-resolution mechanics.)
+   - **Participation** — who is *part of* this collective? Declared from below via `context://participates_in` and mutually acknowledged from the group via `context://accepts_participation`. This is a **membership** relation: content discovery, navigation, federated read mounts, and UI all consume it. Cross-graph shared authority (the "holonic" pattern) is expressed separately, via mutual DID-document delegation ([[CAPABILITY-FRAMEWORK]] Appendix A).
    - **Signing authority** — who currently can *sign as* this collective? Declared in the group's DID document via `verificationMethod` + `capabilityInvocation`.
 
 In conventional systems these are conflated (a "member" is implicitly a "signer"). This specification separates them, with the result that the same model scales from a personal identity to a multinational federation using one set of primitives.
@@ -1001,7 +1001,7 @@ Group DIDs are cryptographically unique. However, group metadata (name, descript
 
 ### 13.7 Nesting Depth Attacks
 
-Deep nesting can cause resource exhaustion. Implementations MUST enforce a maximum nesting depth (RECOMMENDED: 16). [[CAPABILITY-FRAMEWORK]] §6.1 imposes a complementary bound on the scope-set size during validation.
+Deep nesting can cause resource exhaustion for membership traversals (e.g., federated discovery walks across many participating graphs). Implementations MUST enforce a maximum nesting depth (RECOMMENDED: 16) for such walks. Governance validation is per-graph ([[CAPABILITY-FRAMEWORK]] §6.1) and is unaffected by nesting depth.
 
 ---
 

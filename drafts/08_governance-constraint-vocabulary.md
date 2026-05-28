@@ -212,7 +212,7 @@ Optional:
 
 ### 6.3 `content` Caveat Evaluation
 
-Constraint-bound content checks (above) restrict the *content* of triple objects across an entire graph or scope set. For per-delegation conditions (e.g., "this contractor's writes must additionally satisfy this SPARQL ASK"), see the `content` caveat in [§7.9](#79-content).
+Constraint-bound content checks (above) restrict the *content* of triple objects across the graph the constraint is bound to. For per-delegation conditions (e.g., "this contractor's writes must additionally satisfy this SPARQL ASK"), see the `content` caveat in [§7.9](#79-content).
 
 ---
 
@@ -300,7 +300,7 @@ The operation MUST be authored by the same agent who created the triple's *subje
 { "type": "shape", "value": { "shapeIri": "<URI of a registered shape>" } }
 ```
 
-The authorised triple MUST conform to a SHACL shape registered in the writing graph or a graph reachable via the participation scope set, per [[SHAPE-VALIDATION]].
+The authorised triple MUST conform to a SHACL shape registered in the writing graph or a graph reachable via the participation chain, per [[SHAPE-VALIDATION]]. (Shape resolution can walk participation links for content-discovery purposes; this is a content-layer concern handled by the shape validation layer, distinct from the per-graph governance validation in [[CAPABILITY-FRAMEWORK]] §6.)
 
 **Evaluation algorithm.** For each triple under the caveat's authority:
 

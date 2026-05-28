@@ -48,15 +48,60 @@ import {
   SyncStateChangeEvent,
   computeRevision,
   createContextDiff,
+  verifyBundleSignature,
   deriveSpaceUri,
+  type CapabilityProof,
   type ContextSyncRuntime,
   type ContextSyncState,
   type Peer,
   type PublishOptions,
   type PublishedGraph,
 } from '@living-web/context-sync';
+import { didToPublicKey, ed25519 } from '@living-web/identity';
 
 const DEFAULT_MODULE_HASH = 'sha256-default-or-set-crdt-v1';
+
+/** Spec 05 §5.2.2 signature production helper. Wraps the IdentityProvider's
+ *  Ed25519 signer and returns a hex string for the wire payload. */
+async function signCommit(graph: Graph, commitIdHex: string): Promise<string> {
+  const sig = await graph.getIdentity().sign(hexBytes(commitIdHex));
+  return toHex(sig);
+}
+
+/** Spec 05 §9.2.1 step 0. Resolves the author's `did:key` public key and
+ *  verifies the bundle signature. Returns `false` on any failure — the
+ *  caller (validateDiff) is responsible for the deny-wins behaviour. */
+async function verifyDidKeySignature(
+  commitId: string,
+  signatureHex: string,
+  author: string,
+): Promise<boolean> {
+  if (!author.startsWith('did:key:')) {
+    // Graph-DID authors require DID-document resolution to find the current
+    // capabilityDelegation verification method. The polyfill does not perform
+    // that resolution; production sync modules MUST. Treat as unverifiable
+    // here rather than blindly accepting.
+    return false;
+  }
+  try {
+    const publicKey = didToPublicKey(author);
+    return await ed25519.verifyAsync(hexBytes(signatureHex), hexBytes(commitId), publicKey);
+  } catch {
+    return false;
+  }
+}
+
+function hexBytes(hex: string): Uint8Array {
+  const clean = hex.startsWith('0x') ? hex.slice(2) : hex;
+  const bytes = new Uint8Array(clean.length / 2);
+  for (let i = 0; i < clean.length; i += 2) {
+    bytes[i / 2] = parseInt(clean.slice(i, i + 2), 16);
+  }
+  return bytes;
+}
+function toHex(bytes: Uint8Array): string {
+  return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+}
 
 /**
  * Sync requires the graph to have a stable, content-independent identity —
@@ -105,6 +150,7 @@ function serialiseDiff(diff: GraphDiff): ChannelDiffPayload {
   return {
     graphDid: diff.graphDid,
     revision: diff.revision,
+    commitId: diff.commitId,
     additions: [...diff.additions],
     removals: [...diff.removals],
     dependencies: [...diff.dependencies],
@@ -112,19 +158,21 @@ function serialiseDiff(diff: GraphDiff): ChannelDiffPayload {
     author: diff.author,
     timestamp: diff.timestamp,
     diffsSinceSnapshot: diff.diffsSinceSnapshot,
+    signature: diff.signature,
   };
 }
 
-function emitDiff(graph: Graph, additions: SignedTriple[], removals: SignedTriple[]): void {
+async function emitDiff(graph: Graph, additions: SignedTriple[], removals: SignedTriple[]): Promise<void> {
   const state = published.get(graph);
   if (!state) return;
   const author = graph.getIdentity().getDID();
-  const diff = createContextDiff({
+  const diff = await createContextDiff({
     graphDid: requireDid(graph),
     additions,
     removals,
     dependencies: state.revisionChain.length === 0 ? [] : [state.revisionChain[state.revisionChain.length - 1]],
     author,
+    sign: (commitIdHex) => signCommit(graph, commitIdHex),
   });
   state.revisionChain.push(diff.revision);
   state.channel?.postMessage({
@@ -161,9 +209,13 @@ export const defaultSyncModule: ContextSyncRuntime = {
         const state = published.get(graph);
         if (!state) return;
         if (msg.type === 'DIFF' && msg.diff.graphDid === requireDid(graph)) {
+          // Reconstruct the GraphDiff carrying the wire-supplied commitId
+          // and signature so Spec 05 §9.2.1 step 0 can verify against the
+          // received bundle (not a recomputed one).
           const diff = new GraphDiff({
             graphDid: msg.diff.graphDid,
             revision: msg.diff.revision,
+            commitId: msg.diff.commitId,
             additions: msg.diff.additions,
             removals: msg.diff.removals,
             dependencies: msg.diff.dependencies,
@@ -171,9 +223,21 @@ export const defaultSyncModule: ContextSyncRuntime = {
             author: msg.diff.author,
             timestamp: msg.diff.timestamp,
             diffsSinceSnapshot: msg.diff.diffsSinceSnapshot,
+            signature: msg.diff.signature,
           });
-          if (!state.revisionChain.includes(diff.revision)) state.revisionChain.push(diff.revision);
-          graph.dispatchEvent(new DiffEvent(diff));
+          // Sync-blocking signature verification (Spec 05 §9.2.1 step 0).
+          // Verification is async; we kick off the check and only deliver
+          // the diff to consumers once it passes.
+          void (async () => {
+            const verifyResult = await verifyBundleSignature(diff, verifyDidKeySignature);
+            if (!verifyResult.ok) {
+              // Reject: don't store, don't apply, don't re-emit (Spec 05 §9.3).
+              // Production modules would log this to an audit channel.
+              return;
+            }
+            if (!state.revisionChain.includes(diff.revision)) state.revisionChain.push(diff.revision);
+            graph.dispatchEvent(new DiffEvent(diff));
+          })();
         } else if (msg.type === 'SIGNAL') {
           if (msg.to && msg.to.did !== graph.getIdentity().getDID()) return;
           if (msg.to?.sessionId && msg.to.sessionId !== sessionId) return;
@@ -206,11 +270,11 @@ export const defaultSyncModule: ContextSyncRuntime = {
 
     const tripleAddedListener: EventListener = (event) => {
       const triple = (event as CustomEvent<SignedTriple>).detail ?? (event as { triple?: SignedTriple }).triple;
-      if (triple) emitDiff(graph, [triple], []);
+      if (triple) void emitDiff(graph, [triple], []);
     };
     const tripleRemovedListener: EventListener = (event) => {
       const triple = (event as CustomEvent<SignedTriple>).detail ?? (event as { triple?: SignedTriple }).triple;
-      if (triple) emitDiff(graph, [], [triple]);
+      if (triple) void emitDiff(graph, [], [triple]);
     };
 
     const state: PublishedState = {
@@ -330,13 +394,20 @@ export const defaultSyncModule: ContextSyncRuntime = {
 interface ChannelDiffPayload {
   graphDid: string;
   revision: string;
+  commitId: string;
   additions: SignedTriple[];
   removals: SignedTriple[];
   dependencies: string[];
-  capabilityProof: { chain: string[]; caveatsSatisfied?: string[]; hasContentCaveats?: boolean } | null;
+  capabilityProof: {
+    chain: string[];
+    caveatsSatisfied?: string[];
+    hasContentCaveats?: boolean;
+    presentations?: object[];
+  } | null;
   author: string;
   timestamp: string;
   diffsSinceSnapshot: number;
+  signature: string;
 }
 
 type ChannelMessage =

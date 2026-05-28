@@ -360,6 +360,9 @@ importers:
       '@living-web/context-sync':
         specifier: workspace:*
         version: link:../context-sync
+      '@living-web/identity':
+        specifier: workspace:*
+        version: link:../identity
       '@living-web/personal-graph':
         specifier: workspace:*
         version: link:../personal-graph
@@ -367,9 +370,6 @@ importers:
         specifier: workspace:*
         version: link:../sync-module
     devDependencies:
-      '@living-web/identity':
-        specifier: workspace:*
-        version: link:../identity
       fake-indexeddb:
         specifier: ^6.2.5
         version: 6.2.5

@@ -2,21 +2,17 @@
  * ZCAP verification (Spec 04 §7).
  *
  * Key invariants enforced here:
- *   - `has_zcap` is queried across **every graph in the scope set**, not
- *     just the writing graph (Spec 04 §7 step 5).
- *   - Chain walk terminates at `urn:living-web:zcap:BootstrapRoot` — the
- *     bootstrap sentinel that cuts the chain at the constitutional boundary
- *     (Spec 04 §4.3, §7 step 6.5.4).
+ *   - Validation reads only from the writing graph: `has_zcap`, the chain
+ *     walk, and the resource match all resolve against the target graph
+ *     alone (Spec 04 §7).
+ *   - Chain walk terminates at `urn:living-web:zcap:BootstrapRoot`, the
+ *     constitutional boundary (Spec 04 §4.3, §7 step 6.5.4).
  *   - Each parent in the chain MUST carry `delegateCapability` in its
- *     `actions` — otherwise the chain is broken at that step (Spec 04 §7
- *     step 6.5.3).
- *   - Attenuation is **immutable caveats**: child MAY add caveats but MUST
- *     NOT modify or remove parent caveats. Byte equality, not "narrowed"
- *     (Spec 04 §8).
- *   - Capability constraints in scope are evaluated as long as `kind ===
- *     "capability"`. The earlier `capability_enforcement` field has been
- *     dropped (Spec 04 §4.5.1) — presence of a capability constraint is
- *     itself the "required" signal.
+ *     actions (Spec 04 §7 step 6.5.3).
+ *   - Attenuation is byte-equal immutable caveats: a child MAY add caveats
+ *     but MUST NOT modify or remove a parent's (Spec 04 §8).
+ *   - Cross-graph authority is expressed via mutual DID-document delegation
+ *     (Spec 04 Appendix A).
  */
 
 import { GOV } from './predicates.js';
@@ -85,21 +81,21 @@ export async function verifyCapability(
     if (!predicateCovered) return { allowed: true };
   }
 
-  // Collect the author's has_zcap links from EVERY graph in the scope set.
+  // Collect the author's has_zcap links from the target graph (Spec 04 §7
+  // step 5), plus has_zcap links anchored on the graph itself for
+  // graph-DID-invoker caps.
   const zcapLinks: { object: string }[] = [];
-  for (const graphDid of scope.graphs.keys()) {
-    const links = await ctx.queryTriples({
-      subject: triple.author,
-      predicate: GOV.HAS_ZCAP,
-    });
-    for (const l of links) zcapLinks.push({ object: l.data.object });
-    // Also any has_zcap links anchored on the graph itself for graph-DID-invoker caps.
-    const graphLinks = await ctx.queryTriples({
-      subject: graphDid,
-      predicate: GOV.HAS_ZCAP,
-    });
-    for (const l of graphLinks) zcapLinks.push({ object: l.data.object });
-  }
+  const authorLinks = await ctx.queryTriples({
+    subject: triple.author,
+    predicate: GOV.HAS_ZCAP,
+  });
+  for (const l of authorLinks) zcapLinks.push({ object: l.data.object });
+  const graphLinks = await ctx.queryTriples({
+    subject: ctx.graphDid,
+    predicate: GOV.HAS_ZCAP,
+  });
+  for (const l of graphLinks) zcapLinks.push({ object: l.data.object });
+
   // Dedupe by the ZCAP id.
   const seenZcap = new Set<string>();
   const candidates: ZCAPDocument[] = [];
@@ -115,10 +111,10 @@ export async function verifyCapability(
     const actions = zcap.actions ?? zcap.capability?.predicates ?? [];
     if (!actions.includes(action)) continue;
 
-    // Resource match: target graph DID, current IRI, or any graph in the scope set.
-    // (Spec 04 §7 step 6.2: capability accumulation across the scope set.)
+    // Resource match: target graph DID or current IRI (snapshot-scoped).
+    // (Spec 04 §7 step 6.2.)
     const resource = zcap.resource ?? zcap.capability?.scope?.graph;
-    if (resource && resource !== ctx.graphDid && !scope.graphs.has(resource)) continue;
+    if (resource && resource !== ctx.graphDid) continue;
 
     // Revocation
     if (await isRevoked(zcap.id, ctx)) continue;
@@ -192,15 +188,13 @@ async function verifyChain(
   // BOOTSTRAP TERMINATION (Spec 04 §4.3, §7 step 6.5.4): chain is cut at the
   // constitutional boundary. We do NOT walk into the parent's chain.
   if (zcap.parentCapability === BOOTSTRAP_ROOT) {
-    // Validate that this cap is in fact a root of some graph in the scope set.
-    for (const graphDid of scope.graphs.keys()) {
-      const rootLinks = await ctx.queryTriples({
-        subject: graphDid,
-        predicate: GOV.ROOT_CAPABILITY,
-      });
-      for (const link of rootLinks) {
-        if (link.data.object === zcap.id) return true;
-      }
+    // Validate that this cap is in fact the writing graph's own root.
+    const rootLinks = await ctx.queryTriples({
+      subject: ctx.graphDid,
+      predicate: GOV.ROOT_CAPABILITY,
+    });
+    for (const link of rootLinks) {
+      if (link.data.object === zcap.id) return true;
     }
     return false;
   }
@@ -228,11 +222,10 @@ async function verifyChain(
     if (!parentActions.includes(a)) return false;
   }
 
-  // Attenuation: resource is same or in scope of parent's resource.
+  // Attenuation: resource equals the parent's (Spec 04 §8).
   const childResource = zcap.resource ?? zcap.capability?.scope?.graph;
   const parentResource = parent.resource ?? parent.capability?.scope?.graph;
-  if (childResource && parentResource && childResource !== parentResource
-      && !scope.graphs.has(parentResource)) {
+  if (childResource && parentResource && childResource !== parentResource) {
     return false;
   }
 

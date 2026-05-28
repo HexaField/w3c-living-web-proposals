@@ -199,33 +199,81 @@ A receiving peer in a shared space:
 [Exposed=Window,Worker]
 interface GraphDiff {
   readonly attribute USVString graphDid;          // the graph's DID
-  readonly attribute USVString revision;           // sha256 hex
+  readonly attribute USVString revision;           // sha256 hex — triple-set identity
+  readonly attribute USVString commitId;           // sha256 hex — full commit identity
   readonly attribute FrozenArray<Triple> additions;
   readonly attribute FrozenArray<Triple> removals;
-  readonly attribute FrozenArray<USVString> dependencies;  // prior revisions in this graph's chain
+  /** All DAG heads observable to the committer at commit time. See §5.2.1. */
+  readonly attribute FrozenArray<USVString> dependencies;
   readonly attribute CapabilityProof? capabilityProof;
   readonly attribute USVString author;             // did:key:... (the committing agent)
   readonly attribute DOMString timestamp;          // RFC 3339; authoritative commit time
+  /** Committer-claimed number of diffs in this graph's chain since the most
+   *  recent snapshot. See §5.2.3. */
   readonly attribute unsigned long diffsSinceSnapshot;
+  /** Bundle-level signature; see §5.2.2. REQUIRED for diffs that traverse
+   *  any module-supplied transport. */
+  readonly attribute USVString signature;
 };
 ```
 
 Triples carry reifier-based provenance per [[PERSONAL-LINKED-DATA-GRAPHS]] §3.2.
 
-A GraphDiff MUST be immutable once `revision` has been computed.
+A GraphDiff MUST be immutable once `commitId` has been computed.
 
-### 5.2 Revision
+### 5.2 Revision, Commit Identity, Dependencies, Snapshot Counter, and Signature
+
+This section is normative.
+
+#### 5.2.1 `dependencies`
+
+`dependencies` MUST list **every DAG head** in this graph's diff chain that was observable to the committing agent at the moment of commit. Concretely: the set of revisions for which no later revision in the local view names them as a dependency. For a linear chain the set is a singleton (the previous revision). For concurrent writes the set contains every head the committer has seen converged into their local state.
+
+A diff with `|dependencies| > 1` is implicitly a **merge**: it concedes the named branches into a single successor. There is no separate merge-diff format. Module-supplied merge logic ([§1](#1-introduction)) operates over the DAG induced by `dependencies` edges.
+
+A diff with `|dependencies| = 0` is a **chain root** — only valid as the first diff after a snapshot (or for a brand-new graph). Receiving peers MUST reject a `|dependencies| = 0` diff whose `graphDid` already has a diff chain locally, unless the diff also advertises a snapshot promotion (per [[DEFAULT-SYNC-MODULE]] §6 or equivalent module-supplied mechanism).
+
+#### 5.2.2 `revision`, `commitId`, and `signature`
+
+Two content-addressed identifiers and one signature bind the diff:
 
 ```
-revision = hex(SHA-256(
-  graphDid
-  || canonicalize(additions)
-  || canonicalize(removals)
-  || sort(dependencies)
-))
+revision  = hex(SHA-256(
+              graphDid
+              || canonicalize(additions)
+              || canonicalize(removals)
+              || sort(dependencies)
+            ))
+
+commitId  = hex(SHA-256(
+              revision
+              || author
+              || timestamp
+              || capabilityProof.chain[0]   // leaf ZCAP id; "" if proof omitted
+            ))
+
+signature = sign(authorKey, commitId)
 ```
 
 Canonicalisation MUST use the RDF Dataset Canonicalization algorithm [[RDF-CANON]] over the triples-with-reifiers.
+
+**Why two identifiers.** `revision` is the *triple-set* identity — two structurally identical bundles (same triples + same dependencies) produce the same `revision`, which is exactly the right behaviour for deduplication of an idempotent rebroadcast. `commitId` is the *commit* identity — it additionally binds the author, timestamp, and the leaf capability that authorises the commit, so two distinct commits that happen to produce the same triple set are distinguishable.
+
+**Signature.** `signature` MUST be produced by `authorKey`, defined as:
+
+- The author's `did:key` if `author` resolves to one, OR
+- A current `capabilityDelegation` delegate's key on `author`'s DID document if `author` is a graph DID.
+
+Receiving peers MUST verify `signature` against `commitId` using the resolved `authorKey` before applying or forwarding the diff. Verification is normative in [§9.2.1](#921-validatediff-graphdid-diff-author-graphstate) step 0. Without this, an attacker observing valid triples could rebundle them into a diff claiming different authorship — the per-triple reifier signatures would remain valid, but the commit-level authorship would be a fabrication.
+
+#### 5.2.3 `diffsSinceSnapshot`
+
+`diffsSinceSnapshot` is the committer's count of diffs in this graph's chain since the most recently observable snapshot. The committer computes it from their local view at commit time. Receiving peers:
+
+- MAY recompute the value from their own local view and accept the diff when the values agree (or differ by at most a small bounded skew explained by in-flight diffs).
+- SHOULD treat a large divergence (committer claims a value the receiver's view is nowhere near) as a signal that the receiver is missing diffs — typically triggering a fresh snapshot pull rather than a hard rejection.
+
+A diff whose `diffsSinceSnapshot` indicates the chain has grown past the module's snapshot-promotion threshold ([[DEFAULT-SYNC-MODULE]] §6 or equivalent) MAY be rejected pending receipt of the promoted snapshot.
 
 ### 5.3 CapabilityProof
 
@@ -255,18 +303,20 @@ The chain is the ordered list of ZCAPs from the committing agent's leaf capabili
 
 ```webidl
 dictionary Peer {
-  USVString did;             // did:key:... of the agent
+  USVString did;             // the agent's DID
   USVString sessionId;       // 128+ bits of randomness; ephemeral per session
-  USVString? publicKey;
+  USVString? publicKey;      // see below
   USVString? deviceLabel;
   DOMTimeStamp? lastSeen;
   boolean online;
 };
 ```
 
-A single agent MAY have multiple concurrent peer sessions (tabs, devices). Peers are equal iff (DID, sessionId) match.
+A single agent MAY have multiple concurrent peer sessions (tabs, devices). Peers are equal iff `(did, sessionId)` match.
 
 When a user opens a graph in a new tab or on a new device, the user agent MUST generate a new sessionId. The sessionId is ephemeral — it does not persist across user agent restarts.
+
+**`publicKey` semantics.** `publicKey` MUST be omitted when `did` is a `did:key` (the DID identifier already embeds the public key). For any other DID method, `publicKey` SHOULD be populated with a multibase-encoded representation of the current verification method the peer is using to sign on this session, so consumers can authenticate the peer's messages without a fresh DID-document resolution. Implementations MUST NOT trust a `publicKey` value blindly — it is a routing hint; authority continues to derive from the DID's resolved document.
 
 ### 5.5 Graph Sync State
 
@@ -286,7 +336,11 @@ enum GraphSyncState {
 ```webidl
 dictionary SyncValidationResult {
   required boolean accepted;
-  USVString? module;        // "capability" | "temporal" | "content" | "credential" | <plug-in kind>
+  /** The constraint kind that decided the result. Matches the
+   *  `GovernanceValidationResult.constraintKind` field defined by
+   *  [[CAPABILITY-FRAMEWORK]] §11 — "capability" or any plug-in kind
+   *  (e.g. "temporal", "content", "credential"). */
+  USVString? constraintKind;
   USVString? constraintId;
   USVString? reason;
 };
@@ -364,7 +418,7 @@ The `mount()` method MUST:
 1. Reject with `"InvalidStateError"` if the graph is already mounted.
 2. **Authorise the mount** against the graph's governance ([[CAPABILITY-FRAMEWORK]]):
    - If `options.mode` is `"write"` or `"governance"`, perform [[CAPABILITY-FRAMEWORK]] §7 with `action = "createLink"` (or the specific action implied by the intended operations) and the supplied `capabilityProof`. Reject with `"NotAllowedError"` on failure.
-   - If `options.mode` is `"read"`, perform [[CAPABILITY-FRAMEWORK]] §7 with `action = "mountContext"`. If the scope set contains no capability constraint covering `mountContext` (per [§4.5](#45-document-updates) of that spec), the graph's read access is unrestricted and the mount proceeds without a proof. Otherwise the caller MUST supply a `capabilityProof` valid for `mountContext`; reject with `"NotAllowedError"` if it is missing or invalid.
+   - If `options.mode` is `"read"`, perform [[CAPABILITY-FRAMEWORK]] §7 with `action = "mountContext"`. If the graph carries no capability constraint covering `mountContext` (per [[CAPABILITY-FRAMEWORK]] §4.5.1 — a constraint with `constraint_kind = "capability"`), the graph's read access is unrestricted and the mount proceeds without a proof. Otherwise the caller MUST supply a `capabilityProof` valid for `mountContext`; reject with `"NotAllowedError"` if it is missing or invalid.
 3. If the graph's per-graph store does not exist locally and `options.snapshotUri` is provided, fetch and materialise the snapshot per [[PERSONAL-LINKED-DATA-GRAPHS]] §5.5. (The peer that serves the snapshot MUST itself have authorised the request per [§9](#9-governance-integration); see [§9.2](#92-the-validate-contract) for the receiver's side.)
 4. Subscribe to `spaceUri` using `moduleHash` (downloading the module if needed, with user consent — module installation semantics are out of scope here).
 5. Begin emitting and accepting `GraphDiff`s scoped to the mounted graph's DID.
@@ -392,6 +446,10 @@ partial interface Graph {
   attribute EventHandler ondiff;
 };
 ```
+
+**Early write-gate for read-only mounts.** When a `Graph` was opened with `MountOptions.mode = "read"`, mutating operations defined by [[PERSONAL-LINKED-DATA-GRAPHS]] (notably `addTriple()` and `removeTriple()`) MUST reject synchronously with `"InvalidStateError"` before any diff is constructed. Without this gate, a read-mounted application could build a diff that would later be rejected at validation; the early gate makes the failure ergonomic and avoids leaking the would-be triple content to outbound queues.
+
+**Pull is module-supplied.** The wire operation that fetches diffs since a given revision (referenced as a "pull" in [§7.5](#75-what-syncs-within-a-space) and [§8.1](#81-becoming-subscribed) step 7) is supplied by the active sync module's protocol — see [[DEFAULT-SYNC-MODULE]] §5.3 (`PULL`) for the reference shape. This specification deliberately does not surface a `Graph.pull()` method, because diff retrieval semantics (batching, ordering, snapshot vs incremental) are module concerns.
 
 ### 6.4 GraphManager-Level Sync Management
 
@@ -460,12 +518,14 @@ A topology is a policy that maps graphs to spaces. The three standard topologies
 | **Fully Partitioned** | Every graph gets its own dedicated space. Maximum isolation. | High-security orgs, compliance needs. |
 | **Custom** | Explicit per-graph rules. | Federations, special access patterns. |
 
-The topology engine inspects each graph's governance:
+The topology engine classifies each graph by its read-access surface:
 
-- A graph with `governance://enforcement_mode = "open"` and no restrictive caveats → public.
-- A graph with credential requirements or narrow delegate lists → restricted.
+- **Public** — the graph carries no capability constraint covering `mountContext` ([[CAPABILITY-FRAMEWORK]] §4.5.1, §7.1), and no `credential` caveats appear on capabilities relevant to read access. Anyone with discovery hints can mount; sharing a space carries no marginal exposure.
+- **Restricted** — the graph requires a `mountContext` proof for read access (per [§8.5](#85-read-access-and-mountcontext)), or carries credential gates that would defeat the purpose of co-locating its diffs with public traffic.
 
-When a graph's governance changes, the topology engine MAY migrate the graph to a different space. Migration republishes the graph's current snapshot into the new space and notifies peers.
+The classifier keys off read-access constraints rather than `enforcement_mode`, because the relevant question for topology placement is who may *read* the diffs (Open mode only governs writes — a graph in Open mode may still gate reads with `mountContext`).
+
+When a graph's governance changes (e.g., a `mountContext` constraint is added or removed), the topology engine MAY migrate the graph to a different space. Migration republishes the graph's current snapshot into the new space and notifies peers.
 
 ### 7.3 Space Derivation
 
@@ -487,18 +547,27 @@ custom:       "lwsync:named:" + <custom-name>
 
 The namespace-id is typically the DID of a root graph that other graphs participate in.
 
-### 7.4 Space Memberships
+### 7.4 Space Memberships and Topology Coordination
 
 An agent's set of subscribed spaces is the union of spaces required by their mounted graphs:
 
 ```
 spaces_to_join = unique(
   for each mounted graph c:
-    derive_space(c.graphDid, this.topology)
+    space_for(c)
 )
 ```
 
-If the topology is **Unified**, this is always one space. If **Fully Partitioned**, one space per mounted graph. If **Privacy-Tiered**, a community space plus one per restricted mount.
+If the agent-local topology is **Unified**, the local computation yields one space. If **Fully Partitioned**, one space per mounted graph. If **Privacy-Tiered**, a community space plus one per restricted mount.
+
+**Coordination — publisher's choice wins.** Topology is an *agent-local* policy, but two agents must agree on a space URI to meet on. The publisher's choice is authoritative:
+
+1. When a graph is published, the runtime computes `spaceUri` from the publisher's topology choice and embeds it in the `PublishedGraph` ([§6.1](#61-publishing-a-graph)).
+2. When another agent mounts that graph, the publisher's `spaceUri` reaches them via the discovery channel (typically as `MountOptions.spaceUri`, sourced from an invitation link, directory graph, or DHT record — see [§8.6](#86-discovery-non-normative)).
+3. The mounter's runtime MUST use the supplied `spaceUri` for this graph regardless of its local default topology. The local topology only governs spaces the mounter chooses for graphs *they* publish.
+4. If no `spaceUri` is supplied to `mount()`, the mounter MAY fall back to deriving a space URI from their local topology — but is then liable to land in a different space from the publisher and see no peers. Implementations SHOULD surface this as a sync-state diagnostic.
+
+Topology migration ([§7.2](#72-topology-policy)) is initiated by the *publisher* (or the topology engine running on the publisher's user agent); the new `spaceUri` propagates via republication notification so other mounters can follow.
 
 When an agent unmounts the last graph that required a particular space, the runtime SHOULD leave the space.
 
@@ -509,10 +578,10 @@ Every diff committed to a space is a `GraphDiff` ([§5.1](#51-contextdiff)) tagg
 A receiving peer:
 
 1. Read `graphDid` — am I subscribed to this graph?
-2. If no, discard (do not store, do not process, do not forward to non-space peers).
-3. If yes, verify `capabilityProof` against the graph's governance.
-4. If valid, apply to the per-graph store.
-5. If invalid, reject and (optionally) log.
+2. If **no**, the peer MUST NOT store, process, or apply the diff locally; MUST NOT forward it to peers *outside* this sync space; but **MUST continue to forward the diff to other members of this sync space** under the module's gossip protocol. The graphDid filter is a *processing* filter, not a *forwarding* filter — withholding diffs at the gossip layer would disconnect the graph for any peer that happens to be reachable only through the local node.
+3. If **yes**, verify `capabilityProof` and `signature` against the graph's governance (per [§9.2.1](#921-validatediff-graphdid-diff-author-graphstate)).
+4. If valid, apply to the per-graph store. The diff MAY still be forwarded under module-supplied gossip rules.
+5. If invalid, the peer MUST NOT apply the diff AND MUST NOT re-broadcast it (per [§9.3](#93-rejection-behaviour-sync-blocking) — sync-blocking applies once validation has failed, distinct from the not-subscribed case above).
 
 In a dedicated space, the graphDid filter always passes. The flow is the same.
 
@@ -540,12 +609,12 @@ This section is normative.
 The full handshake for an agent to subscribe to a graph they have not previously mounted:
 
 1. **Discover.** The agent obtains the graph's DID plus addressing hints (space URI, module hash, relay endpoints, snapshot URI). This step is **out of scope** for this specification; see [§8.6](#86-discovery-non-normative) for the non-normative discussion of how applications typically wire it up.
-2. **Resolve.** The runtime resolves the DID per [[DID-CORE]]. If no snapshot is locally available, the runtime issues a *snapshot pull* against the discovered relay/peer carrying the agent's `capabilityProof` for `mountContext` (per [§8.5](#85-read-access-and-mountcontext)). The responding peer authorises the request per [§9.2](#92-the-validate-contract) before sending bytes; on success the local runtime fetches and verifies the snapshot (the snapshot's `graphIri` is its content hash; the snapshot's binding to the DID is verified per [[GROUP-IDENTITY]] §4.6).
-3. **Verify snapshot.** Verify the snapshot's signatures per [[PERSONAL-LINKED-DATA-GRAPHS]] §5.5.
-4. **Verify mount authority locally.** Re-run the mount-mode authorisation per [§6.2](#62-mounting-a-remote-graph) step 2 against the freshly-materialised local view of the graph's governance. (Two checks: the responding peer's gate at step 2, and the local gate here. They are deliberately redundant — the local gate is the authoritative one for the resulting `Graph` instance's mount mode; the remote gate prevents data exfiltration before bytes leave the responder.)
-5. **Mount.** Open the per-graph store and materialise the snapshot via `GraphManager.fromSnapshot()` ([[PERSONAL-LINKED-DATA-GRAPHS]] §5.5). Any serialisation format defined in [[PERSONAL-LINKED-DATA-GRAPHS]] §5.3 is acceptable; the materialised graph's IRI equals the snapshot's `graphIri`.
-6. **Join space.** Subscribe to the space identified by the topology + module.
-7. **Sync.** Pull diffs from the space since the snapshot's `currentRevision`. Apply each (re-verifying CapabilityProofs per [§9.2](#92-the-validate-contract)).
+2. **Resolve and pull.** The runtime resolves the DID per [[DID-CORE]]. If no snapshot is locally available, the runtime issues a *snapshot pull* against the discovered relay/peer carrying the agent's `capabilityProof` for `mountContext` (per [§8.5](#85-read-access-and-mountcontext)). The responding peer authorises the request per [§9.2.2](#922-validatereadaccess-graphdid-authordid-capabilityproof) before sending bytes; on success the local runtime fetches the snapshot (the snapshot's `graphIri` is its content hash; the snapshot's binding to the DID is verified per [[GROUP-IDENTITY]] §4.6).
+3. **Verify snapshot.** Verify the snapshot's content hash matches `graphIri` and its signatures per [[PERSONAL-LINKED-DATA-GRAPHS]] §5.5. At this point the bytes are trusted but the graph is not yet mounted.
+4. **Materialise.** Open the per-graph store and materialise the snapshot via `GraphManager.fromSnapshot()` ([[PERSONAL-LINKED-DATA-GRAPHS]] §5.5). Any serialisation format defined in [[PERSONAL-LINKED-DATA-GRAPHS]] §5.3 is acceptable; the materialised graph's IRI equals the snapshot's `graphIri`. The graph's governance triples are now locally queryable.
+5. **Verify mount authority locally.** Re-run the mount-mode authorisation per [§6.2](#62-mounting-a-remote-graph) step 2 against the freshly-materialised local view of the graph's governance. The materialised graph (step 4) is the input to this check — the local engine can now resolve constraints and the supplied `capabilityProof` against authoritative data. (Two checks: the responding peer's gate at step 2, and the local gate here. They are deliberately redundant — the local gate is the authoritative one for the resulting `Graph` instance's mount mode; the remote gate prevents data exfiltration before bytes leave the responder.) On failure, tear down the per-graph store and reject `mount()` with `"NotAllowedError"`.
+6. **Join space.** Subscribe to the space identified by the publisher's `spaceUri` ([§7.4](#74-space-memberships-and-topology-coordination)), using the discovered module.
+7. **Sync.** Pull diffs from the space since the snapshot's `currentRevision`. Apply each (re-verifying CapabilityProofs and bundle signatures per [§9.2.1](#921-validatediff-graphdid-diff-author-graphstate)).
 
 The agent is now subscribed. Subsequent diffs propagate via gossip; subsequent writes by the agent are authored to the graph, packaged into GraphDiffs, signed with their capability chain, and committed to the space.
 
@@ -558,7 +627,7 @@ The runtime keeps the per-graph store in sync via the module's connection and re
 | Trigger | Effect |
 |---|---|
 | **Agent unmounts the graph** | The runtime leaves the space (if no other mounted graph requires it), drops the local store reference, fires `contextunmounted`. The per-graph store stays on disk; remounting reopens it. |
-| **Capability is revoked** | A revocation triple arrives. The runtime detects it, fires `subscriptionlost`, and either downgrades mount mode (if a partial chain remains valid) or fully unmounts. |
+| **Capability is revoked** | A revocation triple arrives. The runtime detects it, fires `subscriptionlost` on the `GraphManager` carrying the previous mode, and **MUST close the `Graph` instance**: subsequent calls on the instance reject with `"InvalidStateError"`. The runtime MUST NOT silently downgrade the instance's mode in place — silent state changes leave application-held references in an undefined contract. If a partial chain remains valid for a weaker mode, the application MAY call `mount()` again with the weaker mode to obtain a fresh `Graph` instance. The per-graph store remains on disk; remounting reopens it. |
 | **Snapshot promotion makes prior diffs unreachable** | If the agent has been offline long enough that the chain has been promoted past their last-known revision, the runtime pulls a fresh snapshot to catch up. |
 
 ### 8.4 Subscription Events
@@ -569,7 +638,7 @@ The runtime keeps the per-graph store in sync via the module's connection and re
 
 Read access is governed by the same capability framework as writes ([[CAPABILITY-FRAMEWORK]] §7.1 — Non-Triple Operations), via the `mountContext` action.
 
-**Default (no constraint):** When a graph's scope set contains no capability constraint covering `mountContext`, read access is unrestricted. Any peer may pull a snapshot or mount in `"read"` mode without presenting a proof. This is the default for newly-created graphs and the typical pattern for open communities and public artefacts.
+**Default (no constraint):** When a graph carries no capability constraint covering `mountContext`, read access is unrestricted. Any peer may pull a snapshot or mount in `"read"` mode without presenting a proof. This is the default for newly-created graphs and the typical pattern for open communities and public artefacts.
 
 **Restricted (constraint present):** A graph that binds a capability constraint covering `mountContext` requires the requesting agent to hold (and present) a valid `mountContext` capability. Both the responding peer that serves the snapshot ([§9.2](#92-the-validate-contract)) and the local runtime at mount time ([§6.2](#62-mounting-a-remote-graph) step 2) MUST authorise the request. Common patterns:
 
@@ -577,7 +646,7 @@ Read access is governed by the same capability framework as writes ([[CAPABILITY
 - **Pre-issued read tokens.** A `mountContext` capability delegated directly to a specific `did:key` invoker — the holder presents the ZCAP chain and signs the request.
 - **Group-DID-bound read access.** A `mountContext` capability delegated to a group DID; any current `capabilityInvocation` delegate of that group may invoke it.
 
-A read-only mount receives diffs but cannot author them. Applications MAY upgrade later by calling `mount()` again with a `write` or `governance` proof.
+A read-only mount receives diffs but cannot author them. Write attempts on a read-mounted `Graph` MUST reject synchronously per [§6.3](#63-sync-operations) (the early write-gate) rather than constructing a doomed diff. Applications MAY upgrade later by calling `mount()` again with a `write` or `governance` proof — which returns a *new* `Graph` instance; the prior read-mode instance remains usable until its mount mode is invalidated.
 
 **Forward-looking diffs vs initial snapshot.** The `mountContext` check authorises *receipt of the graph's current state and ongoing diffs*. Per-diff capability checks (the existing [§9.2](#92-the-validate-contract) machinery) continue to gate which diffs are *applied* — but those checks happen on data the mounted agent already has. Restricting `mountContext` is the only point at which a peer can prevent another agent from seeing the graph at all.
 
@@ -613,12 +682,12 @@ This specification integrates with [[CAPABILITY-FRAMEWORK]] at four normative po
 
 Read access AND every `GraphDiff` are governance-verified:
 
-| Point | Who | What is checked |
-|---|---|---|
-| **Read-mount request** | Each peer that *serves* a snapshot or accepts a read mount | `mountContext` capability for the requesting agent, per [§8.5](#85-read-access-and-mountcontext) and [§9.2](#92-the-validate-contract) |
-| **Commit time** | Committing agent's runtime | Full SHACL + ZCAP + caveats against the agent's local state, batch-scoped |
-| **Gossip time** | Each receiving peer | Re-verify capability chain, re-verify caveats with link content, re-verify SHACL conformance |
-| **Transport integrity** | Underlying transport (e.g., relay's validation) | Cryptographic signatures only — chain valid, link signatures valid, graph IRI consistent |
+| Point | Who | What is checked | Layer |
+|---|---|---|---|
+| **Read-mount request** | Each peer that *serves* a snapshot or accepts a read mount | `mountContext` capability for the requesting agent, per [§8.5](#85-read-access-and-mountcontext) and [§9.2.2](#922-validatereadaccess-graphdid-authordid-capabilityproof) | This spec |
+| **Commit time** | Committing agent's runtime | Full SHACL + ZCAP + caveats against the agent's local state, batch-scoped | This spec ([§9.2.1](#921-validatediff-graphdid-diff-author-graphstate)) |
+| **Gossip time** | Each receiving peer | Re-verify bundle `signature`, re-verify capability chain, re-verify caveats with link content, re-verify SHACL conformance | This spec ([§9.2.1](#921-validatediff-graphdid-diff-author-graphstate)) |
+| **Transport integrity** | The active sync module's transport | Cryptographic signatures only — chain valid, link signatures valid, graph IRI consistent | **Module-supplied** (this spec is module-neutral; see [[DEFAULT-SYNC-MODULE]] for the reference module's checks) |
 
 ### 9.2 The validate() Contract
 
@@ -628,20 +697,24 @@ A conforming sync module exposes two `validate*` operations:
 
 For every incoming `GraphDiff`, the receiving peer MUST:
 
-1. Resolve the target graph's **scope set** per [[CAPABILITY-FRAMEWORK]] §6.1 using the locally-observable participation declarations. The scope set is the target graph plus every graph reachable via mutually-accepted `context://participates_in` edges (in either direction, per [[CAPABILITY-FRAMEWORK]] §6.2).
-2. Verify the diff's `CapabilityProof.chain` against the union of constraints across the scope set ([[CAPABILITY-FRAMEWORK]] §7). The chain walk MUST query `has_zcap` across the scope set, not just the target graph, and MUST terminate at `urn:living-web:zcap:BootstrapRoot` (the chain is *cut* at constitutional boundaries — [[CAPABILITY-FRAMEWORK]] §4.3).
-3. Re-evaluate any content-dependent caveats against the actual triples in `additions` and `removals` (per [[CAPABILITY-FRAMEWORK]] §9). The deny-wins rule applies ([[CAPABILITY-FRAMEWORK]] §6.3): if any in-scope constraint rejects, the diff is rejected.
+0. **Verify bundle signature.** Recompute `commitId` per [§5.2.2](#522-revision-commitid-and-signature) from the received fields. Resolve `authorKey` (the author's `did:key`, or — for graph-DID authors — a key listed in `capabilityDelegation` on the author's DID document at validation time). Verify `diff.signature` against `commitId` using `authorKey`. If verification fails, reject with `reason: "signature_invalid"`. This step prevents bundle malleability: an attacker observing valid triples cannot rebundle them under a different author, timestamp, or capability claim.
+1. Collect the target graph's capability constraints per [[CAPABILITY-FRAMEWORK]] §6.2.
+2. Verify the diff's `CapabilityProof.chain` against those constraints per [[CAPABILITY-FRAMEWORK]] §7. The chain walk queries `has_zcap` in the target graph and terminates at `urn:living-web:zcap:BootstrapRoot` ([[CAPABILITY-FRAMEWORK]] §4.3).
+3. Re-evaluate any content-dependent caveats against the actual triples in `additions` and `removals` (per [[CAPABILITY-FRAMEWORK]] §9). Deny-wins applies ([[CAPABILITY-FRAMEWORK]] §6.3): if any constraint rejects, the diff is rejected.
 4. Verify each triple's reifier signature against the resolved author.
-5. Return `{ accepted: true }` or `{ accepted: false, constraintKind: ..., reason: ... }`.
+5. Validate `dependencies` ([§5.2.1](#521-dependencies)): the named revisions either exist in the local store or are accompanied by the snapshot promotion they reference; reject otherwise.
+6. Return `{ accepted: true }` or `{ accepted: false, constraintKind: ..., reason: ... }`.
+
+Validation reads only from the target graph's local state. Every honest peer with the same view of the target reaches the same accept/reject conclusion — the property that makes the sync-blocking rule in [§9.3](#93-rejection-behaviour-sync-blocking) converge.
 
 #### 9.2.2 `validateReadAccess(graphDid, authorDid, capabilityProof?)`
 
 When a peer receives a **snapshot pull** (per the module's wire protocol — e.g., [[DEFAULT-SYNC-MODULE]] §9.4) or a **read-mode mount request**, it MUST:
 
-1. Resolve the target graph's scope set per [[CAPABILITY-FRAMEWORK]] §6.1.
+1. Collect the target graph's capability constraints (per [[CAPABILITY-FRAMEWORK]] §6.2).
 2. Invoke [[CAPABILITY-FRAMEWORK]] §7 with `action = "mountContext"` (the explicit override path; the request has no triple to derive an action from — per [[CAPABILITY-FRAMEWORK]] §7.1). Caveats that depend on triple content are skipped; `credential` and other context-only caveats are evaluated against the supplied `capabilityProof.presentations`.
 3. Return `{ accepted: true }` if either:
-   - the scope set contains no capability constraint covering `mountContext` (unrestricted read), OR
+   - the target graph carries no capability constraint covering `mountContext` (unrestricted read), OR
    - the supplied `capabilityProof` chain authorises the operation.
 
    Otherwise return `{ accepted: false, constraintKind: "capability", reason: ... }`.
@@ -655,21 +728,21 @@ A diff that fails validation MUST NOT be:
 - Stored in the local per-graph store.
 - Forwarded to other peers (the receiving peer MUST NOT re-broadcast).
 
-This is **sync-blocking based on governance rules**: an invalid diff stops propagating at every peer that rejects it. Combined with deterministic, scope-set-aware validation, the network converges on a state where rejected writes do not reach any honest peer.
+This is **sync-blocking based on governance rules**: an invalid diff stops propagating at every peer that rejects it. Combined with the deterministic per-graph validation in [§9.2.1](#921-validatediff-graphdid-diff-author-graphstate), the network converges on a state where rejected writes do not reach any honest peer.
 
 Implementations SHOULD log rejected diffs for audit but MUST NOT retain rejected triple content beyond what is needed for the audit.
 
-**Holonic implication.** Because the scope set is computed from mutually-accepted participation declarations in either direction, a write to graph A that violates a constraint on holonically-linked graph B is rejected and not propagated. Holonic governance is enforceable at the sync layer without any additional protocol — the scope-set computation already covers it.
+Applications that need shared authority across graphs compose it at the identity layer via DID-document mutual delegation ([[CAPABILITY-FRAMEWORK]] Appendix A); caps remain resourced to each respective target graph, and sync-layer validation stays per-graph.
 
 ### 9.4 Enforcement Mode Awareness
 
 The runtime SHALL inspect the target graph's `governance://enforcement_mode` ([[CAPABILITY-FRAMEWORK]] §5) before applying capability checks:
 
-- **Open**: Skip ZCAP checks for the target graph. Non-capability constraints (temporal, content, credential, …) from any graph in the scope set still apply per their own rules. A diff that fails a non-capability constraint is still rejected, even when the target graph is in Open mode.
+- **Open**: Skip ZCAP checks. Non-capability constraints on the target graph (temporal, content, credential, …) still apply per their own rules; a diff that fails one is still rejected.
 - **Announced**: Verify but do not reject on capability failure; log.
 - **Enforced**: Verify and reject.
 
-Each graph in the scope set is evaluated under **its own** enforcement mode for capability constraints it bound. A diff to graph A may be capability-accepted under A's Open mode while being capability-rejected under a participating graph B's Enforced mode that has a constraint reaching A via the scope set. Deny-wins applies across the scope set; a diff is accepted only if every applicable constraint accepts.
+Each graph runs under its own enforcement mode.
 
 ---
 
@@ -749,6 +822,19 @@ Constraint kinds and downstream specifications that rely on time-of-write (e.g.,
 ### 12.6 Module Sandbox
 
 Sync modules MUST run in a sandboxed environment with only the capabilities they requested and the user granted. The sandbox model itself is out of scope here and defined by an extension specification.
+
+### 12.7 Validation Cost and Anti-Abuse
+
+Producing an invalid `GraphDiff` is cheap; rejecting one is expensive. A diff that fails validation still costs every honest peer a signature recomputation ([§9.2.1](#921-validatediff-graphdid-diff-author-graphstate) step 0), a chain walk, and caveat evaluation before the rejection is reached. A misbehaving peer can use this asymmetry to exhaust honest peers' resources.
+
+Receiving peers and sync modules:
+
+- MAY rate-limit incoming diffs per `(did, sessionId)` source, dropping or buffering excess traffic before validation runs.
+- MAY require the module's transport to perform a fast pre-validation check — for example, that `signature` is a well-formed signature over `commitId` by a key the module can resolve cheaply — before the full governance walk.
+- MAY drop a peer that exceeds an implementation-defined invalid-diff threshold, with the disconnection itself rate-limited so as not to amplify abuse.
+- MAY require module-supplied proof-of-work, attestation, or rate-credentials for participation in high-traffic spaces; the framework here does not specify a particular mechanism.
+
+The framework guarantees only that *governance correctness* is determined by the validation algorithm; preserving the network against resource exhaustion is the module's responsibility.
 
 ---
 
@@ -872,7 +958,7 @@ for (const m of mounted) {
 
 const spaces = await navigator.graph.listSpaces();
 for (const s of spaces) {
-  console.log(`${s.spaceUri}: ${s.contextCount} graphs, ${s.peerCount} peers`);
+  console.log(`${s.spaceUri}: ${s.graphCount} graphs, ${s.peerCount} peers`);
 }
 ```
 

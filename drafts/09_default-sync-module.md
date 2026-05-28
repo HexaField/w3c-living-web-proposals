@@ -191,7 +191,7 @@ All messages are CBOR-encoded with a common envelope:
 
 `authorDid` identifies the requesting agent. Each peer that receives a PULL MUST authorise it via the `validateReadAccess` operation defined in [[CONTEXT-SYNC]] §9.2.2, passing `action = "mountContext"`:
 
-- If the target graph's scope set contains no capability constraint covering `mountContext`, the request is accepted unconditionally and `capabilityProof` MAY be omitted.
+- If the target graph carries no capability constraint covering `mountContext`, the request is accepted unconditionally and `capabilityProof` MAY be omitted.
 - Otherwise the recipient MUST require a valid `capabilityProof` for `mountContext`; if absent or invalid, the recipient MUST NOT respond with a SNAPSHOT or any DIFFs for this graph to this requester. It MAY respond with a PULL_DENIED message (§5.4.1) for diagnostics.
 
 On success the recipient responds with a `SNAPSHOT` (if `fromRevision` is `null` or unknown) or a sequence of `DIFF` messages.
@@ -316,7 +316,11 @@ This is commutative, associative, and idempotent — diffs can be applied in any
 
 ### 8.2 Causal Dependencies
 
-Each diff lists its `dependencies` — prior revisions in the same graph's chain that this diff was authored on top of. Peers MUST apply dependencies before the diff itself. If a dependency is missing, request it via `PULL` ([§5.3](#53-pull)).
+Each diff lists its `dependencies` — every DAG head observable in the same graph's chain at commit time (per [[CONTEXT-SYNC]] §5.2.1). Peers MUST apply all named dependencies before the diff itself. If a dependency is missing locally, the receiver requests it via `PULL` ([§5.3](#53-pull)).
+
+A diff with `|dependencies| > 1` is an **implicit merge**: it concedes the named branches into a single successor. The OR-Set tags accumulated across all merged branches remain valid — the merge diff does not invalidate them, it only marks them as having been observed together by the committer. There is no separate merge-diff format in this module.
+
+A diff with `|dependencies| = 0` is a **chain root**: only legal as either the first diff after a `SNAPSHOT` ([§9](#9-snapshot-promotion)) or the very first diff for a graph. Receivers MUST reject a chain-root diff whose `graphDid` already has unrelated diffs locally — this is a probable signal of a fork attempt or corrupted state.
 
 ### 8.3 Reifier Convergence
 
@@ -378,12 +382,14 @@ Receiving peers verify both signatures. Snapshots without at least one valid sig
 
 The default module's `validateDiff(graphDid, diff, author, graphState)` implements the diff-side contract in [[CONTEXT-SYNC]] §9.2.1 by invoking the [[CAPABILITY-FRAMEWORK]] engine through the runtime:
 
-1. Resolve the `graphDid`'s governance engine via the `graphState` `GraphReader` handle.
-2. For each triple in `diff.additions` and `diff.removals`:
+1. **Bundle signature.** Recompute `commitId` per [[CONTEXT-SYNC]] §5.2.2 from `diff`'s received fields and verify `diff.signature` against it using the resolved author key (the author's `did:key` public bytes, or a current `capabilityDelegation` verification method on the author's DID document for graph-DID authors). On any mismatch return `{ accepted: false, reason: "signature_invalid" }`.
+2. **Dependencies.** Validate `diff.dependencies` per [§8.2](#82-causal-dependencies). If any named dependency is missing locally, the module requests it via `PULL` ([§5.3](#53-pull)) and defers the diff until the dependency arrives.
+3. Resolve the `graphDid`'s governance engine via the `graphState` `GraphReader` handle.
+4. For each triple in `diff.additions` and `diff.removals`:
    1. Construct a `TripleInput` carrying the triple, the `author`, the diff's `timestamp`, and the resolved capability chain from `diff.capabilityProof`.
    2. Call the engine's `validate(triple, ctx)`.
    3. If the result is `{ allowed: false, ... }`, return `{ accepted: false, constraintKind: <result.constraintKind>, constraintId: <result.rejectedBy>, reason: <result.reason> }`.
-3. Otherwise, return `{ accepted: true }`.
+5. Otherwise, return `{ accepted: true }`.
 
 The engine internally applies the capability-chain verification ([[CAPABILITY-FRAMEWORK]] §7), caveat evaluation ([[CAPABILITY-FRAMEWORK]] §9), and all registered constraint-kind plug-ins ([[CONSTRAINT-VOCABULARY]]).
 
@@ -392,7 +398,7 @@ The engine internally applies the capability-chain verification ([[CAPABILITY-FR
 The default module's `validateReadAccess(graphDid, authorDid, capabilityProof?, graphState)` implements the read-side contract in [[CONTEXT-SYNC]] §9.2.2. It MUST be called by the receiving peer **before** serving a `SNAPSHOT` or any `DIFF` for `graphDid` in response to a `PULL` from `authorDid`:
 
 1. Resolve the `graphDid`'s governance engine via `graphState`.
-2. Determine whether the graph's scope set contains a capability constraint covering `mountContext` (i.e., a constraint with `constraint_kind = "capability"` and either no `capability_predicates` restriction or the action `"mountContext"` in scope per [[CAPABILITY-FRAMEWORK]] §7.1). If none, return `{ accepted: true }` — read access is unrestricted.
+2. Determine whether the graph carries a capability constraint covering `mountContext` (i.e., a constraint with `constraint_kind = "capability"` and either no `capability_predicates` restriction or the action `"mountContext"` in scope per [[CAPABILITY-FRAMEWORK]] §7.1). If none, return `{ accepted: true }` — read access is unrestricted.
 3. Otherwise, invoke the engine's `validate({ author: authorDid, capabilityProof, ... }, { action: "mountContext" })` ([[CAPABILITY-FRAMEWORK]] §7 with the explicit action override per §7.1).
 4. Return `{ accepted: true }` or `{ accepted: false, constraintKind, constraintId, reason }`.
 
