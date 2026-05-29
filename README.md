@@ -419,3 +419,7 @@ cd examples/relay && npx tsx src/index.ts
 
 Specifications: [W3C Software and Document License](https://www.w3.org/copyright/software-license-2023/)
 Implementations: MIT
+
+## A Note on Authorship
+
+Generative AI has been used to aid the writing of these specifications, and especially the polyfill and example code. Every design decision, every trade-off, every cut in scope, and every line that survived a review has been the subject of deeply thoughtful human consideration and care. The proposals are crafted, not generated.
