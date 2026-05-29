@@ -24,16 +24,16 @@ Ten W3C-format draft specifications, arranged so each spec depends only on the o
 
 | # | Spec | Status | Description |
 |---|------|--------|-------------|
-| 01 | [Decentralised Identity](drafts/01_decentralised-identity-web-platform.md) | DRAFT | Extends `navigator.credentials` with `did:key` (individuals); resolver-registry extension point that later specs (e.g. spec 03's `did:graph`) plug into; one `DIDCredential` interface — no separate code paths for "individual" vs "collective" identity |
-| 02 | [Personal Linked Data Graphs](drafts/02_personal-linked-data-graphs.md) | DRAFT | `navigator.graph` — content-addressed `graph://<hash>` IRIs + optional `did` slot; RDF 1.2 reifiers carrying per-triple provenance; lossless RDF 1.2 snapshots (`nquads-canonical` / `nquads` / `turtle` / `jsonld` all round-trip); holonic SPARQL across mounted graphs |
-| 03 | [Decentralised Group Identity](drafts/03_decentralised-group-identity.md) | DRAFT | The `did:graph` method + DID-document-as-triples model. **Groupification** attaches a content-independent DID to an existing graph (in place, one-way); the resulting graph is a **group**. Two concerns kept structurally distinct: *participation* (who is part of it, `context://participates_in`) vs *signing authority* (who can sign as it, DID-document `capabilityInvocation` delegates). |
-| 04 | [Graph Capability Framework](drafts/04_graph-capability-framework.md) | DRAFT | Root Capability + ZCAP delegation algebra. ZCAPs target a graph's DID; Open / Announced / Enforced enforcement modes; **immutable-caveats** attenuation; **deny-wins** same-kind composition; each graph is its own governance boundary — validation is purely local with no cross-graph queries; BootstrapRoot chain-cut at constitutional boundaries; `mountContext` action gates read access. Holonic patterns (shared authority across graphs) are application-layer compositions via mutual DID-document delegation. |
-| 05 | [Context Sync Protocol](drafts/05_context-sync-protocol.md) | DRAFT | `GraphDiff` (graph-DID-keyed); mount-and-subscribe lifecycle; sync spaces decoupled from logical graphs; **read-side `mountContext` gate** + **write-side per-graph validation** — sync-blocking propagates rejection at every honest peer; discovery deliberately out of scope (non-normative patterns documented). |
-| 06 | [Sync Module Architecture](drafts/06_sync-module-architecture.md) | DRAFT | Pluggable WASM module interface, capability sandbox, lifecycle, user consent. |
-| 07 | [Dynamic Graph Shape Validation](drafts/07_dynamic-graph-shape-validation.md) | PRE-DRAFT | SHACL extension with action semantics under stable `shape://actions/`; cross-graph shape inheritance via `context://participates_in`. |
-| 08 | [Governance Constraint Vocabulary](drafts/08_governance-constraint-vocabulary.md) | PRE-DRAFT | Standard constraint kinds that plug into the capability framework: temporal, content, credential, shape. |
-| 09 | [Default Sync Module](drafts/09_default-sync-module.md) | PRE-DRAFT | The built-in module: OR-Set CRDT, WebTransport relay protocol, NAT traversal, snapshot promotion, `PULL` gated by `validateReadAccess`. |
-| 10 | [Graph Flows](drafts/10_graph-flows.md) | PRE-DRAFT | Declarative state machines: SPARQL ASK guards, temporal constraints, role requirements, composite flows. |
+| 01 | [Decentralised Identity](drafts/01_decentralised-identity-web-platform.md) | DRAFT | Identity for people on the web. A single `DIDCredential` interface on `navigator.credentials` that holds the same shape for one person or one collective, plus a resolver-registry extension point that later DID methods plug into. |
+| 02 | [Personal Linked Data Graphs](drafts/02_personal-linked-data-graphs.md) | DRAFT | Linked-data graphs as a browser primitive. `navigator.graph` exposes content-addressed graphs that carry per-triple provenance and serialise losslessly between every RDF 1.2 form. |
+| 03 | [Decentralised Group Identity](drafts/03_decentralised-group-identity.md) | DRAFT | Identity for graphs. Defines `did:graph` — a content-independent identity for an evolving graph — and the DID-document-as-triples model that lets multiple delegates sign as it. Distinguishes *membership* (who is part of the graph) from *signing authority* (who can sign as it), and defines the **fork** operation for evolving a graph's transport without breaking references to its identity. |
+| 04 | [Graph Capability Framework](drafts/04_graph-capability-framework.md) | DRAFT | Authorisation for graphs. Defines how ZCAPs gate writes against a graph's DID, the per-graph governance boundary, and the substrate's standard actions (`createLink`, `updateGovernance`, `mountContext`, `forkGraph`, …). |
+| 05 | [Context Sync Protocol](drafts/05_context-sync-protocol.md) | DRAFT | Synchronisation between peers. Defines the diff format, the mount-and-subscribe lifecycle, the sync-space abstraction that decouples logical graphs from gossip topology, and the points at which reads and writes are governance-validated. |
+| 06 | [Sync Module Architecture](drafts/06_sync-module-architecture.md) | DRAFT | The contract a sync module fulfils. Defines the WebAssembly interface, the capability-mediated sandbox it runs in, the user-consent flow, and the manifest format. A graph's module is bound to its DID at groupification and evolves via [forking](drafts/03_decentralised-group-identity.md#48-forking). |
+| 07 | [Dynamic Graph Shape Validation](drafts/07_dynamic-graph-shape-validation.md) | PRE-DRAFT | Structure for graph data. SHACL with action semantics — shapes both validate structure and instantiate it. |
+| 08 | [Governance Constraint Vocabulary](drafts/08_governance-constraint-vocabulary.md) | PRE-DRAFT | A shared vocabulary of constraint kinds (temporal, content, credential, shape) that plug into the capability framework. |
+| 09 | [Default Sync Module](drafts/09_default-sync-module.md) | PRE-DRAFT | The reference sync module conforming user agents ship by default. |
+| 10 | [Graph Flows](drafts/10_graph-flows.md) | PRE-DRAFT | Process as graph data. Declarative state machines for proposals, votes, and lifecycle workflows. |
 
 ### Considered but Not Yet Scoped
 
@@ -54,6 +54,7 @@ The following capabilities are anticipated extensions of this substrate. They ar
 | **Authorisation** | ZCAPs target a graph's **DID** for long-lived authority (IRIs are reserved for snapshot-scoped capabilities). Capability chains trace to each graph's own root capability; the chain is **cut** at `BootstrapRoot` (parent governance cannot reach into a constitutionalised child). |
 | **Governance composition** | Each persistent graph is its own governance boundary; constraints attach to one graph and govern writes to that graph only. Within a graph, same-kind constraints **accumulate** with **deny-wins** semantics. Caveats are **immutable** under delegation: children may add, but never modify or remove parent caveats. |
 | **Cross-graph authority** | Cross-graph patterns ("holonic" structures, shared authority, federated rule sets) are application-layer compositions on top of substrate primitives — most directly via **mutual DID-document delegation** (graph A lists graph B's DID as a `capabilityDelegation` delegate, and vice versa). The substrate itself validates per-graph; this keeps validation purely local, with no partial-mount divergence or transitive sync dependencies. See Spec 04 Appendix A. |
+| **Module identity & evolution** | Each graph's sync module is bound into its DID seed at groupification (the `group://syncModule` triple, immutable per Spec 03 §4.5). Module evolution proceeds by **forking** — a new `did:graph` with the new module and parent state copied forward, recorded as `group://forkedFrom` / `group://forkedAtRevision` lineage; the parent DID remains operational, subscribers MAY follow the fork or stay. This puts module evolution in the identity layer and eliminates in-place transition machinery (no runtime swap, no in-flight buffering, no "module_pending" state). Constraint-kind compatibility is a fork-time precondition rather than a runtime check. See Spec 03 §4.8. |
 | **Snapshot transfer** | A graph is serialisable as a signed `GraphSnapshot`. All four RDF 1.2 serialisations (`nquads-canonical` / `nquads` / `turtle` / `jsonld`) round-trip losslessly — content-addressed, self-verifying, and bring the graph's governance, shapes, and flows along. |
 | **Sync model** | `GraphDiff`s propagate through configurable sync spaces. Three standard topologies: Unified, Privacy-Tiered, Fully Partitioned. The receiving peer enforces governance — both write-side (per-diff capability validation) and read-side (`mountContext` gate on snapshot pulls). Sync-blocking propagates rejection at every honest peer. |
 | **Discovery** | Deliberately out of scope. Resolution accepts DID-URL `?relay=` and `?snapshot=` hints; how applications *get* those hints (invitation links, DHT, mDNS, shared discovery graphs, friend-of-friend) is the application layer's call. The substrate is robust to the discovery channel because snapshots are self-verifying and DIDs are key-bound. |
@@ -108,12 +109,15 @@ console.log(restored.iri === calendar.iri);   // true — bit-for-bit
 </details>
 
 <details>
-<summary>03 — Decentralised Group Identity (groupify a graph)</summary>
+<summary>03 — Decentralised Group Identity (groupify a graph, fork to evolve)</summary>
 
 ```javascript
-// Option A: create-and-groupify in one call.
+// Option A: create-and-groupify in one call. The graph's authoritative
+// sync module is committed to the DID's immutable seed at this moment
+// (Spec 03 §4.5 — group://syncModule).
 const team = await navigator.graph.createGroup({
   displayName: "Engineering",
+  syncModule: "sha256-broadcast-channel-v1",
   initialDelegates: ["did:key:z6MkAlice...", "did:key:z6MkBob..."]
 });
 console.log(team.did);   // "did:graph:z6Mk..."
@@ -122,7 +126,7 @@ console.log(team.did);   // "did:graph:z6Mk..."
 // (binding + seed DID-document triples are added) but the DID is durable.
 const notes = await navigator.graph.create({ displayName: "Notes" });
 await notes.addTriple(new Triple("urn:note:1", "schema://text", "first note"));
-await navigator.graph.groupify(notes.iri);
+await navigator.graph.groupify(notes.iri, { syncModule: "sha256-broadcast-channel-v1" });
 console.log(notes.did);   // now "did:graph:z6Mk..." — survives all future mutations
 
 // Any current capabilityInvocation delegate signs as the team.
@@ -131,6 +135,18 @@ const teamCred = await navigator.credentials.get({
 });
 const announcement = await teamCred.sign({ type: "Release", version: "1.0" });
 console.log(announcement.author);   // team.did
+
+// Evolving the module — fork to a new DID (Spec 03 §4.8). The parent
+// stays operational; subscribers MAY follow the fork or stay.
+const v2 = await navigator.graph.forkGroup(team.did, {
+  syncModule: "sha256-crdt-v2",        // new module identity for the fork
+  // forkRevision defaults to the parent's current revision
+  // announceFork defaults to true → writes group://forkedTo on the parent
+});
+console.log(v2.did);                   // a fresh did:graph
+// v2's seed includes group://forkedFrom + group://forkedAtRevision +
+// the new group://syncModule. References to team.did everywhere else
+// continue to resolve to the parent.
 ```
 </details>
 
@@ -308,15 +324,17 @@ The specs form a strict DAG — each level builds only on the levels below it. S
                                   ┌─────────────┴──────────────┐
                                   │             04             │
                                   │   Graph Capability Framework│
-                                  │  (scope-set, deny-wins,    │
+                                  │  (per-graph, deny-wins,    │
                                   │   immutable caveats,       │
-                                  │   mountContext gate)       │
+                                  │   mountContext + forkGraph │
+                                  │   actions, seed guard)     │
                                   └─────────────┬──────────────┘
                                                 │
                                   ┌─────────────┴──────────────┐
                                   │             03             │
                                   │  Decentralised Group       │
                                   │     Identity (did:graph)   │
+                                  │  immutable seed + forking  │
                                   │  — substrate dependency    │
                                   └─────────────┬──────────────┘
                                                 │
@@ -351,10 +369,10 @@ One package per spec, strict dependency order:
 |-----:|---------|-------------|
 | 01 | `@living-web/identity` | `did:key` + resolver registry + DID-document delegate management surface |
 | 02 | `@living-web/personal-graph` | `navigator.graph`, content-addressed graphs, RDF 1.2 reifiers, lossless RDF 1.2 snapshots, holonic SPARQL |
-| 03 | `@living-web/group-identity` | `did:graph` method, DID-document-as-triples model, `groupify()` upgrade, `Group` convenience layer, participation-vs-signing separation |
-| 04 | `@living-web/capability-framework` | Scope-set governance (hierarchical + holonic), accumulate + deny-wins, `BootstrapRoot` chain-cut, immutable-caveats attenuation, Open/Announced/Enforced, plug-in constraint-kind registry, `validateAction("mountContext", ...)` read-side gate |
-| 05 | `@living-web/context-sync` | `GraphDiff` + sync spaces + per-graph subscription; `validateDiff` (writes) + `validateReadAccess` (reads) |
-| 06 | `@living-web/sync-module` | `SyncModule` contract + `installSyncModule()` (production hosts add WASM sandbox + lifecycle) |
+| 03 | `@living-web/group-identity` | `did:graph` method, DID-document-as-triples model, `groupifyContext()` upgrade (writes the `group://syncModule` seed), `forkContext()` primitive (Spec 03 §4.8), `Group` convenience layer, participation-vs-signing separation |
+| 04 | `@living-web/capability-framework` | Per-graph governance, accumulate + deny-wins, `BootstrapRoot` chain-cut, immutable-caveats attenuation, Open/Announced/Enforced, plug-in constraint-kind registry, `validateAction("mountContext", ...)` read-side gate, immutable-seed-predicate guard (refuses writes to `group://syncModule` / `forkedFrom` / `forkedAtRevision` on the graph DID) |
+| 05 | `@living-web/context-sync` | `GraphDiff` + sync spaces + per-graph subscription; `validateDiff` (writes) + `validateReadAccess` (reads); module hash resolved from `<graphDid> group://syncModule` at publish/mount |
+| 06 | `@living-web/sync-module` | `GraphSyncModule` interface + `ModuleManifest` (Spec 06 §7.2 shape: `wasmContentHash`, `supportedConstraintKinds`, `capabilitiesRequired`) + `installSyncModule()` (production hosts add WASM sandbox + lifecycle) |
 | 07 | `@living-web/shape-validation` | SHACL action semantics, graph-scoped, cross-graph inheritance via `context://participates_in` |
 | 08 | `@living-web/constraint-vocabulary` | Plug-in `ConstraintHandler`s for temporal / content / credential constraint kinds |
 | 09 | `@living-web/default-sync-module` | Reference BroadcastChannel sync module — `/polyfill` auto-installs |
