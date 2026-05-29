@@ -15,7 +15,7 @@
  *     still apply (Spec 04 §5.1, §5.3).
  */
 
-import { GOV } from './predicates.js';
+import { GOV, IMMUTABLE_SEED_PREDICATES } from './predicates.js';
 import { resolveScopeSet, collectConstraints, pickAuditAttribution, type ScopeSet } from './scope.js';
 import { verifyCapability, inferAction } from './capability.js';
 import { expiryCaveatHandler } from './caveats.js';
@@ -87,6 +87,25 @@ export class GraphGovernanceEngine {
     options?: { action?: string },
   ): Promise<GovernanceValidationResult> {
     this._ctx.enforcementMode = await this.getEnforcementMode();
+
+    // Spec 03 §4.5 / Spec 04 §10 — immutable seed predicates.
+    // No action authorises writes to these predicates on the graph DID;
+    // they are set once during the bootstrap atomic (groupification or
+    // fork) and never modified thereafter. The bootstrap path bypasses
+    // validate() entirely, so any call that reaches here mutating them
+    // is forbidden.
+    if (
+      triple.subject === this._ctx.graphDid
+      && IMMUTABLE_SEED_PREDICATES.has(triple.predicate)
+    ) {
+      const result: GovernanceValidationResult = {
+        allowed: false,
+        constraintKind: 'immutable-seed',
+        reason: `Immutable seed predicate '${triple.predicate}' on ${this._ctx.graphDid} cannot be modified outside bootstrap`,
+      };
+      this._recordHistory(triple, result);
+      return result;
+    }
 
     const scope = await resolveScopeSet(this._ctx.graphDid, this._ctx);
     if (scope.overflow) {

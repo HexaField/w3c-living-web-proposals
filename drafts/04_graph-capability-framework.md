@@ -208,7 +208,7 @@ The root capability is recorded in the new graph as a flattened [[ZCAP-LD]] docu
 <cap-id> -[rdf:type]→               <zcap:Delegation> .
 <cap-id> -[zcap:parentCapability]→  <urn:living-web:zcap:BootstrapRoot> .
 <cap-id> -[zcap:invoker]→           <did:key:creator> .
-<cap-id> -[zcap:actions]→           "createLink,removeLink,updateSHACL,updateGovernance,updateDIDDocument,delegateCapability" .
+<cap-id> -[zcap:actions]→           "createLink,removeLink,updateSHACL,updateGovernance,updateDIDDocument,delegateCapability,forkGraph,announceFork,mountContext" .
 <cap-id> -[zcap:resource]→          <graph-did> .
 <cap-id> -[zcap:proofValue]→        "<signature>" .
 <cap-id> -[zcap:proofPurpose]→      "capabilityDelegation" .
@@ -313,6 +313,8 @@ This specification defines the following framework-core actions. Additional acti
 | `updateDIDDocument` | this spec | Add/remove DID-document delegates (any triple with `did-document://` predicate; semantics in [[GROUP-IDENTITY]] §5) |
 | `delegateCapability` | this spec | Issue new delegations from this capability (chain-walk requirement, [§7](#7-zcap-verification-algorithm) step 6.5) |
 | `mountContext` | this spec | Mount the graph (gates read access, [§7.1](#71-non-triple-operations)) |
+| `forkGraph` | [[GROUP-IDENTITY]] §4.8 / §10.4 | Authorise creation of a fork of this graph. Held on the parent graph. |
+| `announceFork` | [[GROUP-IDENTITY]] §4.8 / §10.4 | Authorise writing `<parent> group://forkedTo <child>` in the parent graph as a fork discoverability hint. |
 
 Extension specifications MAY register additional actions, for example `updateSHACL` ([[SHAPE-VALIDATION]]) or `updateFlow` ([[GRAPH-FLOWS]]). Applications MAY define further actions. The governance engine MUST treat unknown actions conservatively (require an explicit capability for the unknown action).
 
@@ -566,6 +568,8 @@ This specification defines only the action and its derivation. The DID-document 
 
 Shared authority over the graph DID is expressed through the delegate set in the DID document: "this graph said it" is satisfied by any current delegate's signature. Multisig, threshold signing, and aggregate-key schemes are out of scope.
 
+**Immutable seed predicates.** [[GROUP-IDENTITY]] §4.5 defines a small set of predicates whose triples (when subject = the graph DID) are written once during the bootstrap atomic of groupification or fork and MUST NOT be modified thereafter: `group://syncModule`, `group://forkedFrom`, `group://forkedAtRevision`. No `did-document://*` or `governance://*` action authorises a write to these predicates on the graph DID. Conforming engines MUST reject any write that adds, removes, or replaces a triple matching `<graphDid> <immutable-predicate> ?o` outside the bootstrap atomic, regardless of the action the writer claims. Module evolution proceeds by forking ([[GROUP-IDENTITY]] §4.8), which creates a new DID with a new seed; the old DID's seed remains immutable.
+
 ---
 
 ## 11. Governance API on Graph
@@ -758,7 +762,8 @@ const community = await navigator.graph.create({ displayName: "Acme Community" }
 //     zcap://invoker  <did:key:creator> ;
 //     zcap://actions  "createLink" , "removeLink" ,
 //                     "updateGovernance" , "updateDIDDocument" ,
-//                     "delegateCapability" , "mountContext" ;
+//                     "delegateCapability" , "mountContext" ,
+//                     "forkGraph" , "announceFork" ;
 //     zcap://resource <community.did> ;
 //     zcap://parentCapability  <urn:living-web:zcap:BootstrapRoot> ;
 //     zcap://proof    "<signature by did:key:creator>" .

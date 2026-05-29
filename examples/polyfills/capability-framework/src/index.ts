@@ -1,5 +1,5 @@
 export { GraphGovernanceEngine } from './engine.js';
-export { GOV, CONTEXT, DID_DOC } from './predicates.js';
+export { GOV, CONTEXT, DID_DOC, GROUP, IMMUTABLE_SEED_PREDICATES } from './predicates.js';
 export { resolveScopeSet, collectConstraints, pickAuditAttribution } from './scope.js';
 export type { ScopeSet } from './scope.js';
 export { verifyCapability, inferAction, BOOTSTRAP_ROOT } from './capability.js';

@@ -27,6 +27,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@living-web/capability-framework": "workspace:*",
     "@living-web/context-sync": "workspace:*",
     "@living-web/identity": "workspace:*",
     "@living-web/personal-graph": "workspace:*",

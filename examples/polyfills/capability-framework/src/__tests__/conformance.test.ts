@@ -233,3 +233,61 @@ describe('createGovernanceLayer', () => {
     expect(triples.find(t => t.data.object === '"enforced"')).toBeDefined();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Spec 03 §4.5 / Spec 04 §10 — immutable seed predicates.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('immutable seed predicates', () => {
+  test('rejects writes to group://syncModule on the graph DID', async () => {
+    const engine = new GraphGovernanceEngine(makeContext());
+    const result = await engine.validate({
+      subject: GRAPH_DID,
+      predicate: 'group://syncModule',
+      object: 'sha256-malicious-swap',
+      author: ALICE_DID,
+      timestamp: new Date().toISOString(),
+    });
+    expect(result.allowed).toBe(false);
+    expect(result.constraintKind).toBe('immutable-seed');
+  });
+
+  test('rejects writes to group://forkedFrom on the graph DID', async () => {
+    const engine = new GraphGovernanceEngine(makeContext());
+    const result = await engine.validate({
+      subject: GRAPH_DID,
+      predicate: 'group://forkedFrom',
+      object: 'did:graph:fake-parent',
+      author: ALICE_DID,
+      timestamp: new Date().toISOString(),
+    });
+    expect(result.allowed).toBe(false);
+    expect(result.constraintKind).toBe('immutable-seed');
+  });
+
+  test('permits group://syncModule writes whose subject is NOT the graph DID', async () => {
+    // Only the graph's own DID is protected; an unrelated subject is
+    // ordinary data.
+    const engine = new GraphGovernanceEngine(makeContext());
+    const result = await engine.validate({
+      subject: 'urn:other:doc',
+      predicate: 'group://syncModule',
+      object: 'sha256-fine',
+      author: ALICE_DID,
+      timestamp: new Date().toISOString(),
+    });
+    expect(result.allowed).toBe(true);
+  });
+
+  test('permits group://forkedTo (the mutable parent-side announcement)', async () => {
+    const engine = new GraphGovernanceEngine(makeContext());
+    const result = await engine.validate({
+      subject: GRAPH_DID,
+      predicate: 'group://forkedTo',
+      object: 'did:graph:child',
+      author: ALICE_DID,
+      timestamp: new Date().toISOString(),
+    });
+    expect(result.allowed).toBe(true);
+  });
+});

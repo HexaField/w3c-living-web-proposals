@@ -1,6 +1,6 @@
 export { Group } from './group.js';
 export { DefaultGroupRegistry, installGroupExtension } from './extension.js';
-export { GROUP, CONTEXT, RDF, VOTE } from './types.js';
+export { GROUP, CONTEXT, RDF, VOTE, POLYFILL_DEFAULT_SYNC_MODULE } from './types.js';
 export type { Participant, GroupOptions, GroupRegistry } from './types.js';
 
 // did:graph method primitives ([[GROUP-IDENTITY]] §4 + §5)
@@ -30,10 +30,13 @@ export {
   type GraphDIDWriter,
 } from './credential.js';
 
-// Binding installer + groupify operation
+// Binding installer + groupify operation + fork operation
 export {
   installDIDGraphBinding,
   groupifyContext,
+  forkContext,
   type GroupifyOptions,
   type GroupifyResult,
+  type ForkOptions,
+  type ForkResult,
 } from './binding.js';

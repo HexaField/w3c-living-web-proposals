@@ -210,7 +210,7 @@ describe('§5.4 signGraph', () => {
     const m = await newManager();
     const { groupifyContext } = await import('../binding.js');
     const graph = await m.create({ displayName: 'sg' });
-    const { credential, did } = await groupifyContext(graph);
+    const { credential, did } = await groupifyContext(graph, { syncModule: 'sha256-test-module' });
 
     const sig = await credential.signGraph(did);
     const data = sig.data as { graphDid: string; graphIri: string; timestamp: string };
@@ -224,7 +224,7 @@ describe('§5.4 signGraph', () => {
     const m = await newManager();
     const { groupifyContext } = await import('../binding.js');
     const graph = await m.create({ displayName: 'sg2' });
-    const { credential, did } = await groupifyContext(graph);
+    const { credential, did } = await groupifyContext(graph, { syncModule: 'sha256-test-module' });
 
     const sig = await credential.signGraph(graph.iri);
     const data = sig.data as { graphDid: string; graphIri: string };
@@ -236,7 +236,7 @@ describe('§5.4 signGraph', () => {
     const m = await newManager();
     const { groupifyContext } = await import('../binding.js');
     const graph = await m.create({ displayName: 'sg3' });
-    const { credential } = await groupifyContext(graph);
+    const { credential } = await groupifyContext(graph, { syncModule: 'sha256-test-module' });
     await expect(credential.signGraph('did:graph:does-not-exist')).rejects.toThrow();
   });
 });
@@ -246,7 +246,7 @@ describe('§5.4 brick-state guards on removeDelegate / revokeSection', () => {
     const m = await newManager();
     const { groupifyContext } = await import('../binding.js');
     const graph = await m.create({ displayName: 'brick' });
-    const { credential } = await groupifyContext(graph);
+    const { credential } = await groupifyContext(graph, { syncModule: 'sha256-test-module' });
     expect(credential.methodId).toBeTruthy();
 
     // Freshly-groupified: exactly one capabilityDelegation member (the creator).
@@ -259,7 +259,7 @@ describe('§5.4 brick-state guards on removeDelegate / revokeSection', () => {
     const m = await newManager();
     const { groupifyContext } = await import('../binding.js');
     const graph = await m.create({ displayName: 'brick2' });
-    const { credential } = await groupifyContext(graph);
+    const { credential } = await groupifyContext(graph, { syncModule: 'sha256-test-module' });
     await expect(
       credential.revokeSection(credential.methodId!, 'capabilityDelegation'),
     ).rejects.toThrow(/brick/i);
@@ -270,7 +270,7 @@ describe('§5.4 brick-state guards on removeDelegate / revokeSection', () => {
     const { groupifyContext } = await import('../binding.js');
     const { randomPrivateKey, ed25519, encodeEd25519Multibase } = await import('@living-web/identity');
     const graph = await m.create({ displayName: 'brick3' });
-    const { credential, did } = await groupifyContext(graph);
+    const { credential, did } = await groupifyContext(graph, { syncModule: 'sha256-test-module' });
 
     // Add a second capabilityDelegation member.
     const sk = randomPrivateKey();
@@ -290,7 +290,7 @@ describe('§5.4 brick-state guards on removeDelegate / revokeSection', () => {
     const m = await newManager();
     const { groupifyContext } = await import('../binding.js');
     const graph = await m.create({ displayName: 'brick4' });
-    const { credential } = await groupifyContext(graph);
+    const { credential } = await groupifyContext(graph, { syncModule: 'sha256-test-module' });
 
     // Revoking the sole member's assertionMethod (a non-capabilityDelegation
     // section) is fine — the document is not bricked.
@@ -299,3 +299,90 @@ describe('§5.4 brick-state guards on removeDelegate / revokeSection', () => {
     ).resolves.toBeUndefined();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// §4.5 Immutable seed predicates + §4.8 Forking.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('§4.5 immutable seed predicates', () => {
+  it('groupifyContext writes group://syncModule into the seed', async () => {
+    const m = await newManager();
+    const { groupifyContext } = await import('../binding.js');
+    const graph = await m.create({ displayName: 'seed' });
+    const { did } = await groupifyContext(graph, { syncModule: 'sha256-modA' });
+    const seeded = await graph.queryTriples({ subject: did, predicate: 'group://syncModule' });
+    expect(seeded).toHaveLength(1);
+    expect(seeded[0].data.object).toBe('sha256-modA');
+  });
+
+  it('groupifyContext rejects without a syncModule', async () => {
+    const m = await newManager();
+    const { groupifyContext } = await import('../binding.js');
+    const graph = await m.create({ displayName: 'noseed' });
+    // @ts-expect-error — exercising the runtime guard
+    await expect(groupifyContext(graph, {})).rejects.toThrow(/syncModule is REQUIRED/);
+  });
+});
+
+describe('§4.8 forkContext', () => {
+  it('mints a new did:graph with forkedFrom + forkedAtRevision + syncModule seed triples', async () => {
+    const m = await newManager();
+    const { groupifyContext, forkContext } = await import('../binding.js');
+    const parent = await m.create({ displayName: 'parent' });
+    const { did: parentDid } = await groupifyContext(parent, { syncModule: 'sha256-modA' });
+
+    const child = await m.create({ displayName: 'child' });
+    const result = await forkContext(parent, child, {
+      syncModule: 'sha256-modB',
+      forkRevision: 'rev-42',
+    });
+
+    expect(result.did).toMatch(/^did:graph:/);
+    expect(result.did).not.toBe(parentDid);
+    expect(result.forkedFrom).toBe(parentDid);
+    expect(result.forkedAtRevision).toBe('rev-42');
+
+    const seedModule = await child.queryTriples({ subject: result.did, predicate: 'group://syncModule' });
+    expect(seedModule[0].data.object).toBe('sha256-modB');
+    const seedFrom = await child.queryTriples({ subject: result.did, predicate: 'group://forkedFrom' });
+    expect(seedFrom[0].data.object).toBe(parentDid);
+    const seedRev = await child.queryTriples({ subject: result.did, predicate: 'group://forkedAtRevision' });
+    expect(seedRev[0].data.object).toBe('rev-42');
+  });
+
+  it('announces the fork on the parent by default', async () => {
+    const m = await newManager();
+    const { groupifyContext, forkContext } = await import('../binding.js');
+    const parent = await m.create({ displayName: 'parent' });
+    const { did: parentDid } = await groupifyContext(parent, { syncModule: 'sha256-modA' });
+
+    const child = await m.create({ displayName: 'child' });
+    const result = await forkContext(parent, child, { syncModule: 'sha256-modA' });
+
+    const announce = await parent.queryTriples({ subject: parentDid, predicate: 'group://forkedTo' });
+    expect(announce.map(t => t.data.object)).toContain(result.did);
+  });
+
+  it('skips parent announcement when announceFork is false', async () => {
+    const m = await newManager();
+    const { groupifyContext, forkContext } = await import('../binding.js');
+    const parent = await m.create({ displayName: 'parent' });
+    const { did: parentDid } = await groupifyContext(parent, { syncModule: 'sha256-modA' });
+
+    const child = await m.create({ displayName: 'child' });
+    await forkContext(parent, child, { syncModule: 'sha256-modA', announceFork: false });
+
+    const announce = await parent.queryTriples({ subject: parentDid, predicate: 'group://forkedTo' });
+    expect(announce).toHaveLength(0);
+  });
+
+  it('rejects when the parent is not groupified', async () => {
+    const m = await newManager();
+    const { forkContext } = await import('../binding.js');
+    const parent = await m.create({ displayName: 'ungroupified' });
+    const child = await m.create({ displayName: 'child' });
+    await expect(forkContext(parent, child, { syncModule: 'sha256-x' })).rejects.toThrow(/not groupified/);
+  });
+});
+
+void currentAgent;

@@ -48,7 +48,6 @@ import {
   SyncStateChangeEvent,
   computeRevision,
   createContextDiff,
-  verifyBundleSignature,
   deriveSpaceUri,
   type CapabilityProof,
   type ContextSyncRuntime,
@@ -57,38 +56,16 @@ import {
   type PublishOptions,
   type PublishedGraph,
 } from '@living-web/context-sync';
-import { didToPublicKey, ed25519 } from '@living-web/identity';
+import { defaultValidateDiff } from './validate.js';
+import { defaultModuleManifest } from './manifest.js';
 
-const DEFAULT_MODULE_HASH = 'sha256-default-or-set-crdt-v1';
+const DEFAULT_MODULE_HASH = defaultModuleManifest.wasmContentHash;
 
 /** Spec 05 §5.2.2 signature production helper. Wraps the IdentityProvider's
  *  Ed25519 signer and returns a hex string for the wire payload. */
 async function signCommit(graph: Graph, commitIdHex: string): Promise<string> {
   const sig = await graph.getIdentity().sign(hexBytes(commitIdHex));
   return toHex(sig);
-}
-
-/** Spec 05 §9.2.1 step 0. Resolves the author's `did:key` public key and
- *  verifies the bundle signature. Returns `false` on any failure — the
- *  caller (validateDiff) is responsible for the deny-wins behaviour. */
-async function verifyDidKeySignature(
-  commitId: string,
-  signatureHex: string,
-  author: string,
-): Promise<boolean> {
-  if (!author.startsWith('did:key:')) {
-    // Graph-DID authors require DID-document resolution to find the current
-    // capabilityDelegation verification method. The polyfill does not perform
-    // that resolution; production sync modules MUST. Treat as unverifiable
-    // here rather than blindly accepting.
-    return false;
-  }
-  try {
-    const publicKey = didToPublicKey(author);
-    return await ed25519.verifyAsync(hexBytes(signatureHex), hexBytes(commitId), publicKey);
-  } catch {
-    return false;
-  }
 }
 
 function hexBytes(hex: string): Uint8Array {
@@ -195,7 +172,22 @@ export const defaultSyncModule: ContextSyncRuntime = {
       };
     }
 
-    const moduleHash = options.moduleHash ?? DEFAULT_MODULE_HASH;
+    // Spec 05 §6.1 — the authoritative module hash is the one bound into
+    // the graph's DID seed (Spec 03 §4.5). `options.moduleHash` is a
+    // bootstrap hint; if it disagrees with the seed, the seed wins and
+    // we reject to surface the mismatch. Ungroupified graphs fall back
+    // to the hint or the polyfill default.
+    const seedTriples = graph.did
+      ? await graph.queryTriples({ subject: graph.did, predicate: 'group://syncModule' })
+      : [];
+    const seedModule = seedTriples[0]?.data.object;
+    if (seedModule && options.moduleHash && options.moduleHash !== seedModule) {
+      throw new DOMException(
+        `options.moduleHash (${options.moduleHash}) disagrees with the graph's group://syncModule seed (${seedModule}); the seed is authoritative.`,
+        'InvalidStateError',
+      );
+    }
+    const moduleHash = seedModule ?? options.moduleHash ?? DEFAULT_MODULE_HASH;
     const topology = options.spaceTopology ?? 'unified';
     const spaceUri = deriveSpaceUri(topology, requireDid(graph), { customName: options.customSpace });
     const sessionId = getSessionId();
@@ -225,12 +217,12 @@ export const defaultSyncModule: ContextSyncRuntime = {
             diffsSinceSnapshot: msg.diff.diffsSinceSnapshot,
             signature: msg.diff.signature,
           });
-          // Sync-blocking signature verification (Spec 05 §9.2.1 step 0).
-          // Verification is async; we kick off the check and only deliver
-          // the diff to consumers once it passes.
+          // Spec 06 §5.5 — validation runs in-module. Delegates to the
+          // module's validateDiff (bundle signature + governance engine).
+          // Sync-blocking per Spec 05 §9.3: reject silently if not accepted.
           void (async () => {
-            const verifyResult = await verifyBundleSignature(diff, verifyDidKeySignature);
-            if (!verifyResult.ok) {
+            const result = await defaultValidateDiff(graph, diff);
+            if (!result.accepted) {
               // Reject: don't store, don't apply, don't re-emit (Spec 05 §9.3).
               // Production modules would log this to an audit channel.
               return;

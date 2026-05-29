@@ -374,7 +374,13 @@ partial interface Graph {
 };
 
 dictionary PublishOptions {
-  USVString moduleHash;           // sync module content hash; defaults to UA default module
+  /** Sync module content hash. Optional override only when the graph is
+   *  *not yet groupified* and is being published as a fresh artefact;
+   *  groupification ([[GROUP-IDENTITY]] §4.2) binds the authoritative
+   *  module hash into the graph's DID seed and the runtime reads it
+   *  from there. Implementations SHOULD reject a `moduleHash` that
+   *  disagrees with the groupified graph's `group://syncModule` triple. */
+  USVString moduleHash;
   sequence<USVString> relays;     // initial relay endpoints (default-module-specific)
   USVString spaceTopology;        // "unified" | "privacy-tiered" | "fully-partitioned" | "custom"
   USVString customSpace;          // when topology = "custom": the specific space:// URI
@@ -391,8 +397,8 @@ interface PublishedGraph {
 
 The `publish()` method MUST:
 
-1. If `options.moduleHash` is specified and not installed, initiate module installation per the module mechanism in use. If the user denies, reject with `"NotAllowedError"`.
-2. If `options.moduleHash` is not specified, use the user agent's default sync module (the default module itself is out of scope here).
+1. **Resolve the authoritative module hash.** Query the graph's DID document for `<graphDid> group://syncModule ?moduleHash` ([[GROUP-IDENTITY]] §4.5). The value found is authoritative. If `options.moduleHash` was supplied and disagrees, reject with `"InvalidStateError"`. If no triple is present (e.g., a graph that is not yet groupified and is being published as a one-shot artefact), fall back to `options.moduleHash` or the user agent's default module.
+2. If the resolved module is not already installed, initiate module installation per the module mechanism in use. If the user denies, reject with `"NotAllowedError"`.
 3. Determine the space URI ([§7](#7-sync-spaces)).
 4. Initialise the sync module if not already running for this space.
 5. Subscribe to the space.
@@ -416,7 +422,15 @@ dictionary MountOptions {
   CapabilityProofInput capabilityProof;
   USVString snapshotUri;         // optional initial snapshot to materialise from
   USVString spaceUri;            // hint: the space carrying this graph's diffs
-  USVString moduleHash;          // hint: the sync module the space uses
+  USVString moduleHash;          // **bootstrap hint** — used until the
+                                 // graph's DID document is resolved; the
+                                 // authoritative value is then read from
+                                 // `<graphDid> group://syncModule`
+                                 // ([[GROUP-IDENTITY]] §4.5). A mismatch
+                                 // is resolved in favour of the DID
+                                 // document; if the local module differs,
+                                 // the runtime fetches the authoritative
+                                 // module before joining the space.
   sequence<USVString> relays;    // hint: relay endpoints
 };
 
@@ -430,7 +444,7 @@ The `mount()` method MUST:
    - If `options.mode` is `"write"` or `"governance"`, perform [[CAPABILITY-FRAMEWORK]] §7 with `action = "createLink"` (or the specific action implied by the intended operations) and the supplied `capabilityProof`. Reject with `"NotAllowedError"` on failure.
    - If `options.mode` is `"read"`, perform [[CAPABILITY-FRAMEWORK]] §7 with `action = "mountContext"`. If the graph carries no capability constraint covering `mountContext` (per [[CAPABILITY-FRAMEWORK]] §4.5.1 — a constraint with `constraint_kind = "capability"`), the graph's read access is unrestricted and the mount proceeds without a proof. Otherwise the caller MUST supply a `capabilityProof` valid for `mountContext`; reject with `"NotAllowedError"` if it is missing or invalid.
 3. If the graph's per-graph store does not exist locally and `options.snapshotUri` is provided, fetch and materialise the snapshot per [[PERSONAL-LINKED-DATA-GRAPHS]] §5.5. (The peer that serves the snapshot MUST itself have authorised the request per [§9](#9-governance-integration); see [§9.2](#92-the-validate-contract) for the receiver's side.)
-4. Subscribe to `spaceUri` using `moduleHash` (downloading the module if needed, with user consent — module installation semantics are out of scope here).
+4. **Resolve the authoritative sync module.** Query the materialised graph for `<graphDid> group://syncModule ?moduleHash` ([[GROUP-IDENTITY]] §4.5); use that value. If it differs from `options.moduleHash` (the bootstrap hint), fetch the authoritative module — downloading and prompting for consent as needed — before continuing. Subscribe to `spaceUri` using the authoritative module. Module installation semantics are out of scope here.
 5. Begin emitting and accepting `GraphDiff`s scoped to the mounted graph's DID.
 6. Return the live `Graph`.
 

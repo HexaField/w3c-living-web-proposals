@@ -29,7 +29,21 @@ export interface GroupOptions {
   participatesIn?: string;
   /** Initial enforcement mode for the group's governance. */
   enforcementMode?: 'open' | 'announced' | 'enforced';
+  /**
+   * Sync-module content hash (Spec 03 §4.5 immutable seed). When absent,
+   * the polyfill defaults to {@link POLYFILL_DEFAULT_SYNC_MODULE}; production
+   * hosts treat the field as REQUIRED.
+   */
+  syncModule?: string;
 }
+
+/**
+ * Polyfill fallback for the immutable seed `group://syncModule` predicate.
+ * Mirrors `defaultModuleManifest.wasmContentHash` in `@living-web/default-sync-module`
+ * — the polyfill ships exactly one transport, so this sentinel suffices as
+ * a placeholder for "the agent's default module".
+ */
+export const POLYFILL_DEFAULT_SYNC_MODULE = 'sha256-polyfill-broadcast-channel';
 
 /** Graph-nesting predicates (defined by Personal Linked-Data Graphs). */
 export const CONTEXT = {
@@ -48,6 +62,14 @@ export const GROUP = {
   PARTICIPATION_OPEN: 'group://participation_open',
   PARTICIPATION_REQUIRES_CREDENTIAL: 'group://participation_requires_credential',
   PARTICIPATION_MAX_COUNT: 'group://participation_max_count',
+
+  // Spec 03 §4.5 immutable seed predicates.
+  DID_IDENTITY: 'group://didIdentity',
+  SYNC_MODULE: 'group://syncModule',
+  FORKED_FROM: 'group://forkedFrom',
+  FORKED_AT_REVISION: 'group://forkedAtRevision',
+  // Spec 03 §4.8.2 — mutable announcement triple on the parent.
+  FORKED_TO: 'group://forkedTo',
 } as const;
 
 /** RDF predicates reused from other specs. */

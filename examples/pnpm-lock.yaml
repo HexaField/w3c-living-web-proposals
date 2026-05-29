@@ -357,6 +357,9 @@ importers:
 
   polyfills/default-sync-module:
     dependencies:
+      '@living-web/capability-framework':
+        specifier: workspace:*
+        version: link:../capability-framework
       '@living-web/context-sync':
         specifier: workspace:*
         version: link:../context-sync
@@ -546,6 +549,9 @@ importers:
       '@living-web/context-sync':
         specifier: workspace:*
         version: link:../context-sync
+      '@living-web/personal-graph':
+        specifier: workspace:*
+        version: link:../personal-graph
     devDependencies:
       tsup:
         specifier: ^8.5.1

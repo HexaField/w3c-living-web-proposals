@@ -9,7 +9,7 @@
 
 import { GraphManager, type Graph } from '@living-web/personal-graph';
 import { Group } from './group.js';
-import { GROUP, RDF, type GroupOptions, type GroupRegistry } from './types.js';
+import { GROUP, POLYFILL_DEFAULT_SYNC_MODULE, RDF, type GroupOptions, type GroupRegistry } from './types.js';
 import { groupifyContext } from './binding.js';
 
 export class DefaultGroupRegistry implements GroupRegistry {
@@ -77,6 +77,7 @@ async function createGroup(this: GraphManager, options: GroupOptions = {}): Prom
   });
   // 2. Groupify it.
   await groupifyContext(graph, {
+    syncModule: options.syncModule ?? POLYFILL_DEFAULT_SYNC_MODULE,
     displayName: options.displayName ?? options.name,
     initialDelegates: options.initialDelegates,
   });
@@ -105,6 +106,7 @@ async function groupify(this: GraphManager, graphIri: string, options: GroupOpti
   }
   if (!graph.did) {
     await groupifyContext(graph, {
+      syncModule: options.syncModule ?? POLYFILL_DEFAULT_SYNC_MODULE,
       displayName: options.displayName ?? options.name,
       initialDelegates: options.initialDelegates,
     });

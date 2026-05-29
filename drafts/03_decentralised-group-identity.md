@@ -9,7 +9,7 @@
 
 ## Abstract
 
-This specification defines the `did:graph` DID method and the **DID-document delegate model** for shared signing authority, and uses both to define decentralised collective identity on the web. Graphs as defined by [[PERSONAL-LINKED-DATA-GRAPHS]] are identified by `graph://<content-hash>` IRIs — content-derived addresses that change with every mutation. The IRI alone therefore identifies a *snapshot*, never an evolving graph: by construction, the same address cannot ever name two different contents. A `did:graph:...` gives a graph a **content-independent identity**: a single identifier that survives all changes to the graph's triples and to its delegate set, anchored cryptographically to an initial key and resolved through the graph's own DID-document triples. This specification defines that DID method, the operation (**groupification**) by which an existing graph takes one on (becoming a **group**), and the DID-document delegate model — multiple verification methods partitioned into the W3C-defined capability sections (`verificationMethod`, `capabilityInvocation`, `capabilityDelegation`, `assertionMethod`, `authentication`), where a signature by any current method in the relevant section counts as a signature *by the DID*. Multisig, threshold signatures, and aggregate-key schemes are explicit non-goals — shared signing authority is the delegate set. The term **group** in this specification means *a graph with a `did:graph` identity*; there is no separate "group" data type. Two concerns are kept structurally separate: **participation** (who is *part of* the group, declared from below via `context://participates_in`) and **signing authority** (who can currently *sign as* the group, declared in the group's DID document as `capabilityInvocation` delegates). Groups remain isomorphic to individuals (a group with one delegate is structurally identical to one with many) and nestable to arbitrary depth (groups may participate in other groups). This specification plugs into the resolver-registry extension point of [[DECENTRALISED-IDENTITY]] §4.2 and extends its `DIDCredential` surface.
+This specification defines the `did:graph` DID method and the **DID-document delegate model** for shared signing authority, and uses both to define decentralised collective identity on the web. Graphs as defined by [[PERSONAL-LINKED-DATA-GRAPHS]] are identified by `graph://<content-hash>` IRIs — content-derived addresses that change with every mutation. The IRI alone therefore identifies a *snapshot*, never an evolving graph: by construction, the same address cannot ever name two different contents. A `did:graph:...` gives a graph a **content-independent identity**: a single identifier that survives all changes to the graph's triples and to its delegate set, anchored cryptographically to an initial key and resolved through the graph's own DID-document triples. This specification defines that DID method, the operation (**groupification**) by which an existing graph takes one on (becoming a **group**), and the DID-document delegate model — multiple verification methods partitioned into the W3C-defined capability sections (`verificationMethod`, `capabilityInvocation`, `capabilityDelegation`, `assertionMethod`, `authentication`), where a signature by any current method in the relevant section counts as a signature *by the DID*. Multisig, threshold signatures, and aggregate-key schemes are explicit non-goals — shared signing authority is the delegate set. The term **group** in this specification means *a graph with a `did:graph` identity*; there is no separate "group" data type. Two concerns are kept structurally separate: **participation** (who is *part of* the group, declared from below via `context://participates_in`) and **signing authority** (who can currently *sign as* the group, declared in the group's DID document as `capabilityInvocation` delegates). Groups remain isomorphic to individuals (a group with one delegate is structurally identical to one with many) and nestable to arbitrary depth (groups may participate in other groups). The DID's seed also binds the graph's **sync module** ([§4.5](#45-immutable-seed-predicates)) — module identity is fixed at groupification and evolves by **forking** ([§4.8](#48-forking)), not by in-place mutation. This specification plugs into the resolver-registry extension point of [[DECENTRALISED-IDENTITY]] §4.2 and extends its `DIDCredential` surface.
 
 ---
 
@@ -82,6 +82,8 @@ In conventional systems these are conflated (a "member" is implicitly a "signer"
 **Principle 3: Identity persists independent of participation and delegate set.** A `did:graph` persists across changes in both who participates and who signs. A team that replaces every member over a decade is still the same team — its `did:graph:...` is unchanged. (The underlying graph's IRI changes with every write, but the DID does not.)
 
 **Principle 4: Groups can participate in groups, to arbitrary depth.** A group's underlying graph MAY declare `context://participates_in <larger-graph-iri>` in its own graph. The substrate provides participation-from-below for the entire nesting structure. See [§6.3](#63-graph-nesting).
+
+**Principle 5: A graph's sync module is bound to its DID and evolves only by forking.** The sync module's content hash is part of the DID's immutable seed ([§4.5](#45-immutable-seed-predicates)). A community that needs a different module — for protocol upgrade, irreconcilable constraint-kind extension, or intentional schism — forks to a new DID ([§4.8](#48-forking)) that carries forward the parent's state. This puts module evolution in the identity layer, eliminates the in-place transition complexity that would otherwise accumulate in [[SYNC-MODULE-ARCHITECTURE]], and makes the "all peers on a graph run the same module" invariant follow from the DID itself.
 
 ### 1.3 Use Cases
 
@@ -159,6 +161,9 @@ A conforming implementation MAY provide convenience APIs that look like a `Group
 <dt>Graph Nesting</dt>
 <dd>The recursive composition where a group's <code>did:graph</code> participates in a larger group's graph. Authority flows from below: the child declares participation; the parent confirms acceptance.</dd>
 
+<dt>Fork</dt>
+<dd>A new <code>did:graph</code> minted with initial state copied from a parent graph at a specific revision and (typically) a different sync module. The spec-defined mechanism for module evolution and intentional schism. The fork is recorded in the child's immutable seed (<code>group://forkedFrom</code>, <code>group://forkedAtRevision</code>) and announced — when desired — in the parent's mutable state (<code>group://forkedTo</code>). See <a href="#48-forking">§4.8</a>.</dd>
+
 <dt>Transitive Participation</dt>
 <dd>The set of all individual (non-group) agents reachable by recursively resolving group participations. Implementations MUST detect cycles.</dd>
 
@@ -195,14 +200,17 @@ Groupification adds triples (the binding + the seed DID document + any initial-d
 
 The algorithm:
 
-1. Let `ctx` be the target graph. Reject with `"InvalidStateError"` if `ctx` already has a `group://didIdentity` triple (already groupified).
+1. Let `ctx` be the target graph. Reject with `"InvalidStateError"` if `ctx` already has a `group://didIdentity` triple (already groupified). Let `syncModule` be the caller-supplied content hash of the sync module ([[SYNC-MODULE-ARCHITECTURE]]) that will govern this graph; `syncModule` is REQUIRED.
 2. Generate a fresh Ed25519 keypair `(sk, pk)` (the **initial key**).
 3. Derive `did = "did:graph:" + multibase_ed25519(pk)` per [§4.1](#41-identifier-format).
-4. **(Atomic bootstrap, no governance check.)** Write the binding triple `<ctx.iri> group://didIdentity <did>` into `ctx`. After this write `ctx.iri` advances to its new value; the `did` is now bound to the graph regardless of subsequent IRI changes.
-5. **(Atomic bootstrap, no governance check.)** Write the seed DID-document triples ([§4.4](#44-did-document-storage)) into `ctx`, granting the creator's method (`did + "#" + multibase_ed25519(pk)`) all four capability sections.
-6. Persist the private key `sk` via [[DECENTRALISED-IDENTITY]] §5.1 storage as a delegate credential for `did`.
-7. **(Governed.)** Optionally write `initialDelegates` per the caller's options, using the `did-document://*` write predicates ([§4.5](#45-document-updates)). These writes use the freshly-minted root capability ([[CAPABILITY-FRAMEWORK]] §4.3), which grants `updateDIDDocument` to the creator.
-8. Return the `did` and the credential. The graph is now a group.
+4. **(Atomic bootstrap, no governance check.)** In a single atomic write, commit to `ctx`:
+   - The binding triple `<ctx.iri> group://didIdentity <did>`.
+   - The seed DID-document triples ([§4.4](#44-did-document-storage)) granting the creator's method (`did + "#" + multibase_ed25519(pk)`) all four capability sections.
+   - The immutable seed triple `<did> group://syncModule "<syncModule>"` ([§4.5](#45-immutable-seed-predicates)).
+   After this write `ctx.iri` advances to its new value; the `did` is bound to the graph regardless of subsequent IRI changes.
+5. Persist the private key `sk` via [[DECENTRALISED-IDENTITY]] §5.1 storage as a delegate credential for `did`.
+6. **(Governed.)** Optionally write `initialDelegates` per the caller's options, using the `did-document://*` write predicates ([§4.6](#46-document-updates)). These writes use the freshly-minted root capability ([[CAPABILITY-FRAMEWORK]] §4.3), which grants `updateDIDDocument` to the creator.
+7. Return the `did` and the credential. The graph is now a group.
 
 Groupification MUST be authorised at the substrate level by either:
 
@@ -232,6 +240,9 @@ The DID document for a `did:graph` DID is composed from the following triples in
 # Inside the host graph (whose IRI is graph://<content-hash>):
 <graph://<content-hash>>  group://didIdentity  <did:graph:z6Mkh...> .
 
+# Immutable seed predicates (§4.5):
+<did:graph:z6Mkh...>  group://syncModule  "sha256-<wasm-hex>" .
+
 <did:graph:z6Mkh...>
   did://verificationMethod              <did:graph:z6Mkh...#key-creator> ,
                                <did:graph:z6Mkh...#key-alice> ,
@@ -254,7 +265,25 @@ The DID document for a `did:graph` DID is composed from the following triples in
 
 User agents MUST be able to project these triples into a standard JSON-LD DID document for compatibility with consumers expecting [[DID-CORE]] JSON-LD output.
 
-### 4.5 Document Updates
+### 4.5 Immutable Seed Predicates
+
+A `did:graph`'s seed includes a small set of triples whose values are bound to the DID for its entire lifetime. They are written atomically at groupification ([§4.2](#42-groupification)) — or at fork ([§4.8](#48-forking)) — and MUST NOT be modified thereafter. The capability framework MUST reject any write (or removal, or replacement) that mutates a triple under these predicates whose subject is the DID; there is no `did-document://*` or `governance://*` action that authorises such a write.
+
+The immutable seed predicates are:
+
+| Predicate | Object | Set at | Meaning |
+|---|---|---|---|
+| `group://syncModule` | `"sha256-<hex>"` literal | Groupification or fork | Content hash of the sync module ([[SYNC-MODULE-ARCHITECTURE]]) that governs this graph's transport, merge, peer discovery, and in-module validation. |
+| `group://forkedFrom` | `did:graph:...` | Fork only ([§4.8](#48-forking)) | The parent DID this graph was forked from. Absent on non-fork groupifications. |
+| `group://forkedAtRevision` | revision hex string | Fork only ([§4.8](#48-forking)) | The parent graph's revision at which the fork was taken. Absent on non-fork groupifications. |
+
+**Why immutable.** Two of these predicates (`forkedFrom`, `forkedAtRevision`) describe historical lineage — mutating them would rewrite history and is meaningless. The third (`syncModule`) binds the graph to a specific transport, merge, and validation regime; mutating it in place would mean the same DID could host two semantically different graphs at different points in time, with no signal to subscribers other than divergent behaviour. The cost of in-place mutation is paid in [[SYNC-MODULE-ARCHITECTURE]]: the "all peers in a space run the same module" invariant becomes a runtime negotiation, the in-flight diff handling becomes a transition protocol, and the constraint-kind compatibility check becomes a moving target. Binding `syncModule` to the DID's seed and routing module evolution through forking ([§4.8](#48-forking)) eliminates that complexity.
+
+**Consequence for groupification.** The `syncModule` value MUST be supplied to groupification (and to `createGroup` / `forkGroup`). It is part of the seed, atomically committed alongside the binding triple and the seed DID-document triples in step 4 of [§4.2](#42-groupification).
+
+**Consequence for evolution.** A graph that needs a different sync module — for any reason: protocol upgrade, schism, irreconcilable constraint-kind extension — MUST fork to a new DID per [§4.8](#48-forking). Existing references to the parent DID continue to resolve to the parent; subscribers MAY follow the fork or remain on the parent.
+
+### 4.6 Document Updates
 
 Adding, removing, or moving a method between capability sections of a `did:graph` DID document is a write to the host graph and is therefore subject to that graph's governance ([[CAPABILITY-FRAMEWORK]]). The canonical predicates for governed changes are:
 
@@ -265,7 +294,7 @@ Adding, removing, or moving a method between capability sections of a `did:graph
 
 Each operation is a triple write authorised by a ZCAP whose `resource` is the group's `did:graph` (per [[CAPABILITY-FRAMEWORK]] §1.3 — the DID is the canonical resource for ongoing authority). There is no separate "DID document update" wire format — the DID document *is* triples in the host graph, and updating it is just authoring triples.
 
-### 4.6 Resolution
+### 4.7 Resolution
 
 `did:graph` resolution is registered into [[DECENTRALISED-IDENTITY]] §7.1.
 
@@ -297,7 +326,56 @@ The resolution algorithm:
 
 Resolution never blocks on remote authority — there is no registrar, no ledger, no consensus dependency. The local mounts, the supplied hints, and the sync-space memberships *are* the resolution domain.
 
-### 4.7 Deactivation
+### 4.8 Forking
+
+**Forking** creates a new `did:graph` whose initial state is copied from a *parent* graph at a specific revision, with a (possibly different) sync module. Forking is the spec-defined mechanism for module evolution ([§4.5](#45-immutable-seed-predicates)) and for intentional schism: identity reorganisation, schema divergence, privacy-motivated splits, or any other reason a community needs a new identity that carries forward existing content.
+
+A fork is *not* a rename. The parent DID continues to exist, continues to be resolvable, and continues to accept writes from agents who choose to remain on it. Subscribers MAY follow the fork or stay; references to the parent DID anywhere in the wider web continue to resolve to the parent.
+
+#### 4.8.1 The Fork Operation
+
+The algorithm — performed by an agent holding a `forkGraph` capability on the parent ([§10.4](#104-forking-authority)):
+
+1. Let `parent` be the source graph (must be groupified). Let `forkRevision` be the parent's current revision at the moment of fork. Let `newSyncModule` be the content hash of the module the new graph will use (MAY equal the parent's).
+2. **Constraint-kind compatibility ([[SYNC-MODULE-ARCHITECTURE]] §7.2).** The new module's manifest's `supportedConstraintKinds` MUST be a superset of every constraint kind currently in force on `parent`. Reject with `"NotSupportedError"` otherwise. (This is the fork-time analogue of what would have been a runtime transition check in an in-place-evolution model.)
+3. Generate a fresh Ed25519 keypair `(sk', pk')`. Derive `child = "did:graph:" + multibase_ed25519(pk')`.
+4. Mint a fresh host graph; copy the parent's per-graph store contents (triples, reifier signatures, capability stores, governance triples) into it as the initial state. The copied governance state MAY be adjusted in the same atomic operation (e.g., to install a fresh root capability — see step 6 below).
+5. **(Atomic bootstrap, no governance check.)** In the new graph, write the seed:
+   - `<new-iri> group://didIdentity <child>` (binding triple).
+   - The seed DID-document triples ([§4.4](#44-did-document-storage)) granting the forking agent's method all four capability sections.
+   - `<child> group://syncModule "<newSyncModule>"`.
+   - `<child> group://forkedFrom <parent>`.
+   - `<child> group://forkedAtRevision "<forkRevision>"`.
+6. Mint a fresh root capability for `child` ([[CAPABILITY-FRAMEWORK]] §4.3). The previous root capability (inherited from the copy in step 4) is revoked as part of the bootstrap atomic — the fork is a new constitutional moment, and the root holder of the parent does not automatically hold root on the fork. Communities that want to preserve the parent's root delegate it explicitly in a subsequent governance write.
+7. **(Governed on the parent.)** Write `<parent> group://forkedTo <child>` in the parent graph, recording the lineage on the source side. This write is gated by an `announceFork` action on the parent (typically a constraint set up by communities that want to control discoverability of forks; absent any constraint, any agent who can write to the parent can announce). The triple is mutable in the parent (it MAY be removed later to retract the announcement) — the *authoritative* lineage record is the immutable `forkedFrom` triple in the child.
+8. Return the child `Group` handle. The parent remains operational and the forking agent remains an authoriser on it (unless and until governance there is updated).
+
+#### 4.8.2 Lineage and Following
+
+The fork relationship is recorded by two complementary triples:
+
+- `<child> group://forkedFrom <parent>` — immutable in the child (per [§4.5](#45-immutable-seed-predicates)). The canonical lineage record; survives all subsequent state.
+- `<parent> group://forkedTo <child>` — mutable in the parent. A discoverability hint that travels through the parent's existing sync stream so subscribers see "there is a fork at `child`" without out-of-band coordination.
+
+A subscriber who sees the `forkedTo` triple decides, locally, whether to mount the child. The decision is voluntary; no mass-migration protocol is defined. Common patterns:
+
+- **Follow the fork.** Mount the child; optionally unmount the parent. Used when the community is migrating wholesale.
+- **Stay on the parent.** Ignore the announcement. The parent remains operational; the child evolves independently.
+- **Bridge both.** Mount both. Authority and writes flow independently; cross-graph references (`graph://...`/`did:graph:...` triples in either) remain just data.
+
+There is no "merge" of two forks back together at the substrate level. Communities that want to reunify SHOULD pick one DID as the going-forward identity and have participants migrate their references accordingly.
+
+#### 4.8.3 Sync-Layer Behaviour
+
+The parent and child are different graph DIDs, so they have different sync subscriptions, different sync spaces, and (in general) different sync modules. [[SYNC-MODULE-ARCHITECTURE]] §4.1's "all peers serving the graph MUST run a module with the matching content hash" invariant continues to hold per-DID; forking is the only mechanism by which the module hash for a given subscriber's view of a graph changes.
+
+When the new module hash equals the parent's, the fork is identity-only (e.g., the community wanted a clean root capability or a privacy split, but kept the same transport semantics). When it differs, the fork is the module-evolution path.
+
+#### 4.8.4 Cycles and Depth
+
+A graph's `forkedFrom` chain MAY be arbitrarily deep. Implementations MUST detect cycles (the chain cannot reach the originating DID); cycles indicate a malformed fork triple and the chain MUST be considered truncated at the cycle point for traversal purposes. Display of the lineage chain SHOULD be bounded (RECOMMENDED: surface up to 16 ancestors, with an indicator that more exist).
+
+### 4.9 Deactivation
 
 A `did:graph` DID is deactivated by writing `<did> did://deactivated true` into the host graph via the governance flow. Historical signatures remain verifiable against the DID document state at the time of signing. The underlying graph IRI continues to identify the graph regardless — deactivation only removes the *signing* identity, not the data.
 
@@ -410,7 +488,7 @@ For a `did:graph` credential:
 
 `signGraph(target, options?)` produces a signed assertion of a graph's current state — the canonical way to attest "I observed graph G at state-hash H at time T." The method MUST:
 
-1. Resolve `target`: if it is an `https://`/`graph://` IRI, treat it as the graph IRI directly and resolve the corresponding `did:graph` via `<target> group://didIdentity ?did` (null if the graph has no DID); if it is a `did:graph:...`, resolve to its current host graph and current IRI per [§4.6](#46-resolution).
+1. Resolve `target`: if it is an `https://`/`graph://` IRI, treat it as the graph IRI directly and resolve the corresponding `did:graph` via `<target> group://didIdentity ?did` (null if the graph has no DID); if it is a `did:graph:...`, resolve to its current host graph and current IRI per [§4.7](#47-resolution).
 2. Capture `timestamp` as the current time in RFC 3339 form.
 3. Sign the structured payload `{ graphDid, graphIri, timestamp }` using `sign()` ([[DECENTRALISED-IDENTITY]] §6.1). `graphDid` is the resolved DID (may be null for graphs without a DID); `graphIri` is the IRI at the moment of observation.
 4. Return the `SignedContent`.
@@ -675,10 +753,13 @@ A group is created via the user agent's `GraphManager` (`navigator.graph`, defin
 ```webidl
 partial interface GraphManager {
   /** Create a fresh graph AND groupify it in one step. */
-  [NewObject] Promise<Group> createGroup(optional GroupCreationOptions options);
+  [NewObject] Promise<Group> createGroup(GroupCreationOptions options);
 
   /** Groupify an existing graph (one without a DID). One-way upgrade. */
-  [NewObject] Promise<Group> groupify(USVString graphIri, optional GroupifyOptions options);
+  [NewObject] Promise<Group> groupify(USVString graphIri, GroupifyOptions options);
+
+  /** Fork a groupified graph into a new did:graph. See §4.8. */
+  [NewObject] Promise<Group> forkGroup(USVString parentIriOrDid, ForkOptions options);
 
   /** Open a group by its IRI or its did:graph alias. */
   [NewObject] Promise<Group> openGroup(USVString iriOrDid);
@@ -687,19 +768,29 @@ partial interface GraphManager {
 };
 
 dictionary GroupCreationOptions {
+  required USVString syncModule;           // REQUIRED — content hash of the group's sync module (§4.5)
   DOMString displayName;
   DOMString description;
-  sequence<USVString> initialDelegates;   // additional DIDs to add as capabilityInvocation delegates
+  sequence<USVString> initialDelegates;    // additional DIDs to add as capabilityInvocation delegates
   USVString participatesIn;                // IRI or did:graph of parent (if creating a sub-group)
-  USVString syncModule;                    // module hash for the group's sync
   sequence<USVString> relays;
   EnforcementMode enforcementMode;         // initial governance mode — see [[CAPABILITY-FRAMEWORK]] §11
 };
 
 dictionary GroupifyOptions {
+  required USVString syncModule;           // REQUIRED — content hash of the group's sync module (§4.5)
   DOMString displayName;                   // optional metadata to add at groupification
   DOMString description;
   sequence<USVString> initialDelegates;
+};
+
+dictionary ForkOptions {
+  required USVString syncModule;           // REQUIRED — MAY equal the parent's
+  USVString forkRevision;                  // explicit revision to fork at; defaults to the parent's current revision
+  boolean announceFork = true;             // write group://forkedTo on the parent if true
+  sequence<USVString> initialDelegates;    // delegates to seed on the child (defaults to the forking agent)
+  DOMString displayName;
+  DOMString description;
 };
 ```
 
@@ -720,6 +811,12 @@ A `Group` convenience handle is returned.
 #### 8.2.3 openGroup
 
 Opens an existing group's host graph (via [[CONTEXT-SYNC]] mount with `mode: "read"`, "write", or "governance" as appropriate) and returns the convenience handle. The argument MAY be either the host graph's IRI or its `did:graph` alias.
+
+#### 8.2.4 forkGroup
+
+Forks `parentIriOrDid` per [§4.8](#48-forking). The caller MUST hold a `forkGraph` capability on the parent ([[CAPABILITY-FRAMEWORK]] §7). Performs the eight-step fork algorithm atomically, returning a `Group` handle for the new child DID. If `announceFork` is true (default), additionally writes `<parent> group://forkedTo <child>` in the parent — this write is gated by the parent's `announceFork` action (typically permitted to the same agents who can fork; communities that want stealth forks set `announceFork: false`).
+
+Rejects with `"NotAllowedError"` if the caller lacks `forkGraph` capability. Rejects with `"NotSupportedError"` if the supplied `syncModule`'s manifest does not declare every constraint kind currently in force on the parent ([§4.8.1](#481-the-fork-operation) step 2). Rejects with `"InvalidStateError"` if `parentIriOrDid` is not groupified.
 
 ---
 
@@ -834,7 +931,15 @@ This specification does NOT define a mechanism by which a capability delegated t
 
 Explicit delegation chains are auditable, each hop carries its own caveats, and each hop can be revoked independently. A transitive-through-participation shortcut would conflate participation with signing authority — exactly what [§7](#7-two-distinct-concerns-participation-vs-signing-authority) is at pains to keep apart — and would create an opaque escalation vector when a participating group adds members.
 
-### 10.4 Membership Governance
+### 10.4 Forking Authority
+
+A fork ([§4.8](#48-forking)) is gated by the parent's `forkGraph` action. By default, the parent's root capability grants `forkGraph` to the creator ([[CAPABILITY-FRAMEWORK]] §15.1); communities that want to constrain who may fork add a capability constraint covering `forkGraph` and delegate accordingly.
+
+Announcing a fork (writing `<parent> group://forkedTo <child>` in the parent) is gated by the parent's `announceFork` action. By default it shadows `forkGraph` — anyone who can fork can also announce — but the two are separable: a community MAY permit forking without announcement (the child still exists; subscribers discover it through other channels), or announcement without forking (the parent records a fork performed elsewhere). Most deployments will not need to separate them.
+
+The `forkGraph` and `announceFork` actions are registered in [[CAPABILITY-FRAMEWORK]] §4.5.4; the predicate prefix `group://syncModule` / `group://forkedFrom` / `group://forkedAtRevision` / `group://forkedTo` MUST NOT be writable by any other action — see [[CAPABILITY-FRAMEWORK]] §10 and [§4.5](#45-immutable-seed-predicates).
+
+### 10.5 Membership Governance
 
 The rules governing who can be invited and how participation is accepted live as governance triples in the group's graph:
 
@@ -991,7 +1096,7 @@ Unilateral participation claims are ignored. Both sides must declare. The parent
 
 ### 13.5 DID-Document Tampering and Integrity
 
-DID-document writes are governance-controlled via `did-document://*` predicates ([§4.5](#45-document-updates), [[CAPABILITY-FRAMEWORK]] §10). An agent without `updateDIDDocument` capability cannot modify the document.
+DID-document writes are governance-controlled via `did-document://*` predicates ([§4.6](#46-document-updates), [[CAPABILITY-FRAMEWORK]] §10). An agent without `updateDIDDocument` capability cannot modify the document.
 
 For `did:graph`, the DID document is triple data in the underlying graph. Its integrity depends on the graph's own integrity (sync-layer governance, capability proofs, snapshot signatures). A user agent MUST refuse to honour signatures by methods listed in a DID document fetched from an `"external"` source if the source snapshot's authorship cannot be verified.
 
@@ -1259,6 +1364,10 @@ console.log(doc.trustLevel);   // "local" | "mounted-read" | "external" | "cache
 | `did-document://grant-section` | `did:graph` DID | (governance op) | Adds a method to a capability section. |
 | `did-document://revoke-section` | `did:graph` DID | (governance op) | Removes a method from a capability section. |
 | `group://didIdentity` | Graph IRI | `did:graph` DID | Binds a graph's IRI to its DID identity. Present iff the graph is a group. Queryable in either direction (no reverse predicate is defined). |
+| `group://syncModule` | Group DID | `"sha256-<hex>"` literal | **Immutable seed predicate** ([§4.5](#45-immutable-seed-predicates)). Content hash of the sync module governing the graph's transport, merge, peer discovery, and in-module validation. Set at groupification or fork; MUST NOT be modified thereafter. |
+| `group://forkedFrom` | Group DID | `did:graph` DID | **Immutable seed predicate** ([§4.5](#45-immutable-seed-predicates), [§4.8](#48-forking)). The parent DID this graph was forked from. Absent on non-fork groupifications. |
+| `group://forkedAtRevision` | Group DID | revision hex literal | **Immutable seed predicate** ([§4.5](#45-immutable-seed-predicates), [§4.8](#48-forking)). The parent's revision at which the fork was taken. Absent on non-fork groupifications. |
+| `group://forkedTo` | Group DID | `did:graph` DID | Discoverability announcement of a fork of this graph ([§4.8.2](#482-lineage-and-following)). Mutable in the parent. The authoritative lineage record is the child's `group://forkedFrom`. |
 | `group://name` | Group DID | Literal string | Human-readable group name |
 | `group://description` | Group DID | Literal string | Group description |
 | `group://avatar` | Group DID | URI | URI of the group's avatar |
@@ -1287,6 +1396,8 @@ console.log(doc.trustLevel);   // "local" | "mounted-read" | "external" | "cache
 **[CAPABILITY-FRAMEWORK]** [Graph Capability Framework](./04_graph-capability-framework.md).
 
 **[CONTEXT-SYNC]** [Graph Synchronisation Protocol](./05_context-sync-protocol.md).
+
+**[SYNC-MODULE-ARCHITECTURE]** [Sync Module Architecture](./06_sync-module-architecture.md).
 
 **[DID-CORE]** Decentralized Identifiers (DIDs) v1.0. W3C Recommendation, 19 July 2022. https://www.w3.org/TR/did-core/
 

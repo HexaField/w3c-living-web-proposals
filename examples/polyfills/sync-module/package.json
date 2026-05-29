@@ -22,7 +22,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@living-web/context-sync": "workspace:*"
+    "@living-web/context-sync": "workspace:*",
+    "@living-web/personal-graph": "workspace:*"
   },
   "devDependencies": {
     "tsup": "^8.5.1",
