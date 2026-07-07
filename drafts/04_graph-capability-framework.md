@@ -208,16 +208,18 @@ The root capability is recorded in the new graph as a flattened [[ZCAP-LD]] docu
 <cap-id> -[rdf:type]→               <zcap:Delegation> .
 <cap-id> -[zcap:parentCapability]→  <urn:living-web:zcap:BootstrapRoot> .
 <cap-id> -[zcap:invoker]→           <did:key:creator> .
-<cap-id> -[zcap:actions]→           "createLink,removeLink,updateSHACL,updateGovernance,updateDIDDocument,delegateCapability,forkGraph,announceFork,mountContext" .
+<cap-id> -[zcap:actions]→           "createLink,removeLink,updateGovernance,updateDIDDocument,delegateCapability,mountContext,forkGraph,announceFork" .
 <cap-id> -[zcap:resource]→          <graph-did> .
 <cap-id> -[zcap:proofValue]→        "<signature>" .
 <cap-id> -[zcap:proofPurpose]→      "capabilityDelegation" .
 <cap-id> -[zcap:created]→           "2026-05-23T00:00:00Z"^^xsd:dateTime .
 ```
 
+**Default root action set.** The `actions` a freshly minted root capability grants MUST be exactly the eight **framework-core** actions defined by this specification in [§4.5.4](#454-actions): `createLink`, `removeLink`, `updateGovernance`, `updateDIDDocument`, `delegateCapability`, `mountContext`, `forkGraph`, `announceFork`. Extension actions (e.g. `updateSHACL` from [[SHAPE-VALIDATION]], `updateFlow` from [[GRAPH-FLOWS]]) MUST NOT appear in the default root set: they are conferred only by an extension specification's own bootstrap or by an explicit delegation. A conforming engine MUST NOT widen the default root beyond these eight actions.
+
 `<urn:living-web:zcap:BootstrapRoot>` is a **sentinel value** defined by this specification (not a resolvable ZCAP). When the chain-walk algorithm ([§7](#7-zcap-verification-algorithm)) encounters a capability whose `parentCapability` is `BootstrapRoot`, it terminates the walk after validating:
 
-1. `cap.id` matches `<graph-did> -[governance://root_capability]→ ?` for the graph being written to (i.e., this is genuinely the local root).
+1. `cap.id` matches `<graph-did> -[governance://root_capability]→ ?` for the graph being written to (i.e., this is genuinely the local root). This **local-root re-verification** MUST be performed against the writing graph's own `governance://root_capability` triple every time a `BootstrapRoot`-parented capability is walked; a capability that names `BootstrapRoot` as its parent but is not the graph's recorded root capability MUST be treated as unverified (the walk fails closed). This prevents a forged or imported ZCAP from asserting root standing merely by claiming the sentinel parent.
 2. The bootstrap proof was produced either by the creator's `did:key` (standalone case) or by a key that was, at the time, a `capabilityDelegation` delegate on the parent graph's DID document (constitutional case).
 
 Bootstrap is a **one-way constitutional act**. The bootstrap delegation becomes the new graph's own root; the chain walk terminates at `BootstrapRoot` and never crosses into the parent's chain. From that moment, the new graph is sovereign — its delegations evolve independently of the parent's.
@@ -281,6 +283,23 @@ Using the namespace `zcap = https://w3id.org/zcap/v1#`, a delegated capability i
 <cap-id> -[zcap:created]→           "2026-05-23T00:00:00Z"^^xsd:dateTime .
 ```
 
+**Substrate predicate scheme.** On the wire and in the JSON-LD context the ZCAP terms use the compact prefix `zcap = https://w3id.org/zcap/v1#` shown above. Within the substrate, however, the flattened predicate IRIs MUST use the stable, resolver-independent **`zcap://` scheme**, one predicate per field, exactly:
+
+| JSON-LD term | Substrate predicate IRI |
+|---|---|
+| `rdf:type` (object `zcap:Delegation`) | `http://www.w3.org/1999/02/22-rdf-syntax-ns#type` (object `zcap://Delegation`) |
+| `zcap:invoker` | `zcap://invoker` |
+| `zcap:parentCapability` | `zcap://parentCapability` |
+| `zcap:actions` | `zcap://actions` |
+| `zcap:resource` | `zcap://resource` |
+| `zcap:caveats` | `zcap://caveats` |
+| `zcap:proofValue` | `zcap://proofValue` |
+| `zcap:proofPurpose` | `zcap://proofPurpose` |
+| `zcap:proofMethod` | `zcap://proofMethod` |
+| `zcap:created` | `zcap://created` |
+
+The `zcap://` form is the canonical intra-graph representation: it is what the verification algorithm ([§7](#7-zcap-verification-algorithm)) queries and what the delegation-proof pre-image ([§4.5.3.1](#4531-delegation-proof-preimage)) is computed over. A conforming engine MUST persist and read ZCAP triples using these exact predicate IRIs so that a ZCAP minted by one implementation verifies byte-for-byte under another.
+
 Implementations MAY exchange ZCAPs in their canonical JSON-LD form on the wire; the on-the-wire form is equivalent to the flattened triples above per the JSON-LD-to-RDF mapping in [[JSON-LD12]]. The reference flattening uses one triple per simple field; the `caveats` array is carried as a single JSON-encoded string literal because its internal shape is caveat-type-specific (see [§9](#9-caveat-type-system)).
 
 | Field | Type | Required | Description |
@@ -300,6 +319,40 @@ A ZCAP is linked to its holder by the predicate `governance://has_zcap` whose ob
 ```
 
 The engine resolves a `has_zcap` link by querying for all triples sharing the `<cap-id>` subject (in the writing graph, per [§7](#7-zcap-verification-algorithm)).
+
+#### 4.5.3.1 Delegation-Proof Preimage
+
+The draft above leaves the exact bytes a delegation's `zcap://proofValue` signs implementation-defined. For cross-implementation verification a ZCAP minted by one engine MUST verify byte-for-byte under another, so this specification pins the **delegation-proof pre-image** exactly.
+
+The pre-image is a versioned tag followed by every signed field, each on its own line, joined by a single LINE FEED (`U+000A`, `\n`) with **no trailing newline**:
+
+```
+living-web/zcap/delegation/v1\n
+<id>\n
+<invoker>\n
+<parentCapability>\n
+<actions>\n
+<resource>\n
+<caveats>\n
+<proofPurpose>\n
+<created>
+```
+
+Concretely the signed byte string is the concatenation, in this exact order:
+
+1. the ASCII literal `living-web/zcap/delegation/v1` (the domain-separation tag),
+2. `\n` then the ZCAP `id` (the `urn:uuid:` subject),
+3. `\n` then `zcap://invoker`,
+4. `\n` then `zcap://parentCapability` (the sentinel `urn:living-web:zcap:BootstrapRoot` for a root),
+5. `\n` then `zcap://actions` — the **verbatim** comma-separated string as stored (no re-ordering, no whitespace normalisation),
+6. `\n` then `zcap://resource`,
+7. `\n` then `zcap://caveats` — the verbatim JSON array literal, or the **empty string** when the capability declares no caveats,
+8. `\n` then `zcap://proofPurpose`,
+9. `\n` then `zcap://created` (RFC 3339).
+
+The following fields are deliberately **excluded** from the pre-image: `rdf:type` (a constant), `zcap://proofMethod` (it names the verifying key, established out of band by the walk), and `zcap://proofValue` (the signature itself). Because DIDs, IRIs, the comma-separated `actions` tokens, and the RFC-3339 timestamp contain no LF, and `caveats` is compact JSON whose string members escape control characters, the field boundaries are unambiguous.
+
+The signer computes `SHA-256` over this pre-image and signs the **32-byte digest** with a raw Ed25519 signature (the same digest-then-sign discipline as [[PERSONAL-LINKED-DATA-GRAPHS]] §3.2.1). `zcap://proofValue` is the multibase base58btc (`z`-prefixed) encoding of the raw 64-byte Ed25519 signature. A verifier recomputes the pre-image from the stored triples, hashes it with SHA-256, and checks the signature against the key named by `zcap://proofMethod`. Any divergence in field order, separator, tag, or the caveats encoding yields a different digest and MUST cause verification to fail closed.
 
 #### 4.5.4 Actions
 
@@ -328,6 +381,9 @@ Given a triple write, the engine derives the implied `action` as follows:
    |---|---|
    | `governance://` | `updateGovernance` |
    | `did-document://` | `updateDIDDocument` |
+   | `did://` | `updateDIDDocument` |
+
+   The `did://` prefix maps to `updateDIDDocument` because [[GROUP-IDENTITY]] §4.4 stores a group's DID-document state (verification methods, capability sections, service entries) as `did://*` triples in the host graph. Writes to those triples mutate the group's signing authority and therefore MUST require the same `updateDIDDocument` action as the abstract `did-document://` predicates. Both prefixes coexist without overlap (neither is a prefix of the other).
 
 2. Otherwise the action is `createLink` for additions and `removeLink` for removals.
 
