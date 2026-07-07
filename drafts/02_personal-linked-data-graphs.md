@@ -180,6 +180,20 @@ where:
 
 The **signature operation** is `DIDCredential.signRaw(payload)` per [[DECENTRALISED-IDENTITY]] §6.1. The signature algorithm follows the verification method; this specification does not pin a particular algorithm. The resulting bytes are multibase-encoded (with the `z` (base58btc) prefix recommended) and stored as `prov://signature`.
 
+##### 3.2.1.1 Canonical Triple Serialisation
+
+Because `signRaw()` signs its input verbatim ([[DECENTRALISED-IDENTITY]] §6.5), the `canonical(triple)` pre-image MUST be byte-for-byte reproducible across implementations, or a reifier signed by one user agent will not verify on another. The pre-image is exactly one **RDF 1.2 N-Triples line** [[N-TRIPLES]], with the following productions pinned (this closes the escaping and spacing latitude that [[N-TRIPLES]] otherwise permits):
+
+1. The three terms are emitted `subject SP predicate SP object`, separated by a single U+0020 SPACE, with **no** trailing ` .`, **no** terminating newline, and **no** leading or trailing whitespace. (The N-Triples statement terminator is omitted because the pre-image is a single triple, not a document.)
+2. **IRIs** are emitted as `<` + the IRI + `>`, with the IRI escaped using only the N-Triples `UCHAR` numeric escapes `\uXXXX` / `\UXXXXXXXX` (uppercase hex) for characters that `IRIREF` forbids; no other characters are escaped. No IRI-relative resolution, percent-normalisation, or case-folding is applied — the IRI is signed as supplied.
+3. **Blank nodes** are emitted as `_:` + the label. Because RDF Dataset Canonicalization relabels blank nodes ([§5.2](#52-content-hash-computation)), a blank-node **subject** yields a pre-image that is not stable across canonicalisation; user agents SHOULD restrict signed data triples to IRI subjects (see the `removeTriple` note in [§4.2](#42-triple-operations)).
+4. **Literals** are emitted as `"` + the lexical form + `"`, escaping exactly `\`, `"`, LF (`\n`), CR (`\r`), and TAB (`\t`) via their two-character `ECHAR` escapes and nothing else, followed by:
+   - `^^<datatype-IRI>` when the datatype is not `xsd:string` and no language tag is present; the datatype IRI is escaped per production 2. A plain literal with datatype `xsd:string` emits **no** `^^…` suffix.
+   - `@` + the language tag (lowercased per [[BCP47]] canonicalisation) when a language tag is present; a language-tagged literal never emits a `^^…` suffix (its datatype is `rdf:langString` by definition).
+5. **RDF 1.2 triple terms**, where they appear as an object (the `rdf:reifies` target), are emitted as `<<(` + SP + `s` + SP + `p` + SP + `o` + SP + `)>>`, each inner term recursively serialised per this section. (Reifiers themselves are signed over their *data* triple, not over the `rdf:reifies` triple, so a triple-term pre-image arises only when a data triple's object is itself a triple term.)
+
+The output is a UTF-8 byte sequence. Two implementations that follow productions 1–5 produce identical pre-image bytes for the same abstract triple, and therefore mutually verifiable reifier signatures.
+
 #### 3.2.2 Mandatory Reifier Attachment
 
 User agents MUST attach a reifier carrying the four predicates above to every triple they accept via `addTriple()` ([§4.2](#42-triple-operations)). Reifier triples are part of the graph's triple set and are included in:
@@ -261,6 +275,8 @@ interface GraphManager {
   [NewObject] Promise<Graph> create(optional GraphCreationOptions options = {});
   /** Materialise a graph from a previously-serialised snapshot. */
   [NewObject] Promise<Graph> fromSnapshot(GraphSnapshot snapshot, optional GraphFromSnapshotOptions options = {});
+  /** The snapshot formats this user agent can both produce and consume ([§5.3.4](#534-advertised-formats)). */
+  static readonly attribute FrozenArray<SnapshotFormat> supportedSnapshotFormats;
 };
 
 dictionary GraphCreationOptions {
@@ -362,6 +378,8 @@ When called on a `Graph`, `addTriple(triple)` MUST execute the following algorit
 
 `removeTriple(signed)` removes a triple and its four reifier triples. Two triples are considered equal for removal purposes when their `subject`, `predicate`, `object`, and reifier `author` + `timestamp` all match. The IRI advances; a `tripleremoved` event fires. The graph's storage write is atomic.
 
+**Blank-node subjects.** RDF Dataset Canonicalization relabels blank nodes ([§5.2](#52-content-hash-computation)), so a blank node has no identifier that is stable across the mutations that `removeTriple` operates over: the `_:label` a caller holds is not a durable name for a stored triple. A data triple whose `subject` is a blank node therefore cannot be uniquely targeted by subject/predicate/object match, and `removeTriple()` MUST resolve `false` (no triple matched, nothing removed) rather than removing an arbitrary blank-node-subject triple. User agents SHOULD restrict signed data triples to IRI (and, where applicable, triple-term) subjects for this reason; specifications that require removable blank-node-subject triples MUST define removal by durable reifier identity (the reifier's own `author` + `timestamp` + `rdf:reifies` target) rather than by blank-node label, per [§8.2](#82-amending-algorithms).
+
 `queryTriples()` returns data triples (NOT reifier triples) matching the `TripleQuery` per [§3.5](#35-triplequery). Results are sorted by reifier timestamp descending; ties broken by subject IRI ascending.
 
 `querySparql()` executes a SPARQL 1.2 query over a dataset constructed per [§7](#7-holonic-composition-and-sparql).
@@ -417,11 +435,16 @@ The **IRI** is the literal string `graph://` concatenated with the hexadecimal d
 
 A conforming user agent MUST recompute the IRI whenever the triple set changes and MUST update `graph.iri` accordingly. Recomputation MAY be deferred until the IRI is read (the cached IRI is invalidated by every mutation); the value MUST be consistent with the canonical-dataset definition above whenever it is observable.
 
+> **Canonicalisation profile (normative).** The content hash is only reproducible across implementations if every agent runs the *same* canonicalisation algorithm over the *same* term abstraction. Two points are pinned:
+>
+> 1. **`rdfc-1.0` revision.** The algorithm is RDF Dataset Canonicalization [[RDF-CANON]] as published in the March 2025 Recommendation, with `SHA-256` as the hash used by the algorithm's internal blank-node labelling (the algorithm's default). A user agent MUST NOT substitute a later or profiled variant that would produce different canonical N-Quads for the same dataset.
+> 2. **RDF 1.2 triple terms.** The canonical dataset contains triple terms (each reifier's `rdf:reifies` object, [§3.2](#32-triple-provenance-via-rdf-12-reifiers)). `rdfc-1.0` was specified before RDF 1.2 triple terms were finalised; a triple term is canonicalised as an ordinary ground or blank-node-bearing term whose components are canonicalised recursively, and it participates in blank-node labelling exactly as the subject/object it contains would. Until [[RDF-CANON]] cites an [[RDF12-CONCEPTS]] revision normatively, a conforming user agent MUST canonicalise triple terms consistently with RDF 1.2 N-Quads [[N-QUADS]] term equality, such that two datasets that are RDF-1.2-isomorphic yield identical canonical bytes. The accompanying implementation delegates both points to a single pinned canonicaliser so that the hash is a pure function of the abstract dataset.
+
 Observers that need to react to IRI changes do so via `tripleadded` / `tripleremoved` events; this specification defines no separate `iriChanged` event because every IRI change is caused by exactly one such event (or one `addTriples` batch).
 
 ### 5.3 Serialisation Formats
 
-Every serialisation format defined by this specification is a complete, lossless rendering of the graph's full triple set — data triples *and* reifier triples — in an RDF 1.2 syntax. Each format carries the same abstract content; the choice of format is a choice of syntax, not of fidelity. All four are round-trippable: a snapshot produced in any format can be passed to `fromSnapshot()` ([§5.5](#55-materialising-a-snapshot)) and yields a graph whose IRI equals `snapshot.graphIri`.
+Every serialisation format defined by this specification is a complete, lossless rendering of the graph's full triple set — data triples *and* reifier triples — in an RDF 1.2 syntax. Each format carries the same abstract content; the choice of format is a choice of syntax, not of fidelity. Each format a user agent supports ([§5.3.4](#534-advertised-formats)) is round-trippable: a snapshot produced in that format can be passed to `fromSnapshot()` ([§5.5](#55-materialising-a-snapshot)) and yields a graph whose IRI equals `snapshot.graphIri`. Three formats are REQUIRED of every conforming user agent; `"jsonld"` is OPTIONAL ([§5.3.4](#534-advertised-formats)).
 
 The `"nquads-canonical"` format is distinguished only in that its `data` bytes *are* the canonical hash form, so verifying the IRI invariant is a single SHA-256 with no parsing. Verification of the other formats requires parsing followed by re-canonicalisation per [§5.2](#52-content-hash-computation).
 
@@ -495,13 +518,25 @@ For `format !== "nquads-canonical"`, a verifier MUST:
 
 A correct implementation of any of the three non-canonical formats produces canonical bytes equal to those of the canonical-format emission of the same triple set.
 
+#### 5.3.4 Advertised Formats
+
+The `SnapshotFormat` enum enumerates every format this specification *names*; it does not require a user agent to *produce and consume every one*. Conformance is split:
+
+- **`"nquads-canonical"` — REQUIRED.** Every conforming user agent MUST produce and consume it. It is the hash form ([§5.3.1](#531-the-canonical-serialisation)) and the interoperable floor: any two conforming agents can always exchange a graph in this format.
+- **`"nquads"` and `"turtle"` — REQUIRED.** Both are RDF 1.2 line/text syntaxes with a fully specified triple-term form ([§5.3.2](#532-other-rdf-12-serialisations)); a conforming user agent MUST produce and consume both.
+- **`"jsonld"` — OPTIONAL.** A graph's reifier triples are RDF 1.2 triple terms, whose JSON-LD 1.2 representation (the `@triple` keyword [[JSON-LD12]]) is not yet stable in [[JSON-LD12]] and is unimplemented in current JSON-LD tooling. A conforming user agent MAY therefore decline to produce or consume `"jsonld"`.
+
+A user agent MUST expose the set it actually supports through the static attribute `GraphManager.supportedSnapshotFormats` ([§3.4](#34-graphmanager)). The array MUST contain `"nquads-canonical"`, `"nquads"`, and `"turtle"`, MUST list `"jsonld"` if and only if the user agent produces and consumes it, and MUST reflect any additional formats introduced by other specifications ([§8.1](#81-amending-interfaces)) that the user agent supports. Callers determine capability by reading this attribute rather than by probing with `try`/`catch`.
+
+A request to **produce** ([§5.4](#54-producing-a-snapshot)) or **consume** ([§5.5](#55-materialising-a-snapshot)) a format that is a defined `SnapshotFormat` value but is **not** in `supportedSnapshotFormats` MUST reject with `"NotSupportedError"`. (A value that is not a defined `SnapshotFormat` at all is rejected by Web IDL enum validation before the algorithm runs.)
+
 ### 5.4 Producing a Snapshot
 
 `Graph.getAsSnapshot(options?)` MUST:
 
 1. Compute the canonical dataset per [§5.2](#52-content-hash-computation) steps 1–2.
 2. Compute `graphIri` per [§5.2](#52-content-hash-computation) steps 3–4.
-3. Serialise the full triple set (data triples + reifier triples) per [§5.3.1](#531-the-canonical-serialisation) when `format` is `"nquads-canonical"`, or per [§5.3.2](#532-other-rdf-12-serialisations) otherwise. Every format MUST include all reifier triples.
+3. **Format check.** If `options.format` is not a member of `GraphManager.supportedSnapshotFormats` ([§5.3.4](#534-advertised-formats)), reject with `"NotSupportedError"`. Otherwise serialise the full triple set (data triples + reifier triples) per [§5.3.1](#531-the-canonical-serialisation) when `format` is `"nquads-canonical"`, or per [§5.3.2](#532-other-rdf-12-serialisations) otherwise. Every format MUST include all reifier triples.
 4. Capture `timestamp` as the current time in RFC 3339 form.
 5. Produce proofs. Let `proofPayload = SHA-256(graphIri || "|" || timestamp)`:
    - If `signBy` is `"agent"` or `"both"`, sign `proofPayload` with the active agent credential and append a proof with `role = "agent"`.
@@ -513,7 +548,7 @@ A correct implementation of any of the three non-canonical formats produces cano
 
 `GraphManager.fromSnapshot(snapshot, options?)` MUST:
 
-1. **Format check.** If `snapshot.format` is not one of the values defined in [§5.3](#53-serialisation-formats) (or values added by other specifications per [§8.1](#81-amending-interfaces)) reject with `"NotSupportedError"`. All formats defined here are accepted.
+1. **Format check.** If `snapshot.format` is not a member of `GraphManager.supportedSnapshotFormats` ([§5.3.4](#534-advertised-formats)), reject with `"NotSupportedError"`. This covers both values that are not defined `SnapshotFormat` members at all and defined-but-unsupported values such as `"jsonld"` on a user agent that does not implement it. The three REQUIRED formats (`"nquads-canonical"`, `"nquads"`, `"turtle"`) and any format the user agent additionally advertises are accepted and proceed to step 2.
 2. **Proof check.** Verify every proof in `snapshot.proofs`. If `snapshot.proofs` is empty OR any proof fails verification, reject with `"DataError"`.
 3. **Parse.** Parse `snapshot.data` according to `snapshot.format`:
    - `"nquads-canonical"` and `"nquads"` per [[N-QUADS]];
@@ -880,6 +915,7 @@ await calendar.addTriple(/* ... */);  // → "InvalidStateError"
 - **[RFC3339]** Klyne, G. and C. Newman, "Date and Time on the Internet: Timestamps", RFC 3339, July 2002. https://www.rfc-editor.org/rfc/rfc3339
 - **[RFC4122]** Leach, P., Mealling, M., and R. Salz, "A Universally Unique IDentifier (UUID) URN Namespace", RFC 4122, July 2005. https://www.rfc-editor.org/rfc/rfc4122
 - **[RFC7595]** Thaler, D., Hansen, T., and T. Hardie, "Guidelines and Registration Procedures for URI Schemes", BCP 35, RFC 7595, June 2015. https://www.rfc-editor.org/rfc/rfc7595
+- **[BCP47]** Phillips, A. and M. Davis, "Tags for Identifying Languages", BCP 47, RFC 5646, September 2009. https://www.rfc-editor.org/info/bcp47
 - **[WEBIDL]** Chen, E., "Web IDL Standard". https://webidl.spec.whatwg.org/
 - **[DID-CORE]** Sporny, M., Guy, A., Sabadello, M., and D. Reed, "Decentralized Identifiers (DIDs) v1.0", W3C Recommendation, 19 July 2022. https://www.w3.org/TR/did-core/
 - **[DECENTRALISED-IDENTITY]** [Decentralised Identity Integration for the Web Platform](./01_decentralised-identity-web-platform.md).
