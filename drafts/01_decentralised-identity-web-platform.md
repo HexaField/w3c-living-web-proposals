@@ -10,7 +10,7 @@
 
 ## Abstract
 
-This specification extends the Credential Management API to support **decentralised identifiers (DIDs)** as a first-class web platform primitive. One DID method is REQUIRED: `did:key` for individual identities. The API is exposed on `navigator.credentials` and builds on the precedent of passkeys (WebAuthn): private keys live in platform secure storage, signing is user-agent-mediated, and the credential surface is method-agnostic so that additional DID methods can be plugged in by other specifications. The specification also defines a uniform signing surface (`sign` / `verify` / `signCapability`) and a resolution dispatcher that delegates to method-specific resolvers.
+This specification extends the Credential Management API to support **decentralised identifiers (DIDs)** as a first-class web platform primitive. One DID method is REQUIRED: `did:key` for individual identities. The API is exposed on `navigator.credentials` and builds on the precedent of passkeys (WebAuthn): private keys live in platform secure storage, signing is user-agent-mediated, and the credential surface is method-agnostic so that additional DID methods can be plugged in by other specifications. The specification also defines a uniform signing surface (`sign` / `verify` / `signCapability` / `signRaw`) and a resolution dispatcher that delegates to method-specific resolvers.
 
 ---
 
@@ -57,7 +57,7 @@ In scope:
 
 - A `DIDCredential` interface and its lifecycle on `navigator.credentials`.
 - The `did:key` method, REQUIRED for conforming user agents.
-- A uniform `sign` / `verify` / `signCapability` API on `DIDCredential`.
+- A uniform `sign` / `verify` / `signCapability` / `signRaw` API on `DIDCredential`.
 - A `resolve(did)` dispatcher with a pluggable method-resolver registry.
 - Permission, key management, security, and privacy requirements applicable to any DID-backed credential.
 
@@ -275,6 +275,7 @@ partial interface DIDCredential {
   [NewObject] Promise<SignedContent> sign(any data);
   [NewObject] Promise<boolean> verify(SignedContent content);
   [NewObject] Promise<SignedContent> signCapability(object zcap);
+  [NewObject] Promise<ArrayBuffer> signRaw(BufferSource payload);
 };
 ```
 
@@ -337,6 +338,23 @@ The signing algorithm for Ed25519 is:
 3. Let *message* = `SHA-256(canonical || timestamp)`, with *timestamp* encoded as UTF-8.
 4. Let *signature* = `Ed25519-Sign(privateKey, message)` per [[RFC8032]].
 5. Let *proof* = `{ method: <verificationMethodId>, signature: multibase(signature), type: "Ed25519Signature2020" }`.
+
+### 6.5 signRaw(payload)
+
+The `signRaw(payload)` method signs an arbitrary byte sequence directly with the credential's private key, without any envelope, JSON wrapping, or additional framing.
+
+The `signRaw(payload)` method MUST:
+
+1. Verify the call is triggered by a user gesture.
+2. Reject with `"InvalidStateError"` if the credential is locked.
+3. Display a user-agent-mediated prompt indicating the requesting origin and the action. The prompt MUST make clear that raw bytes are being signed and that no content inspection has been performed. The consent flow MUST be equivalent to that of `sign()`.
+4. Let *bytes* = the byte sequence represented by `payload`.
+5. Compute *signature* = `Ed25519-Sign(privateKey, bytes)` per [[RFC8032]], signing *bytes* as-is with no pre-hashing or transformation.
+6. Return an `ArrayBuffer` containing the raw 64-byte Ed25519 signature.
+
+`signRaw()` MUST NOT canonicalise, hash, timestamp, or otherwise transform the input bytes prior to signing. The caller is solely responsible for ensuring the payload is structured appropriately for its use case.
+
+`signRaw()` is intended for use by specifications that define their own payload framing — for example, signing reifier payloads in a linked-data graph that has already been canonicalized by the caller. It MUST NOT be used as a substitute for `sign()` when the data being signed is JSON-LD or structured content that `sign()` already handles correctly.
 
 ---
 
@@ -411,6 +429,16 @@ Applications that use signed challenges MUST generate unique, unpredictable chal
 ### 9.5 Method-Specific Considerations
 
 Methods registered through [§4.2](#42-method-registry) MAY introduce additional attack surface (network reachability, document tampering, delegate compromise, etc.). Their respective specifications MUST address those considerations.
+
+### 9.6 signRaw() — Caller Canonicalization Responsibility
+
+`signRaw()` is a lower-level primitive than `sign()`. Unlike `sign()`, which canonicalizes data via [[RFC8785]] before signing, `signRaw()` signs the supplied bytes verbatim. This places the entire burden of canonicalization correctness on the caller.
+
+Callers MUST ensure that the byte sequence passed to `signRaw()` is deterministically and unambiguously derived from the logical payload being signed. If two different representations of the same logical content can produce different byte sequences, signatures produced by `signRaw()` will not be reproducibly verifiable against a canonicalized form.
+
+In particular: specifications that use `signRaw()` to sign linked-data payloads (for example, reifier statements in a personal linked-data graph) MUST canonicalize the payload prior to the `signRaw()` call using a defined canonicalization algorithm (for example, [[RFC8785]] or RDF Dataset Normalization [[RDNA]]) and MUST include the canonicalization algorithm identifier in any associated proof structure so that verifiers can reproduce the exact byte sequence.
+
+Applications that use `signRaw()` as a drop-in replacement for `sign()` on arbitrary structured data without first canonicalizing that data are at risk of producing signatures that cannot be reliably verified across implementations or over time.
 
 ---
 
@@ -506,3 +534,4 @@ const zcap = await me.signCapability({
 - **[RFC5480]** Turner, S. et al., "Elliptic Curve Cryptography Subject Public Key Information", RFC 5480, March 2009.
 - **[SEC2]** Certicom Research, "SEC 2: Recommended Elliptic Curve Domain Parameters", 2010.
 - **[ARGON2]** Biryukov, A., Dinu, D., and D. Khovratovich, "Argon2: the memory-hard function for password hashing and other applications", 2015.
+- **[RDNA]** Longley, D. and M. Sporny, "RDF Dataset Normalization 1.0", W3C Community Group Report. https://www.w3.org/TR/rdf-canon/

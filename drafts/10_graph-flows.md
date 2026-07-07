@@ -33,11 +33,12 @@ This document is a draft Community Group Report. It has no official W3C standing
 10. [Composite Flows](#10-composite-flows)
 11. [API](#11-api)
 12. [Integration with Sync Protocol](#12-integration-with-sync-protocol)
-13. [Integration with Shapes and Governance](#13-integration-with-shapes-and-governance)
-14. [Security Considerations](#14-security-considerations)
-15. [Privacy Considerations](#15-privacy-considerations)
-16. [Examples](#16-examples)
-17. [References](#17-references)
+13. [Concurrent Transitions](#13-concurrent-transitions)
+14. [Integration with Shapes and Governance](#14-integration-with-shapes-and-governance)
+15. [Security Considerations](#15-security-considerations)
+16. [Privacy Considerations](#16-privacy-considerations)
+17. [Examples](#17-examples)
+18. [References](#18-references)
 
 ---
 
@@ -384,7 +385,7 @@ Guards MUST be pure-SPARQL `ASK` queries. They MUST NOT use `UPDATE`, `INSERT`, 
 
 ### 8.2 Timestamp Source
 
-The "entered state at" timestamp is the reifier timestamp on the most recent `<instance> flow://state ?state` triple. This is sync-authoritative (per [[CONTEXT-SYNC]] §12.5) and not subject to author manipulation.
+The "entered state at" timestamp is the reifier timestamp on the most recent `<instance> flow://state ?state` triple, carried by the diff that established that state ([[CONTEXT-SYNC]] §5.1). The runtime treats this diff timestamp as authoritative for elapsed-time computation (per [[CONTEXT-SYNC]] §14.5). It is self-reported by the committing agent, so a receiving peer MUST subject it to the timestamp-plausibility checks in [[CONSTRAINT-VOCABULARY]] §5.3 (future bound, causal monotonicity over `dependencies`, per-author monotonicity) before relying on it; a timestamp that fails those checks MUST NOT be used to satisfy `minDelay` or to declare a `maxDelay` deadline elapsed. The causal-ordering checks make backdating across the dependency graph tamper-evident, but do not eliminate a bounded within-skew lie ([[CONSTRAINT-VOCABULARY]] §5.3).
 
 ### 8.3 Evaluation
 
@@ -544,13 +545,7 @@ If any check fails on the receiving peer's local state, the diff is rejected.
 
 ### 12.3 Concurrency
 
-If two agents fire conflicting transitions concurrently, the sync protocol's conflict resolution applies. For OR-Set CRDT semantics (the [[DEFAULT-SYNC-MODULE]]):
-
-- Both transitions are added.
-- The runtime detects the conflict (two `flow://state` triples on the same instance from the same prior state) and applies a deterministic tie-break (e.g., lexicographically smaller reifier hash wins).
-- The losing transition's side-effect triples are rolled back at evaluation time.
-
-This is the same convergence model as for any other concurrent writes; flows do not introduce new consensus requirements.
+Under eventual consistency, two peers can fire the same transition on one flow instance concurrently, or fire conflicting transitions out of the same state. The sync protocol's conflict resolution applies (OR-Set CRDT semantics in the [[DEFAULT-SYNC-MODULE]]): both transition commits are admitted to the DAG, then reconciled deterministically at merge-evaluation time. The full normative treatment — conflict detection, the tie-break rule, guard re-evaluation on the receiving peer, and deadline handling without a central clock — is specified in [§13](#13-concurrent-transitions). This is the same convergence model as for any other concurrent writes; flows do not introduce new consensus requirements.
 
 ### 12.4 Auto-Transitions
 
@@ -558,9 +553,52 @@ Auto-transitions fired by the runtime are written by the system identity. Their 
 
 ---
 
-## 13. Integration with Shapes and Governance
+## 13. Concurrent Transitions
 
-### 13.1 Shape-Bound Flows
+This section is normative.
+
+A flow instance's state is an ordinary set of triples synchronised under the sync protocol's eventual-consistency model ([[CONTEXT-SYNC]], [[DEFAULT-SYNC-MODULE]] §8). Two peers that hold the same instance in the same state, and cannot yet see each other's writes, can each commit a transition. Nothing at commit time prevents this: each peer's local checks ([§6.2](#62-transition)) pass against its own view. Resolution therefore happens **at merge-evaluation time** on every receiving peer, deterministically, so that all honest peers converge on the same surviving transition and the same resulting state. Flows introduce no new consensus requirement; they reuse the convergence guarantees of the default sync module ([[DEFAULT-SYNC-MODULE]] §8.4).
+
+### 13.1 Conflict Detection
+
+Two transition commits **conflict** when both:
+
+1. target the same flow instance (the same subject of the `<instance> flow://state ?state` link), AND
+2. leave the same **from-state** (each commit removes the same prior `flow://state` value and adds a new one).
+
+Concretely, a receiving peer detects a conflict when, after merge, it observes two distinct `flow://state` add-triples on one instance whose reifiers record the same superseded prior state. This covers both cases of interest: two peers firing the *same* transition (identical `fromState`/`toState`) and two peers firing *different* transitions out of the same `fromState` (e.g. `ratify` vs `reject` from `voting`). A commit that leaves a *different* from-state is not a conflict — it is causally ordered behind whichever transition produced its from-state, and ordinary dependency handling ([[DEFAULT-SYNC-MODULE]] §8.2) applies.
+
+### 13.2 Tie-Break
+
+Conflicts resolve by the **same deterministic rule as the default sync module**: of the two conflicting transition commits, the one whose commit carries the **lexicographically smaller reifier hash wins**; the losing commit's state change is discarded and its side-effect `actions` ([§4.4](#44-actions)) are rolled back at merge-evaluation time. This is exactly the rule defined in [[DEFAULT-SYNC-MODULE]] §8.4 (Concurrent State Transitions); the two specifications are intentionally identical so that a flow engine and its underlying sync module never disagree about which transition stands. The reifier hash is a deterministic function of signed commit content, so every honest peer computes the same winner independently, with no coordination round.
+
+The losing transition is treated as though it never fired: the instance ends in the winner's `toState`, the loser's `actions` triples are removed, and no `transitionfired` event is retained for the loser (a peer that optimistically emitted one locally MUST emit a corrective event so application state reconciles). Because the outcome is a pure function of the two commits, the same instance converges to the same state on every peer regardless of the order in which the two commits arrived.
+
+### 13.3 Guard Re-Evaluation on Receiving Peers
+
+Winning the tie-break is **necessary but not sufficient**. A transition's SPARQL ASK guard ([§7](#7-guards)) MUST be **re-evaluated by the receiving peer against the graph state as seen by that peer at merge time** — never trusted from the committer's `caveatsSatisfied`-style assertion (this parallels [[CONTEXT-SYNC]] §9.2.1, where content-dependent checks are always re-run by the receiver). Per [§12.2](#122-validation-on-receipt), a receiving peer already re-evaluates guards, temporal constraints, and role requirements against its local state before applying a transition diff. Under concurrency this re-evaluation is decisive: a guard that held at the committer may no longer hold against the *merged* state, because a concurrent diff changed the data the guard reads.
+
+Therefore:
+
+- A transition whose guard does **not** hold against the receiving peer's merged state is **rejected**, even if it was valid at the committer and even if it would otherwise win the tie-break of [§13.2](#132-tie-break).
+- Guard re-evaluation is applied **before** the tie-break is scored: a losing-but-valid transition can only be dropped by the tie-break; an invalid transition is dropped outright. When the tie-break winner's guard fails against merged state, that winner is rejected and the surviving valid transition (if any) stands — a committer cannot force an invalid state change through merely by holding the smaller reifier hash.
+- Example: two `ratify` attempts fire concurrently while a third concurrent diff retracts a vote, dropping `vote_count` below `quorum`. Against each committer's pre-merge view the quorum guard held; against the merged view it does not. Both `ratify` transitions are rejected on every honest peer. Convergence is preserved because every peer evaluates the identical merged state.
+
+### 13.4 Deadlines Without a Central Clock
+
+`maxDelay` / `onDeadline: "auto-transition"` deadline transitions ([§8.1](#81-format)) must fire "when the deadline passes", but there is no central authority to observe the deadline or to serialise who fires it. The resolution:
+
+1. **Any peer may fire.** ANY peer that observes, from its own admissible view, that the deadline has passed MAY commit the deadline transition. "The deadline has passed" is evaluated against the instance's state-entry timestamp (the reifier timestamp on the current `flow://state` link, [§8.2](#82-timestamp-source)) plus `maxDelay`, using the **plausible-timestamp rules** of [[CONSTRAINT-VOCABULARY]] §5.3 and [[CONTEXT-SYNC]] §14.5 — the same admissibility checks (future bound, causal monotonicity, per-author monotonicity) that gate every time-based decision. A peer MUST NOT act on a state-entry timestamp it would reject as implausible.
+
+2. **No central authority; first valid commit wins.** Because any peer may fire, two or more peers can commit the deadline transition concurrently. These concurrent deadline commits are ordinary conflicting transitions and resolve via the tie-break of [§13.2](#132-tie-break): the deadline commit with the lexicographically smaller reifier hash wins, the others are rolled back. The **first valid deadline commit to win the tie-break stands**; there is exactly one surviving deadline transition on every honest peer. A deadline commit is still subject to guard re-evaluation ([§13.3](#133-guard-re-evaluation-on-receiving-peers)) and to role/authorship checks: `onDeadline: "auto-transition"` commits are authored by the system identity ([§8.4](#84-auto-transition-authorship), [§12.4](#124-auto-transitions)), so a deadline commit whose author cannot satisfy the transition's role requirement is rejected like any other unauthorised transition.
+
+3. **Liveness.** Firing is a MAY, not a MUST, so liveness depends on at least one peer being online past the deadline to commit the transition. A deadline whose window elapses entirely while all peers are offline fires when the next peer comes online and observes the elapsed, plausibly-timestamped window. Implementations SHOULD have the runtime evaluate pending deadlines on reconnection ([[CONTEXT-SYNC]] §13) so an auto-transition is not indefinitely stranded.
+
+---
+
+## 14. Integration with Shapes and Governance
+
+### 14.1 Shape-Bound Flows
 
 A flow's `appliesTo` SHOULD reference a shape's `targetClass` ([[SHAPE-VALIDATION]]). The runtime auto-applies the flow's `initialState` to newly-created shape instances of that class.
 
@@ -575,7 +613,7 @@ A shape can declare its associated flow:
 }
 ```
 
-### 13.2 ZCAP-Guarded Roles
+### 14.2 ZCAP-Guarded Roles
 
 A flow's `role` field names a ZCAP action ([§9](#9-role-requirements)). The complete authorisation story:
 
@@ -585,7 +623,7 @@ A flow's `role` field names a ZCAP action ([§9](#9-role-requirements)). The com
 
 Each layer composes cleanly; none can substitute for the others.
 
-### 13.3 Governance Mode and Flows
+### 14.3 Governance Mode and Flows
 
 Flows are subject to the graph's enforcement mode ([[CAPABILITY-FRAMEWORK]] §5):
 
@@ -597,53 +635,53 @@ This lets a community shape flow design iteratively without instantly gating con
 
 ---
 
-## 14. Security Considerations
+## 15. Security Considerations
 
-### 14.1 Guard Safety
+### 15.1 Guard Safety
 
 Guards run SPARQL queries against the local graph. They MUST be read-only and time-bounded ([§7.4](#74-safety-constraints)). Implementations MUST disable destructive SPARQL keywords and federated services unless explicitly permitted.
 
-### 14.2 Timestamp Authority
+### 15.2 Timestamp Authority
 
-Temporal constraints depend on reifier timestamps from the sync protocol's authoritative source. Self-reported timestamps from the firing agent MUST NOT be used. If sync provides no authoritative timestamps, the runtime MUST disable temporal constraints with a warning.
+Temporal constraints depend on reifier timestamps from the sync protocol's authoritative source ([[CONTEXT-SYNC]] §14.5). Self-reported timestamps from the firing agent MUST NOT be trusted blindly: a receiving peer MUST subject each state-entry timestamp to the plausibility checks in [[CONSTRAINT-VOCABULARY]] §5.3 (future bound, causal monotonicity over `dependencies`, per-author monotonicity) before using it to decide a `minDelay` or `maxDelay`. This matters most for deadline auto-transitions, where the elapsed-window decision is what any peer acts on ([§13.4](#134-deadlines-without-a-central-clock)); a timestamp a peer would reject as implausible MUST NOT trigger a deadline. If sync provides no authoritative timestamps at all, the runtime MUST disable temporal constraints with a warning.
 
-### 14.3 Auto-Transition Privilege
+### 15.3 Auto-Transition Privilege
 
 The system identity that fires auto-transitions has elevated standing. Implementations MUST scope the system identity's ZCAPs narrowly — only to the actions needed for the auto-transitions actually configured.
 
-### 14.4 Sub-Flow Depth
+### 15.4 Sub-Flow Depth
 
 Deep sub-flow nesting can be used to exhaust runtime resources. Implementations MUST enforce a maximum nesting depth (RECOMMENDED: 8).
 
-### 14.5 Guard DOS
+### 15.5 Guard DOS
 
 A maliciously complex SPARQL guard can exhaust query budget. Implementations MUST apply per-guard time and result budgets, and SHOULD log guards that exceed them.
 
-### 14.6 Concurrent Transition Forging
+### 15.6 Concurrent Transition Forging
 
-An adversarial peer could spam transition attempts to win deterministic tie-breaks. The combination of ZCAP rate limits ([[CAPABILITY-FRAMEWORK]] caveats §9) and per-transition role requirements provides defence.
+An adversarial peer could spam transition attempts to win deterministic tie-breaks ([§13.2](#132-tie-break)). The combination of ZCAP rate limits ([[CAPABILITY-FRAMEWORK]] caveats §9) and per-transition role requirements provides defence: winning a tie-break does not bypass role verification or guard re-evaluation on receiving peers ([§13.3](#133-guard-re-evaluation-on-receiving-peers)), so a spammer cannot force an unauthorised or guard-invalid state change merely by producing a commit with a small reifier hash.
 
 ---
 
-## 15. Privacy Considerations
+## 16. Privacy Considerations
 
-### 15.1 Process Visibility
+### 16.1 Process Visibility
 
 Flow definitions are stored as triples in the graph. Anyone with read access to the graph sees the flow structure — what states exist, what transitions are possible, what guards gate them.
 
-### 15.2 Transition History
+### 16.2 Transition History
 
 Every state change is a triple with a reifier carrying author and timestamp. The complete history of state changes for a FlowInstance is observable to all participants. Applications that need transition privacy SHOULD partition sensitive flows into restricted-mount graphs.
 
-### 15.3 Guard Disclosure
+### 16.3 Guard Disclosure
 
 Guards expose business logic. Communities that need guard privacy SHOULD avoid encoding sensitive predicates in guards directly.
 
 ---
 
-## 16. Examples
+## 17. Examples
 
-### 16.1 Simple Two-State Flow (Open/Closed Channels)
+### 17.1 Simple Two-State Flow (Open/Closed Channels)
 
 ```javascript
 await channel.addFlow("ChannelLifecycle", JSON.stringify({
@@ -670,7 +708,7 @@ await channel.addFlow("ChannelLifecycle", JSON.stringify({
 }));
 ```
 
-### 16.2 Proposal Lifecycle with Guards, Temporal, and Roles
+### 17.2 Proposal Lifecycle with Guards, Temporal, and Roles
 
 ```javascript
 await community.addFlow("Proposal", JSON.stringify({
@@ -721,7 +759,7 @@ await community.addFlow("Proposal", JSON.stringify({
 }));
 ```
 
-### 16.3 Firing a Transition with Feedback
+### 17.3 Firing a Transition with Feedback
 
 ```javascript
 const result = await community.executeFlowTransition("Proposal", "proposal:42", "ratify");
@@ -739,7 +777,7 @@ if (result.success) {
 }
 ```
 
-### 16.4 UI Adaptation via availableTransitions
+### 17.4 UI Adaptation via availableTransitions
 
 ```javascript
 const available = await community.availableTransitions("Proposal", "proposal:42");
@@ -748,7 +786,7 @@ for (const t of available) {
 }
 ```
 
-### 16.5 Composite Flow (Proposal → VotingPeriod)
+### 17.5 Composite Flow (Proposal → VotingPeriod)
 
 ```javascript
 await community.addFlow("VotingPeriod", JSON.stringify({
@@ -779,9 +817,9 @@ await community.addFlow("VotingPeriod", JSON.stringify({
 
 ---
 
-## 17. References
+## 18. References
 
-### 17.1 Normative References
+### 18.1 Normative References
 
 <dl>
 <dt>[RFC2119]</dt>
@@ -806,7 +844,7 @@ await community.addFlow("VotingPeriod", JSON.stringify({
 <dd><a href="./07_dynamic-graph-shape-validation.md">Dynamic Graph Shape Validation</a>.</dd>
 </dl>
 
-### 17.2 Informative References
+### 18.2 Informative References
 
 <dl>
 <dt>[SPARQL12-QUERY]</dt>

@@ -155,19 +155,41 @@ Optional:
 
 ### 5.2 Temporal Verification Algorithm
 
-**Input:** A triple, the author's DID, the scope chain, the authoritative timestamp (per [[CONTEXT-SYNC]] §12.5).
+**Input:** A triple, the author's DID, the scope chain, the authoritative timestamp (per [[CONTEXT-SYNC]] §14.5).
 
 **Algorithm:**
 
 1. **Collect temporal constraints** with `constraint_kind = "temporal"`. If none, return ACCEPT.
 
-2. **For each constraint:**
+2. **Timestamp plausibility.** Apply the checks in [§5.3](#53-timestamp-plausibility) to the diff carrying the triple. If any check fails, REJECT (the timestamp is not admissible as the basis for temporal evaluation).
+
+3. **For each constraint:**
    1. **Predicate match.** If `temporal_applies_to_predicates` is set and the triple's predicate is not listed, skip.
    2. **Query recent triples** by the same author within scope.
    3. **Interval check.** If `temporal_min_interval_seconds` is set, find the most recent matching triple and compute elapsed time. If too short, REJECT.
    4. **Window count check.** If `temporal_max_count_per_window` is set, count matching triples in the sliding window. If at or above max, REJECT.
 
-3. All passed → ACCEPT.
+4. All passed → ACCEPT.
+
+### 5.3 Timestamp Plausibility
+
+Temporal constraints are evaluated against the timestamp carried by the diff that introduces a triple ([[CONTEXT-SYNC]] §5.1, §14.5). That timestamp is **self-reported by the committing agent**. In a peer-to-peer system with no trusted clock, a malicious committer can forge a diff timestamp — backdating to evade a `temporal_min_interval_seconds` gate, or future-dating to slide out of a `temporal_max_count_per_window` window. Before a receiving peer accepts a diff's `timestamp` as authoritative for temporal-constraint evaluation, it MUST apply all of the following checks. Any failure means the timestamp is inadmissible and temporal evaluation for that diff MUST fail (REJECT); this is a fail-closed check consistent with [[CONTEXT-SYNC]] §9.3.
+
+Let `t = diff.timestamp` (RFC 3339), `deps = diff.dependencies` (the diff's causal parents — the DAG heads it names per [[CONTEXT-SYNC]] §5.2.1), and `now` = the receiving peer's local wall-clock time.
+
+1. **Future bound.** REJECT if `t` is more than **300 seconds (5 minutes)** ahead of `now` — i.e. if `t − now > 300s`. This bounds clock skew between honest peers while denying a committer the ability to future-date a diff far enough to escape a sliding window. The bound is a fixed protocol constant, not configurable, so that every honest peer computes the same admissibility verdict for a given diff. (No lower bound on `t − now` is imposed here; a diff may legitimately arrive long after it was committed. Backdating is constrained instead by causal monotonicity below.)
+
+2. **Causal monotonicity.** REJECT if `t` is earlier than the maximum timestamp among the diff's declared causal parents:
+
+   ```
+   REJECT if  t < max( parent.timestamp  for parent in resolve(deps) )
+   ```
+
+   A diff MUST NOT claim a timestamp earlier than any diff it declares as a dependency. A diff that purports to predate its own causal parents is rejected. Because `dependencies` is bound into `revision` and thus into the signed `commitId` ([[CONTEXT-SYNC]] §5.2.2), a committer cannot rewrite the parent set to escape this check without invalidating the signature. This yields a **tamper-evident partial order over the dependency DAG even in the absence of a trusted clock**: timestamps must increase monotonically along every causal path. (Parents named in `deps` that are not yet present locally are resolved per [[CONTEXT-SYNC]] §9.2.1 step 5 / [[DEFAULT-SYNC-MODULE]] §8.2 before this check completes; a diff whose parents cannot be resolved is deferred, not accepted.)
+
+3. **Per-author monotonicity within a chain.** REJECT if `t` is earlier than the timestamp of the most recent prior diff by the **same author** on any causal path leading to this diff. Successive diffs from a single author along a causal chain MUST have non-decreasing timestamps. This is strictly stronger than causal monotonicity along same-author edges: it prevents an author from interleaving a backdated diff between two of their own causally-ordered diffs even where the immediate parent belongs to a different author. Implementations evaluate it by walking back through `deps` (transitively, bounded by locally-retained history) and taking the maximum timestamp among diffs whose `author` equals `diff.author`.
+
+**Necessary but not sufficient.** These checks constrain *cross-diff* ordering; they do not pin an absolute time. A committer can still lie **within the future-bound skew window** (up to 300 s ahead of an honest receiver) and can choose any timestamp that respects the monotonicity constraints relative to the diffs it declares as parents. Temporal constraints are therefore **best-effort under adversarial conditions**: a determined committer retains a bounded degree of freedom to shade a single timestamp. What the causal-ordering checks *do* guarantee is that **backdating across the dependency graph is detectable** — any attempt to insert a diff whose timestamp violates the partial order induced by `dependencies` is rejected by every honest peer, deterministically, and (per check 2) cannot be concealed by rewriting the parent set without breaking the diff's signature. Communities requiring hard temporal bounds under adversarial membership MUST additionally coordinate at the sync layer (cf. the eventual-consistency caveats on `rateLimit`/`cardinality` in [§7.5](#75-ratelimit)–[§7.6](#76-cardinality)).
 
 ---
 
@@ -419,7 +441,7 @@ const contractorCap = await creator.signCapability({
 
 ### 9.1 Authoritative Timestamps
 
-Temporal enforcement depends on timestamps from the sync protocol's authoritative source ([[CONTEXT-SYNC]] §12.5), NOT triple-author self-reported timestamps.
+Temporal enforcement depends on the diff timestamp designated authoritative by the sync protocol ([[CONTEXT-SYNC]] §14.5). That timestamp is self-reported by the committing agent; before relying on it, a receiving peer MUST apply the plausibility checks in [§5.3](#53-timestamp-plausibility) (future bound, causal monotonicity over `dependencies`, and per-author monotonicity). Those checks make backdating across the dependency graph detectable but cannot eliminate a bounded within-skew lie; temporal constraints are best-effort under adversarial conditions accordingly.
 
 ### 9.2 Content Resolution Availability
 
@@ -509,6 +531,9 @@ Temporal enforcement requires the engine to scan recent triples by a specific au
 
 <dt>[CONTEXT-SYNC]</dt>
 <dd><a href="./05_context-sync-protocol.md">Graph Synchronisation Protocol</a>.</dd>
+
+<dt>[DEFAULT-SYNC-MODULE]</dt>
+<dd><a href="./09_default-sync-module.md">Default Sync Module</a>.</dd>
 
 <dt>[SHACL]</dt>
 <dd>Knublauch, H. and D. Kontokostas, "Shapes Constraint Language (SHACL)", W3C Recommendation, July 2017. https://www.w3.org/TR/shacl/</dd>

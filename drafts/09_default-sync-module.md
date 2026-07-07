@@ -37,6 +37,23 @@ This is a draft Community Group Report. It has no official W3C standing and is s
 4. [Module Specification](#4-module-specification)
 5. [Wire Protocol](#5-wire-protocol)
 6. [Relay Protocol](#6-relay-protocol)
+   - 6.1 [Peer–Relay Protocol](#61-peerrelay-protocol)
+   - 6.2 [Open vs Encrypted Spaces](#62-open-vs-encrypted-spaces)
+   - 6.3 [Group Key Management for Encrypted Spaces (MLS)](#63-group-key-management-for-encrypted-spaces-mls)
+     - 6.3.1 [Overview and Design Goals](#631-overview-and-design-goals)
+     - 6.3.2 [Cipher Suite](#632-cipher-suite)
+     - 6.3.3 [Deriving the HPKE Identity Key from the did:key](#633-deriving-the-hpke-identity-key-from-the-didkey)
+     - 6.3.4 [Leaf Credentials and DID Binding](#634-leaf-credentials-and-did-binding)
+     - 6.3.5 [KeyPackages](#635-keypackages)
+     - 6.3.6 [Group Creation](#636-group-creation)
+     - 6.3.7 [Adding a Member](#637-adding-a-member)
+     - 6.3.8 [Removing a Member](#638-removing-a-member)
+     - 6.3.9 [Epoch Key Schedule and Wire-Frame Key Derivation](#639-epoch-key-schedule-and-wire-frame-key-derivation)
+     - 6.3.10 [Message Encryption](#6310-message-encryption)
+     - 6.3.11 [Relay Objects and Trust Boundary](#6311-relay-objects-and-trust-boundary)
+     - 6.3.12 [Rotation Policy](#6312-rotation-policy)
+     - 6.3.13 [Interoperability and Conformance](#6313-interoperability-and-conformance)
+   - 6.4 [Multiple Relays](#64-multiple-relays)
 7. [Peer Discovery and NAT Traversal](#7-peer-discovery-and-nat-traversal)
 8. [Merge Semantics](#8-merge-semantics)
 9. [Snapshot Promotion](#9-snapshot-promotion)
@@ -269,11 +286,272 @@ The default module supports two relay modes:
 - **Open space**: Messages are in clear text on the relay (the relay can read them, but cannot author or reject).
 - **Encrypted space**: Messages are end-to-end encrypted between peers; the relay sees only ciphertext and the (DID, sessionId) routing metadata.
 
-Encrypted spaces require a key-distribution mechanism among space members. The default module implements a TreeKEM-style group key (the specific KEM ceremony is out of scope here; implementations MAY substitute alternative mechanisms provided they produce compatible per-space group keys).
+A space's mode is fixed at publication and carried in the `PublishedGraph` alongside `spaceUri`. A conforming module MUST refuse to send cleartext wire-frame bodies into a space published as encrypted, and MUST refuse to join an encrypted space for which it cannot establish the group secret ([§6.3](#63-group-key-management-for-encrypted-spaces-mls)).
 
-### 6.3 Multiple Relays
+Encrypted spaces require a group-key-agreement mechanism among space members. The default module uses the Messaging Layer Security (MLS) protocol [[RFC9420]], profiled as specified in [§6.3](#63-group-key-management-for-encrypted-spaces-mls). This section is **normative and complete**: an independent implementation of [§6.3](#63-group-key-management-for-encrypted-spaces-mls) interoperates with any other conforming implementation over the same relay. There is no "implementation-defined" latitude for the ceremony; every choice MLS leaves open is pinned below.
 
-A space MAY list multiple relays. Peers connect to one and the relay network gossips messages between relays. Peers MAY connect to multiple relays for redundancy.
+### 6.3 Group Key Management for Encrypted Spaces (MLS)
+
+This section is normative. It defines the complete group-key-agreement ceremony for encrypted spaces. Conforming modules that participate in an encrypted space MUST implement it exactly as specified. Where a step is fully defined by [[RFC9420]], this section cites the exact clause and states the profile choice; it does not restate the MLS algorithm.
+
+#### 6.3.1 Overview and Design Goals
+
+Each encrypted space is backed by exactly one MLS group. The MLS group provides a continuously-updated shared secret (the *epoch secret*) known only to current members. From that secret the module derives the symmetric key that encrypts wire-frame bodies ([§5.1](#51-message-frame)). The security rationale for the ceremony below follows the MLS architecture [[RFC9750]]. MLS gives the module, without further design:
+
+- **Confidentiality** — only current members hold the epoch secret.
+- **Forward secrecy** — a member removed at epoch *n* cannot derive the epoch secret for any epoch > *n* ([§6.3.8](#638-removing-a-member)), because the removing Commit injects fresh key material the removed member never sees.
+- **Post-compromise security** — a member whose leaf key is later rotated (via an Update proposal or a Commit that replaces its leaf) heals the group forward from a key compromise, per [[RFC9420]] §2.2.
+- **Authenticated membership** — every leaf carries a credential bound to a `did:key` ([§6.3.4](#634-leaf-credentials-and-did-binding)), so group membership is cryptographically tied to DID identity.
+
+The relay is a dumb store-and-forward broker for MLS objects and ciphertext ([§6.3.11](#6311-relay-objects-and-trust-boundary)). It never holds a private key, an epoch secret, or any plaintext.
+
+The MLS group identifier (`GroupContext.group_id`, [[RFC9420]] §8.1) MUST equal the 32-byte SHA-256 digest whose lowercase hex form is the authority component of the space's `space://<sha256-hex>` URI ([[CONTEXT-SYNC]] §7.3). This binds the group one-to-one to the sync space with no additional negotiation: any agent that knows the `spaceUri` knows the `group_id`.
+
+#### 6.3.2 Cipher Suite
+
+The default module MUST use exactly one MLS cipher suite for encrypted spaces:
+
+```
+MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519   (value 0x0001, [[RFC9420]] §17.1)
+```
+
+This pins every primitive:
+
+| Role | Primitive | Reference |
+|---|---|---|
+| HPKE KEM | DHKEM(X25519, HKDF-SHA256) (`0x0020`) | [[RFC9180]] §7.1 |
+| HPKE KDF | HKDF-SHA256 (`0x0001`) | [[RFC9180]] §7.2 |
+| HPKE AEAD (MLS objects) | AES-128-GCM (`0x0001`) | [[RFC9180]] §7.3 |
+| MLS hash / KDF | SHA-256 / HKDF-SHA256 | [[RFC9420]] §5.2 |
+| MLS signature | Ed25519 | [[RFC8032]] |
+| Wire-frame AEAD ([§6.3.10](#6310-message-encryption)) | AES-128-GCM | [[RFC9420]] §5.3, NIST SP 800-38D |
+
+Ed25519 is chosen so the MLS signature key is the agent's existing `did:key` signing key ([[DECENTRALISED-IDENTITY]] §3.3) with no new key type. X25519 is chosen so the HPKE key can be derived from that same Ed25519 key ([§6.3.3](#633-deriving-the-hpke-identity-key-from-the-didkey)).
+
+A module receiving an MLS object whose cipher suite is not `0x0001` MUST reject it. Negotiation of alternative suites is out of scope for the default module; a non-default module ([[SYNC-MODULE]] §7) MAY define others, but it is then a different module with a different content hash and does not interoperate with the default module in the same space.
+
+#### 6.3.3 Deriving the HPKE Identity Key from the did:key
+
+An agent's `did:key` encodes an Ed25519 public key ([[DECENTRALISED-IDENTITY]] §4.1, multicodec `0xed01`). The cipher suite's KEM needs an X25519 key. The module MUST derive the X25519 keypair deterministically from the Ed25519 keypair so no second published key is required:
+
+1. Let `(ed_sk, ed_pk)` be the agent's Ed25519 private/public key.
+2. **X25519 private scalar.** Compute `h = SHA-512(ed_sk)`; take the low 32 bytes `h[0..32)`; clamp per [[RFC7748]] §5 (clear bits 0,1,2 of `h[0]`; clear bit 7 and set bit 6 of `h[31]`). The result is the X25519 private scalar `x_sk`. This is the standard Ed25519→X25519 private-key conversion.
+3. **X25519 public key.** Compute `x_pk = X25519(x_sk, 9)` (scalar multiplication of the clamped scalar by the Curve25519 base point `u = 9`), per [[RFC7748]] §6.1. Implementations MAY instead convert `ed_pk` directly via the Edwards-to-Montgomery map `u = (1 + y) / (1 − y) mod p` ([[RFC7748]] §4.1); both yield the identical `x_pk`.
+
+`x_pk` is the HPKE public key placed in the leaf's `encryption_key` and in KeyPackages ([§6.3.5](#635-keypackages)). Because the derivation is deterministic and standard, any member can independently check that a leaf's `encryption_key` matches the `did:key` in that leaf's credential ([§6.3.4](#634-leaf-credentials-and-did-binding), check 4) — a leaf whose `encryption_key` is not the correct derived `x_pk` for its credential DID MUST be rejected.
+
+> NOTE: This reuse of one keypair for signing (Ed25519) and key agreement (X25519) is the same construction used by the `did:key` X25519 key-agreement derivation and is safe here because the two algorithms operate in disjoint domains (EdDSA over the twisted Edwards curve vs. X25519 over the birationally-equivalent Montgomery curve). The signature key material is the MLS *signature_key*; the derived X25519 key is the MLS *encryption_key*. They are never used interchangeably.
+
+#### 6.3.4 Leaf Credentials and DID Binding
+
+Every MLS leaf node ([[RFC9420]] §7.2) MUST carry a credential of type `basic` (`BasicCredential`, [[RFC9420]] §5.3.1) whose `identity` field is the UTF-8 bytes of the agent's `did:key` URI (e.g. `did:key:z6Mk…`).
+
+Binding rules — a module processing any leaf (in a KeyPackage, a Welcome, a Commit's `path`, or an Add) MUST verify all of:
+
+1. The credential is a `BasicCredential`; its `identity` is a syntactically valid `did:key` URI ([[DID-KEY]]).
+2. The leaf's `signature_key` (the MLS Ed25519 signature public key) equals the Ed25519 public key that the `did:key` decodes to ([[DECENTRALISED-IDENTITY]] §4.1: strip the `0xed01` multicodec prefix from the base58btc-decoded key material). This ties the MLS signing identity to the DID with no separate certificate.
+3. The `LeafNodeTBS` signature ([[RFC9420]] §7.2) verifies under that `signature_key`.
+4. The leaf's `encryption_key` equals the X25519 key derived from the same `did:key` per [§6.3.3](#633-deriving-the-hpke-identity-key-from-the-didkey).
+
+A leaf failing any check MUST be rejected: the module MUST NOT process a Welcome, apply a Commit, or accept an Add that introduces such a leaf. Because check 2 makes the MLS signature key identical to the DID key, an authenticated MLS message from a leaf is, transitively, an authenticated statement by that DID — no additional application-layer signature over MLS traffic is required for authorship of encrypted wire frames.
+
+`capabilities` ([[RFC9420]] §7.2) MUST advertise support for cipher suite `0x0001`, protocol version `mls10` (`0x0001`), the `basic` credential type, and no non-default extensions beyond those named in [§6.3.5](#635-keypackages). `leaf_node_source` is `key_package` in a KeyPackage, `commit` when installed by a Commit path, and `update` when installed by an Update proposal, exactly as [[RFC9420]] §7.2 requires.
+
+#### 6.3.5 KeyPackages
+
+To be addable to a group, an agent MUST publish at least one MLS `KeyPackage` ([[RFC9420]] §10) to the relay.
+
+**Format.** A KeyPackage for the default module MUST:
+
+- use `version = mls10` (`0x0001`) and `cipher_suite = 0x0001`;
+- carry a `LeafNode` with `leaf_node_source = key_package` satisfying [§6.3.4](#634-leaf-credentials-and-did-binding);
+- include the `lifetime` extension ([[RFC9420]] §7.2, §10) in the LeafNode with `not_before` = issuance time and `not_after` = `not_before + 604800` seconds (7 days) by default. A module MUST reject a KeyPackage whose `lifetime` is not currently valid (now < `not_before` or now ≥ `not_after`).
+- set `init_key` to a freshly generated X25519 public key used solely for the Welcome that adds this KeyPackage (the HPKE `init_key`, [[RFC9420]] §10). The corresponding init private key is retained by the publisher until the KeyPackage is consumed or expires, then destroyed.
+- carry no extensions other than `lifetime` (REQUIRED) and, OPTIONALLY, `application_id`; unknown extensions MUST be absent.
+- be signed with the agent's Ed25519 `did:key` private key (the `KeyPackageTBS` signature, [[RFC9420]] §10).
+
+**Publication location.** KeyPackages are relay objects keyed by DID:
+
+```
+peer  → relay: PUBLISH_KEYPACKAGE { spaceUri, did, keyPackageRef, keyPackage }
+peer  → relay: CLAIM_KEYPACKAGE   { spaceUri, did }          // adder fetches one
+relay → peer:  KEYPACKAGE         { spaceUri, did, keyPackage } | KEYPACKAGE_NONE
+```
+
+- `keyPackageRef` is the `KeyPackageRef` ([[RFC9420]] §5.2: `RefHash("MLS 1.0 KeyPackage Reference", KeyPackage)`), used for deduplication and for the `removed`/`add` bookkeeping.
+- The relay stores a set of currently-valid KeyPackages per `(spaceUri, did)`. A KeyPackage is **single-use**: on `CLAIM_KEYPACKAGE`, the relay returns one KeyPackage and MUST delete it (last-resort behaviour below). This preserves the MLS guarantee that an `init_key` is used at most once.
+- **Last-resort KeyPackage.** To avoid a member being un-addable when its single-use packages are exhausted, an agent MAY additionally publish one KeyPackage carrying the `last_resort` marker (advertised via the `application_id` extension value `"last-resort"` for the default module). The relay MUST NOT delete a last-resort KeyPackage on claim; it returns it only when no single-use KeyPackage remains. Reuse of a last-resort `init_key` weakens forward secrecy for the single Welcome that consumes it and MUST be minimised by prompt replenishment.
+
+**Lifetime and rotation.** Each agent MUST keep at least one currently-valid KeyPackage published per encrypted space it wishes to be reachable in. A module SHOULD replenish so that at least `4` unexpired single-use KeyPackages are available at all times, and MUST publish fresh KeyPackages before existing ones expire (default validity 7 days ⇒ republish at latest every 6 days). Private keys for expired or consumed KeyPackages MUST be destroyed.
+
+#### 6.3.6 Group Creation
+
+The founding member (the first agent to join the encrypted space — normally the space publisher) initialises the MLS group:
+
+1. Generate (or load) the agent's Ed25519 `did:key` and derive its X25519 key ([§6.3.3](#633-deriving-the-hpke-identity-key-from-the-didkey)).
+2. Construct the founder's own LeafNode with `leaf_node_source = key_package` satisfying [§6.3.4](#634-leaf-credentials-and-did-binding).
+3. Initialise the group at epoch 0 per [[RFC9420]] §11 with:
+   - `group_id` = the 32-byte SHA-256 space digest ([§6.3.1](#631-overview-and-design-goals)) — **not** a random value; MLS's usual "fresh random group_id" guidance is overridden here so the group is addressable from the `spaceUri`.
+   - `cipher_suite` = `0x0001`.
+   - `version` = `mls10`.
+   - `extensions` = the `required_capabilities` group-context extension ([[RFC9420]] §11.1) requiring cipher suite `0x0001`, credential type `basic`, and protocol version `mls10`; plus a `ratchet_tree` group-info extension when publishing GroupInfo ([§6.3.7](#637-adding-a-member)). No `external_pub` extension is published unless external commits are enabled (they are not, by default; see below).
+   - The founding `tree` is a single leaf (the founder). The epoch-0 `confirmed_transcript_hash` and `interim_transcript_hash` are computed per [[RFC9420]] §8.2 from the empty initial state.
+4. Derive the epoch-0 key schedule ([[RFC9420]] §8) from the initial `init_secret` (a fresh random 32 bytes, since there is no prior epoch) and an all-zero `commit_secret`/`psk_secret`. The founder now holds `epoch_secret` for epoch 0, from which wire-frame keys are derived ([§6.3.9](#639-epoch-key-schedule-and-wire-frame-key-derivation)).
+
+A single-member group is valid: the founder can begin writing encrypted frames immediately (though it is talking only to itself until a second member is added). External commits and external initialisation ([[RFC9420]] §12.4.3.2) are **disabled** in the default profile — every member joins via a Welcome ([§6.3.7](#637-adding-a-member)). A module MUST NOT publish an `external_pub` extension and MUST reject an incoming external Commit.
+
+#### 6.3.7 Adding a Member
+
+To add agent *B* (identified by `did_B`), an existing member *A* performs the MLS Add + Commit flow ([[RFC9420]] §12.1.1, §12.4):
+
+1. *A* obtains *B*'s KeyPackage via `CLAIM_KEYPACKAGE { spaceUri, did: did_B }` ([§6.3.5](#635-keypackages)) and verifies it (KeyPackage signature, lifetime, and the leaf checks of [§6.3.4](#634-leaf-credentials-and-did-binding)). If the relay returns `KEYPACKAGE_NONE`, *B* cannot be added until it publishes one; *A* MAY notify *B* out of band via a SIGNAL ([§5.5](#55-signal)).
+2. *A* constructs an `Add` proposal referencing *B*'s KeyPackage ([[RFC9420]] §12.1.1).
+3. *A* constructs a `Commit` covering that Add ([[RFC9420]] §12.4). Because the Add changes membership, *A*'s Commit MUST include a fresh `UpdatePath` (populate the direct path with new node secrets, [[RFC9420]] §12.4.1) so the new epoch secret is not derivable by anyone outside the new member set. The Commit advances the group from epoch *n* to *n+1*.
+4. *A* produces:
+   - a `Welcome` message ([[RFC9420]] §12.4.3.1) encrypted to *B*'s KeyPackage `init_key` via HPKE, carrying the `GroupInfo` (including the `ratchet_tree` extension so *B* can build the tree) and the `path_secret` *B* needs;
+   - the `Commit` itself, as an MLSMessage, for delivery to the existing members.
+5. *A* sends both to the relay:
+
+```
+peer  → relay: SEND_COMMIT  { spaceUri, epoch: n, commit }          // fan-out to members
+peer  → relay: SEND_WELCOME { spaceUri, toDid: did_B, welcome }     // stored for B
+```
+
+6. Existing members receive the `Commit` via `DELIVER`, verify it (transcript hash, sender leaf signature per [§6.3.4](#634-leaf-credentials-and-did-binding)), and merge it, advancing to epoch *n+1* and deriving the new `epoch_secret` per [[RFC9420]] §8, §12.4.2.
+7. *B* joins:
+   - fetches its Welcome via `CLAIM_WELCOME { spaceUri, did: did_B }`;
+   - decrypts it with the init private key it retained for the claimed KeyPackage ([§6.3.5](#635-keypackages));
+   - processes the `GroupInfo` and `ratchet_tree` to reconstruct group state at epoch *n+1*, verifying **every** leaf credential in the tree against its DID ([§6.3.4](#634-leaf-credentials-and-did-binding)) and checking the `GroupInfo` signature and `confirmation_tag` per [[RFC9420]] §12.4.3.1;
+   - MUST verify that the reconstructed `group_id` equals the SHA-256 digest of its own `spaceUri` ([§6.3.1](#631-overview-and-design-goals)); a mismatch means the Welcome is for a different space and MUST be rejected;
+   - derives `epoch_secret` for epoch *n+1*, and thereafter the wire-frame keys ([§6.3.9](#639-epoch-key-schedule-and-wire-frame-key-derivation)).
+
+After step 7, *B* destroys the consumed KeyPackage's init private key and SHOULD publish a replacement KeyPackage ([§6.3.5](#635-keypackages)). *B* MAY issue a catch-up `PULL` ([§5.3](#53-pull)) to obtain graph history now that it can decrypt space traffic.
+
+Only current members may add members: a module MUST reject a Commit whose sender leaf is not a current member of the ratchet tree. Read-side governance for the *graph* still applies independently ([§10.2](#102-behaviour-validatereadaccess)) — MLS membership grants the ability to decrypt space traffic; it does not by itself grant a capability the graph's governance requires.
+
+#### 6.3.8 Removing a Member
+
+To remove agent *R*, an existing member *A* performs the Remove + Commit flow ([[RFC9420]] §12.1.3, §12.4), which MANDATORILY rotates the group key:
+
+1. *A* constructs a `Remove` proposal naming *R*'s leaf index ([[RFC9420]] §12.1.3).
+2. *A* constructs a `Commit` covering that Remove. The Commit MUST include a fresh `UpdatePath` populating the sender's direct path with new secrets ([[RFC9420]] §12.4.1). This is what enforces forward secrecy: the new epoch's secrets derive from key material sealed only to the leaves that remain, so *R* — whose leaf is blanked by the Remove — cannot compute the epoch *n+1* `epoch_secret` even though it observed the ciphertext of the Commit. The Commit advances epoch *n* → *n+1*.
+3. *A* sends the Commit:
+
+```
+peer → relay: SEND_COMMIT { spaceUri, epoch: n, commit }
+```
+
+There is **no** Welcome (nobody is joining).
+4. Remaining members verify and merge the Commit, advancing to epoch *n+1* and deriving the new `epoch_secret`. All wire-frame keys are re-derived from the new epoch ([§6.3.9](#639-epoch-key-schedule-and-wire-frame-key-derivation)); frames encrypted under epoch *n+1* are undecryptable by *R*.
+5. Frames still in flight that were encrypted under epoch ≤ *n* remain readable by *R* if it captured them — MLS provides forward secrecy for **future** epochs, not retroactive secrecy for messages *R* legitimately held keys for. Implementations needing to limit exposure of in-flight epoch-*n* traffic SHOULD keep epoch lifetimes short ([§6.3.12](#6312-rotation-policy)).
+
+Key rotation on removal is **MUST**, and is automatic: it is a property of the Remove-carrying Commit's mandatory `UpdatePath`, not a separate step a module could skip. A module MUST NOT implement removal by any mechanism that leaves the epoch secret unchanged.
+
+If the removed member *R* was the relay-side "committer of record" for KeyPackage bookkeeping, no special action is needed: the relay holds no group secret and KeyPackage storage is per-DID and independent of group membership.
+
+#### 6.3.9 Epoch Key Schedule and Wire-Frame Key Derivation
+
+At each epoch the module holds the MLS `epoch_secret` ([[RFC9420]] §8). The default module derives its wire-frame encryption material from the MLS *exporter*, **not** by reusing MLS application-message keys, so that wire-frame encryption is cleanly layered on top of MLS and does not consume MLS's own `MLSCiphertext` key schedule.
+
+For the current epoch, define the 32-byte **space traffic secret**:
+
+```
+space_traffic_secret =
+    MLS-Exporter("lw-sync space frame", spaceUri_bytes, 32)
+```
+
+where `MLS-Exporter(label, context, length)` is the exporter of [[RFC9420]] §8.5 (`MLS-Exporter(Label, Context, Length) = ExpandWithLabel(exporter_secret, Label, Hash(Context), Length)`), `exporter_secret` is the current epoch's exporter secret, and `spaceUri_bytes` is the UTF-8 encoding of the full `space://…` URI. The exporter is epoch-specific, so `space_traffic_secret` changes on every epoch advance automatically.
+
+From `space_traffic_secret`, derive the AEAD key and base nonce using HKDF-SHA256 [[RFC5869]] with MLS's labelled expansion ([[RFC9420]] §5.2 `ExpandWithLabel`):
+
+```
+frame_key   = ExpandWithLabel(space_traffic_secret, "key",   "", 16)   // AES-128 key
+frame_nonce = ExpandWithLabel(space_traffic_secret, "nonce", "", 12)   // 96-bit base nonce
+```
+
+`frame_key`/`frame_nonce` are held only in memory, are re-derived on each epoch change, and MUST be zeroised when the epoch is superseded.
+
+Senders maintain a per-epoch monotonic 96-bit frame counter `seq`, starting at 0 for each new epoch and never repeating within an epoch. (An epoch's key is abandoned long before `seq` could wrap; a module MUST force an epoch advance — an Update Commit — before `seq` would exceed 2⁴⁸ within one epoch.)
+
+#### 6.3.10 Message Encryption
+
+A wire frame ([§5.1](#51-message-frame)) in an encrypted space is transmitted as an **encrypted envelope**. The `type`, `spaceUri`, `from`, and `to` routing fields remain in cleartext CBOR (the relay needs them to route; they are the "(DID, sessionId) routing metadata" of [§6.2](#62-open-vs-encrypted-spaces)). The `payload` — the DIFF / SNAPSHOT / SIGNAL / etc. body defined in [§5.2](#52-diff)–[§5.7](#57-peer_hello--peer_bye) — is encrypted:
+
+```
+{
+  "type": "DIFF" | "SNAPSHOT" | "SIGNAL" | ...,
+  "spaceUri": "space://...",
+  "from": { "did": "did:key:...", "sessionId": "..." },
+  "to":   { ... } | null,
+  "enc": {
+    "epoch": <uint>,            // MLS epoch that keys this frame
+    "seq":   <uint>,            // sender's per-epoch frame counter (§6.3.9)
+    "ct":    <bstr>             // AEAD ciphertext (includes the 16-byte tag)
+  }
+}
+```
+
+The ciphertext is produced with AES-128-GCM ([[RFC9420]] §5.3 AEAD; NIST SP 800-38D) as:
+
+1. **Plaintext** `P` = the CBOR serialisation of the item that would occupy the cleartext frame's `payload` field ([§5.1](#51-message-frame)) — a CBOR-encoded `GraphDiff` for DIFF, a `GraphSnapshot` map for SNAPSHOT, a CBOR byte string wrapping the opaque bytes for SIGNAL, and so on for each type of [§5.2](#52-diff)–[§5.7](#57-peer_hello--peer_bye). In the encrypted envelope the cleartext `payload` field is absent; its content travels only inside `enc.ct`.
+2. **Key** = `frame_key` for `epoch` ([§6.3.9](#639-epoch-key-schedule-and-wire-frame-key-derivation)).
+3. **Nonce** `N` = `frame_nonce XOR I2OSP(seq, 12)` — the 96-bit base nonce XORed with the big-endian 96-bit `seq` (the standard MLS/HPKE per-message nonce construction, [[RFC9420]] §5.3, [[RFC9180]] §5.2). Because `frame_nonce` is epoch-unique and `seq` is unique within an epoch, `(key, nonce)` pairs never repeat.
+4. **Associated data** `A` = the deterministic CBOR encoding of the routing header
+   `[ type, spaceUri, from.did, from.sessionId, (to==null ? null : [to.did, to.sessionId]), epoch, seq ]`.
+   Binding the routing metadata and `(epoch, seq)` as AEAD associated data prevents a relay or attacker from re-routing, re-labelling, or replaying a frame under a different header without detection.
+5. `ct` = `AES-128-GCM-Seal(frame_key, N, A, P)`.
+
+**Decryption.** A receiver:
+
+1. reads `enc.epoch`; if it is the current epoch or a still-retained recent epoch, selects the matching `frame_key`/`frame_nonce`; if the epoch is unknown (a Commit not yet processed), the receiver MUST buffer the frame, process outstanding Commits, then retry; if the epoch is older than the receiver's retention window, the frame is dropped.
+2. recomputes `N` and `A` as above from the received header,
+3. computes `P = AES-128-GCM-Open(frame_key, N, A, enc.ct)`; on AEAD failure the frame MUST be discarded (it is forged, corrupted, or mis-routed),
+4. CBOR-decodes `P` to recover the body and dispatches it exactly as the cleartext body would be in an open space ([§5](#5-wire-protocol)), including the per-diff signature and capability checks of [§10](#10-validate-implementation). MLS confidentiality does not replace those application-layer authorisation checks; it only ensures the body was authored by a group member and not read by the relay.
+
+Epoch retention: a receiver SHOULD retain the previous epoch's `frame_key` for a short grace window (RECOMMENDED 60 seconds, or until the first frame at the new epoch is received from every known peer, whichever is sooner) to decrypt in-flight frames that crossed an epoch boundary, then zeroise it.
+
+#### 6.3.11 Relay Objects and Trust Boundary
+
+For encrypted spaces the relay stores and forwards exactly these object classes, and **nothing else about the group**:
+
+| Object | Keyed by | Relay may read | Relay may forge |
+|---|---|---|---|
+| `KeyPackage` | `(spaceUri, did)` | public leaf + init keys, DID | No — signed by DID ([§6.3.5](#635-keypackages)) |
+| `Welcome` | `(spaceUri, toDid)` | HPKE ciphertext only | No — decryptable only by the target init key |
+| `Commit` (MLSMessage) | `(spaceUri, epoch)` | public MLS framing | No — signed by sender leaf; changes verified by members |
+| Encrypted wire frame | `(spaceUri, to?)` | routing header only ([§6.3.10](#6310-message-encryption)) | No — AEAD tag binds header + body |
+
+The trust boundary is explicit and MUST hold:
+
+- The relay MUST NOT be sent, and cannot derive, any private key, `init_secret`, `commit_secret`, `epoch_secret`, `exporter_secret`, `space_traffic_secret`, `frame_key`, or plaintext body. All of these exist only inside members' user agents.
+- The relay MAY observe: which DIDs publish KeyPackages, which DID a Welcome is addressed to, the epoch counter of Commits and frames, message sizes, and timing. This is the same "(DID, sessionId) routing metadata" exposure already stated in [§12.1](#121-routing-metadata-disclosure); MLS does not reduce it.
+- A malicious relay can **deny service** (drop or withhold objects), **reorder within the limits MLS tolerates**, or **equivocate** by showing different members different Commits — but the last is detected: MLS's `confirmation_tag` and transcript hash ([[RFC9420]] §8.2) mean members who processed divergent histories derive different epoch secrets and fail to decrypt each other's frames, surfacing the split rather than silently forking a shared key. A module SHOULD treat sustained decryption failure across the group after a Commit as a possible relay-equivocation signal and surface it as a sync-state diagnostic.
+- The relay MUST NOT be able to add or remove members: Add/Remove take effect only through a member-signed Commit that other members verify ([§6.3.7](#637-adding-a-member), [§6.3.8](#638-removing-a-member)). A relay-injected Commit fails leaf-signature verification ([§6.3.4](#634-leaf-credentials-and-did-binding)) and MUST be rejected.
+
+#### 6.3.12 Rotation Policy
+
+- **On member removal — MUST.** Every member removal rotates the epoch key, enforced automatically by the mandatory `UpdatePath` in the Remove-carrying Commit ([§6.3.8](#638-removing-a-member)). A module MUST NOT skip or defer this.
+- **On member addition — MUST.** The Add-carrying Commit likewise carries a fresh `UpdatePath` ([§6.3.7](#637-adding-a-member)), so a joining member never learns any prior epoch's secret (pre-join forward secrecy).
+- **Periodic rotation — SHOULD.** Independently of membership change, each member SHOULD periodically advance the epoch by committing an `Update` proposal that rotates its own leaf key ([[RFC9420]] §12.1.2, §12.4), giving post-compromise security. RECOMMENDED epoch lifetime is **24 hours** of wall-clock time or **10,000 wire frames** at the current epoch, whichever comes first; on reaching either bound a member SHOULD issue an Update Commit. To avoid every member committing at once, a member SHOULD jitter its periodic Update by a random fraction of the epoch lifetime and SHOULD suppress its own Update if it has already observed an epoch advance within the current window.
+- **Forced rotation.** A module MUST force an epoch advance before the per-epoch frame counter `seq` could exceed 2⁴⁸ ([§6.3.9](#639-epoch-key-schedule-and-wire-frame-key-derivation)).
+- **Key hygiene.** On every epoch advance, superseded `epoch_secret`, `exporter_secret`, `space_traffic_secret`, `frame_key`, and `frame_nonce` MUST be zeroised after the retention grace window ([§6.3.10](#6310-message-encryption)).
+
+#### 6.3.13 Interoperability and Conformance
+
+A module claiming conformance to encrypted spaces MUST:
+
+1. Implement MLS [[RFC9420]] protocol version `mls10` with cipher suite `0x0001` and no other ([§6.3.2](#632-cipher-suite)).
+2. Derive `group_id` from `spaceUri` per [§6.3.1](#631-overview-and-design-goals).
+3. Bind every leaf to a `did:key` per [§6.3.4](#634-leaf-credentials-and-did-binding) and reject non-conforming leaves.
+4. Publish, claim, and consume KeyPackages, Welcomes, and Commits through the relay objects of [§6.3.5](#635-keypackages), [§6.3.7](#637-adding-a-member), [§6.3.8](#638-removing-a-member), and [§6.3.11](#6311-relay-objects-and-trust-boundary).
+5. Derive wire-frame keys via the MLS exporter per [§6.3.9](#639-epoch-key-schedule-and-wire-frame-key-derivation) and encrypt bodies per [§6.3.10](#6310-message-encryption).
+6. Rotate keys per [§6.3.12](#6312-rotation-policy).
+
+Two independent implementations that each satisfy the above can create a group, add and remove each other, and exchange encrypted DIFF/SNAPSHOT/SIGNAL frames without any additional agreement. No step of the ceremony is left to implementation discretion: every point at which [[RFC9420]] admits a choice is pinned by this section.
+
+### 6.4 Multiple Relays
+
+A space MAY list multiple relays. Peers connect to one and the relay network gossips messages between relays. Peers MAY connect to multiple relays for redundancy. In encrypted spaces, gossiped objects are the same opaque KeyPackages, Welcomes, Commits, and ciphertext frames of [§6.3.11](#6311-relay-objects-and-trust-boundary); a relay in the gossip mesh gains no additional plaintext or key access by relaying on another relay's behalf.
 
 ---
 
@@ -423,9 +701,11 @@ Per [[CONTEXT-SYNC]] §9.3, rejected diffs MUST NOT be stored or forwarded. Per 
 
 Relays are message brokers, not authorities. They cannot author diffs, cannot reject diffs, cannot read message content (in encrypted spaces). They can observe (DID, sessionId) routing metadata, and they can rate-limit and refuse service.
 
-### 11.2 Group Key Distribution (Encrypted Spaces)
+### 11.2 Group Key Management (Encrypted Spaces)
 
-The TreeKEM-style group key for encrypted spaces is sensitive material. Implementations MUST rotate the group key on member removal and SHOULD rotate on regular intervals.
+Encrypted spaces use MLS [[RFC9420]] as specified in [§6.3](#63-group-key-management-for-encrypted-spaces-mls). The MLS `epoch_secret` and everything derived from it (`exporter_secret`, `space_traffic_secret`, `frame_key`, `frame_nonce`) are sensitive material that MUST NOT leave the member's user agent and MUST be zeroised on epoch supersession ([§6.3.12](#6312-rotation-policy)). Implementations MUST rotate the group key on member removal — enforced by the mandatory `UpdatePath` in the Remove-carrying Commit ([§6.3.8](#638-removing-a-member)) — and SHOULD rotate periodically ([§6.3.12](#6312-rotation-policy)) for post-compromise security. Forward secrecy against removed members is a structural property of MLS ([§6.3.1](#631-overview-and-design-goals)): a member removed at epoch *n* cannot derive any epoch secret > *n*. Note that forward secrecy is prospective only — an ex-member retains whatever epoch-≤*n* frames it captured while a legitimate member.
+
+The reuse of one Ed25519 `did:key` for both the MLS signature key and (via the standard birational map, [§6.3.3](#633-deriving-the-hpke-identity-key-from-the-didkey)) the X25519 HPKE key confines identity to a single keypair; it is safe because the signature and key-agreement operations occupy disjoint cryptographic domains and the derived keys are never interchanged.
 
 ### 11.3 Snapshot Trust
 
@@ -467,7 +747,14 @@ Snapshot promotion announces "agent X took a snapshot of graph G at time T". Thi
 
 - **[RFC2119]** Bradner, S., "Key words for use in RFCs to Indicate Requirement Levels", BCP 14, RFC 2119, March 1997.
 - **[RFC8174]** Leiba, B., "Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words", BCP 14, RFC 8174, May 2017.
+- **[RFC5869]** Krawczyk, H. and P. Eronen, "HMAC-based Extract-and-Expand Key Derivation Function (HKDF)", RFC 5869, May 2010.
+- **[RFC7748]** Langley, A., Hamburg, M., and S. Turner, "Elliptic Curves for Security", RFC 7748, January 2016.
+- **[RFC8032]** Josefsson, S. and I. Liusvaara, "Edwards-Curve Digital Signature Algorithm (EdDSA)", RFC 8032, January 2017.
+- **[RFC9180]** Barnes, R., Bhargavan, K., Lipp, B., and C. Wood, "Hybrid Public Key Encryption", RFC 9180, February 2022.
+- **[RFC9420]** Barnes, R., Beurdouche, B., Robert, R., Millican, J., Omara, E., and K. Cohn-Gordon, "The Messaging Layer Security (MLS) Protocol", RFC 9420, July 2023.
 - **[WEBTRANSPORT]** "WebTransport", W3C Working Draft. https://www.w3.org/TR/webtransport/
+- **[DID-KEY]** "did:key Method Specification". https://w3c-ccg.github.io/did-method-key/
+- **[DECENTRALISED-IDENTITY]** [Decentralised Identity Web Platform](./01_decentralised-identity-web-platform.md).
 - **[PERSONAL-LINKED-DATA-GRAPHS]** [Personal Linked Data Graphs](./02_personal-linked-data-graphs.md).
 - **[CAPABILITY-FRAMEWORK]** [Graph Capability Framework](./04_graph-capability-framework.md).
 - **[CONTEXT-SYNC]** [Graph Synchronisation Protocol](./05_context-sync-protocol.md).
@@ -476,4 +763,4 @@ Snapshot promotion announces "agent X took a snapshot of graph G at time T". Thi
 
 ### 13.2 Informative References
 
-None.
+- **[RFC9750]** Beurdouche, B., Rescorla, E., Omara, E., Inguva, S., and A. Duric, "The Messaging Layer Security (MLS) Architecture", RFC 9750, March 2025.

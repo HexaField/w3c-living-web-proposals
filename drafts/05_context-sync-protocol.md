@@ -39,10 +39,12 @@ This is a draft Community Group Report. It has no official W3C standing and is s
 9. [Governance Integration](#9-governance-integration)
 10. [Background Operation](#10-background-operation)
 11. [Signalling](#11-signalling)
-12. [Security Considerations](#12-security-considerations)
-13. [Privacy Considerations](#13-privacy-considerations)
-14. [Examples](#14-examples)
-15. [References](#15-references)
+12. [Graph Invitation Links](#12-graph-invitation-links)
+13. [Reconnection and Offline Recovery](#13-reconnection-and-offline-recovery)
+14. [Security Considerations](#14-security-considerations)
+15. [Privacy Considerations](#15-privacy-considerations)
+16. [Examples](#16-examples)
+17. [References](#17-references)
 
 ---
 
@@ -597,7 +599,7 @@ When an agent unmounts the last graph that required a particular space, the runt
 
 ### 7.5 What Syncs Within a Space
 
-Every diff committed to a space is a `GraphDiff` ([§5.1](#51-contextdiff)) tagged with its `graphDid`. In a shared space, diffs for multiple graphs coexist; each carries its own `CapabilityProof`.
+Every diff committed to a space is a `GraphDiff` ([§5.1](#51-graphdiff)) tagged with its `graphDid`. In a shared space, diffs for multiple graphs coexist; each carries its own `CapabilityProof`.
 
 A receiving peer:
 
@@ -821,33 +823,166 @@ Sends to all currently-online peers in the graph's space who are subscribed to t
 
 ---
 
-## 12. Security Considerations
+## 12. Graph Invitation Links
 
-### 12.1 Capability Proof Verification
+This section is normative.
+
+### 12.1 URI Format
+
+A graph invitation link is a `web+graph://` URI that bundles all addressing information needed to mount a graph:
+
+```
+web+graph://<relay-host>/<space-uri-base64url>?did=<graph-did>&module=<module-content-hash>&name=<display-name>
+```
+
+Components:
+
+<dl>
+<dt><code>relay-host</code></dt>
+<dd>The WebTransport relay endpoint as <code>host:port</code>. The agent connects to this endpoint as its first transport hop when joining the sync space.</dd>
+
+<dt><code>space-uri-base64url</code></dt>
+<dd>The sync space URI (e.g. <code>space://&lt;sha256-hex&gt;</code>), encoded with base64url (RFC 4648 §5) without padding. Encodes the path component of the <code>web+graph://</code> URI.</dd>
+
+<dt><code>did</code></dt>
+<dd>The graph's <code>did:graph</code> identifier. REQUIRED.</dd>
+
+<dt><code>module</code></dt>
+<dd>The content hash of the sync module the graph was published with. OPTIONAL; if omitted, the user agent MUST use the default sync module hash. If present and it does not match the hash embedded in the graph's DID document (<code>&lt;graphDid&gt; group://syncModule</code>, per [[GROUP-IDENTITY]] §4.5), the DID document value takes precedence.</dd>
+
+<dt><code>name</code></dt>
+<dd>An optional human-readable display name for the graph, percent-encoded per [[RFC3986]] §2.1. User agents SHOULD display this as a hint in the mount confirmation dialog but MUST NOT treat it as authoritative — the canonical name lives in the graph's triples.</dd>
+</dl>
+
+### 12.2 Processing Model
+
+A user agent that registers as a handler for the `web+graph://` URI scheme MUST process an invitation link as follows:
+
+1. Parse the URI. Extract:
+   - `relayHost` from the authority component.
+   - `spaceUri` by base64url-decoding the path component.
+   - `graphDid`, `module` (or default module hash if absent), and `name` from the query parameters.
+2. If `module` is present and is not the default module hash, and the module is not already installed in the user agent:
+   - Present the user with a consent prompt per the module mechanism in use (per [[SYNC-MODULE-ARCHITECTURE]] §7.2 consent flow), disclosing the module content hash and the graph name.
+   - If the user denies consent, abort and surface an error to the invoking context.
+3. Display a mount confirmation dialog showing at minimum the `name` (or `graphDid` if absent) and `relayHost`. This is RECOMMENDED for user agents that process invitation links from untrusted sources.
+4. Call `navigator.graph.mount(graphDid, { spaceUri, moduleHash, relays: [relayHost] })` with any additional options the user agent collects (e.g., a capability proof supplied out-of-band).
+5. Proceed through the normal mount lifecycle ([§8.1](#81-becoming-subscribed)).
+
+Steps 3 and 4 MUST NOT be performed automatically without some form of user interaction or pre-established trust relationship. User agents SHOULD surface mount confirmation to avoid silent drive-by subscription.
+
+### 12.3 Security Considerations for Invitation Links
+
+**Invitation links are bearer tokens.** Anyone in possession of a `web+graph://` URI can attempt to mount the referenced graph. For unrestricted-read graphs this succeeds unconditionally; for restricted graphs it succeeds only if the mounting peer also presents a valid `mountContext` capability proof (per [§8.5](#85-read-access-and-mountcontext)). Invitation links for restricted graphs SHOULD be accompanied by a separately-conveyed capability proof — embedding capabilities in the URI itself is NOT RECOMMENDED.
+
+**Display-name spoofing.** The `name` parameter is untrusted caller input. User agents MUST clearly indicate that the displayed name is unverified until the graph is mounted and the name can be read from its triples.
+
+**Relay endpoint trust.** The `relay-host` in the invitation link is a hint supplied by the publisher. A malicious link could direct the user agent to a hostile relay. User agents SHOULD allow users to inspect the relay endpoint before connecting and SHOULD apply the module's transport security requirements (e.g., TLS certificate validation) against it.
+
+### 12.4 Relationship to AD4M Neighbourhood URLs
+
+This design is informed by AD4M's neighbourhood URL scheme, which encodes the link language hash and serves the same function: a self-contained, shareable reference that provides everything needed to join a P2P space. Like AD4M neighbourhood URLs, `web+graph://` URIs make the sync module (link language) and relay endpoint (bootstrap seed peers) first-class components of the invitation, so the recipient does not need any prior knowledge of the space to join it.
+
+### 12.5 Discovery Beyond Invitation Links
+
+Invitation links are the primary normative discovery primitive defined here. This specification does not define a general discovery protocol (DHT, mDNS, crawling, etc.).
+
+Sync modules MAY implement additional peer-discovery mechanisms via a `discoverPeers()` export in their module interface. The default sync module ([[DEFAULT-SYNC-MODULE]]) uses relay-mediated discovery only. Application-layer discovery patterns are discussed non-normatively in [§8.6](#86-discovery-non-normative).
+
+---
+
+## 13. Reconnection and Offline Recovery
+
+This section is normative.
+
+### 13.1 Local Diff Queue
+
+When the transport connection to all peers is lost, or when all known peers for a mounted graph go offline, the sync module MUST queue any locally-committed diffs that have not yet been acknowledged by at least one remote peer. Diffs in the queue are indexed by their `commitId`.
+
+Locally-committed diffs MUST be persisted to durable storage before being applied to the local graph state. This ensures that on user agent restart (§13.3), queued diffs are not lost.
+
+### 13.2 Reconnection Protocol
+
+On transport reconnection, the sync module MUST execute the following steps in order:
+
+1. **Catch-up pull.** Issue a PULL for the mounted graph with `fromRevision` set to the last locally-acknowledged revision, to retrieve any diffs committed by remote peers during the disconnection window. Apply each received diff in dependency order per [§9.2.1](#921-validatediff-graphdid-diff-author-graphstate).
+2. **Flush local queue.** After remote diffs have been applied, commit queued local diffs to the space in the order they were originally committed. Each queued diff is rebroadcast as-is; the `commitId` and `revision` MUST NOT be recomputed (they are immutable per [§5.1](#51-graphdiff)).
+3. **Merge conflicts.** If applying received remote diffs produces DAG heads that conflict with queued local diffs, the module's merge logic applies per [§5.2.1](#521-dependencies). The resulting merge diff, if any, is committed after the flush.
+
+### 13.3 Exponential Backoff
+
+Transport reconnection SHOULD use exponential backoff to avoid thundering-herd storms:
+
+- Initial retry delay: **5 seconds**.
+- Backoff multiplier: **2×** per failed attempt.
+- Maximum retry delay: **5 minutes** (300 seconds).
+- The delay counter RESETS on a successful connection.
+
+Implementations MAY add jitter (e.g., ±20% of the computed delay) to desynchronise retry bursts from multiple agents on the same relay.
+
+### 13.4 Batching Queued Diffs
+
+The sync module SHOULD batch queued local diffs before transmission to reduce network round-trips. The RECOMMENDED batching policy is:
+
+- Batch up to **100 diffs** or **3 seconds** of accumulated changes, whichever threshold is reached first.
+- Emit the batch when either threshold is crossed, or immediately on reconnection if fewer diffs are queued.
+
+Modules MAY adjust these thresholds based on network conditions or module-specific configuration.
+
+### 13.5 Extended Offline Recovery (Snapshot Pull)
+
+When a peer returns after an extended offline period, it MUST compare its last-known revision against the current state of the diff chain:
+
+- If `diffsSinceSnapshot` (as reported in incoming diffs from peers) exceeds the module's snapshot-promotion threshold, the peer SHOULD request a fresh snapshot by issuing a PULL with `fromRevision: null` rather than attempting incremental replay. Incremental replay across a snapshot boundary is not meaningful — the diff chain has been truncated.
+- If the peer's last-known revision is no longer present in any online peer's diff cache (garbage-collected following a snapshot promotion), a snapshot pull is REQUIRED. Peers that receive a PULL referencing an unknown `fromRevision` MUST respond with a snapshot rather than an incremental diff stream.
+
+After materialising the fresh snapshot, the peer replays any locally-queued diffs that post-date the snapshot's `currentRevision`.
+
+### 13.6 User Agent Restart Recovery
+
+On user agent restart, the sync module MUST:
+
+1. Reload the persisted diff queue from storage.
+2. Reconnect to the sync space per [§8.1](#81-becoming-subscribed) (using the stored `spaceUri`, `moduleHash`, and `relays` hints).
+3. Execute the reconnection protocol in [§13.2](#132-reconnection-protocol) to catch up on remote diffs and flush any queued local diffs.
+
+The per-graph store on disk provides the baseline state; the queue provides the unacknowledged delta on top of it. Both MUST be loaded before any new local writes are accepted.
+
+### 13.7 Relationship to AD4M's Reconnection Mechanism
+
+This design is informed by AD4M's `ensure_public_links_are_shared()` reconnection mechanism, which uses exponential backoff (30s initial → 5 min max) and debounced batching (up to 150 links or 3 seconds). The protocol here is adapted for the diff-chain model: the "links pending share" concept maps directly to locally-committed but unacknowledged `GraphDiff`s, and the PULL-then-flush ordering ensures causal consistency with remote writes that arrived during the offline window.
+
+---
+
+## 14. Security Considerations
+
+### 14.1 Capability Proof Verification
 
 Receiving peers MUST independently verify `CapabilityProof.chain` against the graph's governance ([[CAPABILITY-FRAMEWORK]]) before applying a diff.
 
-### 12.2 DID Resolution Trust
+### 14.2 DID Resolution Trust
 
 Resolving a DID from snapshots is subject to the trust level of the snapshot source ([[DECENTRALISED-IDENTITY]] §7.2). Security-sensitive operations SHOULD require `"local"` or `"mounted-read"` trust. Verifying a snapshot's `graphIri` is intrinsically a single hash check (the IRI is the SHA-256 of the snapshot's triples; either it matches or it does not); the snapshot's signature establishes the trust level for the surrounding data.
 
-### 12.3 Sync Space Membership Privacy
+### 14.3 Sync Space Membership Privacy
 
 A peer's presence in a sync space is visible to other space members. In a shared space, this reveals which graphs the peer is plausibly interested in (without revealing exact mounts). Communities that need membership privacy SHOULD use Fully Partitioned topology.
 
-### 12.4 Replay Attacks
+### 14.4 Replay Attacks
 
 `GraphDiff.revision` is content-addressed, so replaying a previously-applied diff is a no-op (already in the per-graph store).
 
-### 12.5 Authoritative Timestamps
+### 14.5 Authoritative Timestamps
 
 Constraint kinds and downstream specifications that rely on time-of-write (e.g., temporal caveats, state-entry timestamps) depend on the diff's timestamp. The runtime MUST treat each GraphDiff's `timestamp` as the authoritative time for triples in that diff.
 
-### 12.6 Module Sandbox
+**Plausibility of self-reported timestamps.** `GraphDiff.timestamp` is chosen by the committing agent; "authoritative" here means *the value the runtime uses*, not *a value a trusted clock certifies*. There is no trusted clock in a peer-to-peer deployment, so a malicious committer can forge a timestamp to evade a time-based constraint (backdating past a rate-limit interval, future-dating out of a sliding window). Any diff-acceptance path that consumes `timestamp` for time-based enforcement MUST therefore apply the timestamp-plausibility checks specified in [[CONSTRAINT-VOCABULARY]] §5.3 before treating the value as admissible: a **future bound** (reject if more than 300 s ahead of the receiver's local clock), **causal monotonicity** (a diff's timestamp MUST NOT precede the maximum timestamp among its `dependencies`, §5.2.1), and **per-author monotonicity** along a causal chain. Because `dependencies` is bound into the signed `commitId` ([§5.2.2](#522-revision-commitid-and-signature)), the causal-ordering checks make backdating across the dependency graph tamper-evident: they cannot be evaded by rewriting the parent set without invalidating the signature. They do not, however, eliminate a bounded within-skew lie, so time-based constraints remain best-effort under adversarial conditions.
+
+### 14.6 Module Sandbox
 
 Sync modules MUST run in a sandboxed environment with only the capabilities they requested and the user granted. The sandbox model itself is out of scope here and defined by an extension specification.
 
-### 12.7 Validation Cost and Anti-Abuse
+### 14.7 Validation Cost and Anti-Abuse
 
 Producing an invalid `GraphDiff` is cheap; rejecting one is expensive. A diff that fails validation still costs every honest peer a signature recomputation ([§9.2.1](#921-validatediff-graphdid-diff-author-graphstate) step 0), a chain walk, and caveat evaluation before the rejection is reached. A misbehaving peer can use this asymmetry to exhaust honest peers' resources.
 
@@ -862,9 +997,9 @@ The framework guarantees only that *governance correctness* is determined by the
 
 ---
 
-## 13. Privacy Considerations
+## 15. Privacy Considerations
 
-### 13.1 Topology Choice Affects Privacy
+### 15.1 Topology Choice Affects Privacy
 
 | Topology | Network Privacy | Notes |
 |---|---|---|
@@ -874,27 +1009,27 @@ The framework guarantees only that *governance correctness* is determined by the
 
 "Discarded after receipt" means the agent receives bytes but does not store or process them. A compromised agent could log discarded bytes.
 
-### 13.2 Peer Identity Disclosure
+### 15.2 Peer Identity Disclosure
 
 Diffs are signed by the committing agent's DID. In encrypted spaces this is visible only to other space members; in open spaces it is visible to relays as well.
 
-### 13.3 Mount-Table Disclosure
+### 15.3 Mount-Table Disclosure
 
 A peer's mount table is a sensitive artefact. The runtime MUST NOT disclose the full mount table without explicit user gesture (see [[PERSONAL-LINKED-DATA-GRAPHS]] §10.5).
 
-### 13.4 DID Resolution Side Effects
+### 15.4 DID Resolution Side Effects
 
 Resolving a DID can reveal interest in a graph. Implementations SHOULD batch resolution requests and SHOULD avoid resolving identifiers based on untrusted input.
 
-### 13.5 Per-Graph Identity
+### 15.5 Per-Graph Identity
 
 Per [[PERSONAL-LINKED-DATA-GRAPHS]] §10.2, the recommended privacy posture is per-graph identity.
 
 ---
 
-## 14. Examples
+## 16. Examples
 
-### 14.1 Publishing a Graph
+### 16.1 Publishing a Graph
 
 ```javascript
 const planning = await navigator.graph.create({ displayName: "Q3 Planning" });
@@ -910,7 +1045,7 @@ console.log("  space:", published.spaceUri);
 console.log("  module:", published.moduleHash);
 ```
 
-### 14.2 Mounting from an Invitation
+### 16.2 Mounting from an Invitation
 
 ```javascript
 const invite = JSON.parse(invitationLink);
@@ -924,7 +1059,7 @@ const planning = await navigator.graph.mount(invite.graphDid, {
 });
 ```
 
-### 14.3 Observing Sync State
+### 16.3 Observing Sync State
 
 ```javascript
 planning.onsyncstatechange = async (e) => {
@@ -940,7 +1075,7 @@ planning.ondiff = (e) => {
 };
 ```
 
-### 14.4 Signalling for WebRTC Negotiation
+### 16.4 Signalling for WebRTC Negotiation
 
 ```javascript
 planning.onsignal = async (e) => {
@@ -955,7 +1090,7 @@ planning.onsignal = async (e) => {
 };
 ```
 
-### 14.5 Multiple Graphs in One Sync Space
+### 16.5 Multiple Graphs in One Sync Space
 
 ```javascript
 const community = await navigator.graph.create({ displayName: "Acme" });
@@ -972,7 +1107,7 @@ console.log(c1.spaceUri === c2.spaceUri);   // true — same root graph
 console.log(c1.spaceUri === c3.spaceUri);   // true
 ```
 
-### 14.6 Listing Mounted Graphs and Spaces
+### 16.6 Listing Mounted Graphs and Spaces
 
 ```javascript
 const mounted = await navigator.graph.listMounted();
@@ -988,9 +1123,9 @@ for (const s of spaces) {
 
 ---
 
-## 15. References
+## 17. References
 
-### 15.1 Normative References
+### 17.1 Normative References
 
 - **[RFC2119]** Bradner, S., "Key words for use in RFCs to Indicate Requirement Levels", BCP 14, RFC 2119, March 1997.
 - **[RFC8174]** Leiba, B., "Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words", BCP 14, RFC 8174, May 2017.
@@ -999,8 +1134,14 @@ for (const s of spaces) {
 - **[DID-CORE]** Sporny, M., et al., "Decentralized Identifiers (DIDs) v1.0", W3C Recommendation, July 2022. https://www.w3.org/TR/did-core/
 - **[DECENTRALISED-IDENTITY]** [Decentralised Identity Integration for the Web Platform](./01_decentralised-identity-web-platform.md).
 - **[PERSONAL-LINKED-DATA-GRAPHS]** [Personal Linked Data Graphs](./02_personal-linked-data-graphs.md).
+- **[GROUP-IDENTITY]** [Decentralised Group Identity](./03_decentralised-group-identity.md).
 - **[CAPABILITY-FRAMEWORK]** [Graph Capability Framework](./04_graph-capability-framework.md).
+- **[SYNC-MODULE-ARCHITECTURE]** [Sync Module Architecture](./06_sync-module-architecture.md).
+- **[VC-DATA-MODEL-2.0]** "Verifiable Credentials Data Model v2.0", W3C Recommendation. https://www.w3.org/TR/vc-data-model-2.0/
 
-### 15.2 Informative References
+### 17.2 Informative References
 
-None.
+- **[RFC3986]** Berners-Lee, T., et al., "Uniform Resource Identifier (URI): Generic Syntax", STD 66, RFC 3986, January 2005.
+- **[RFC4648]** Josefsson, S., "The Base16, Base32, and Base64 Data Encodings", RFC 4648, October 2006.
+- **[CONSTRAINT-VOCABULARY]** [Governance Constraint Vocabulary](./08_governance-constraint-vocabulary.md).
+- **[DEFAULT-SYNC-MODULE]** [Default Sync Module](./09_default-sync-module.md).
