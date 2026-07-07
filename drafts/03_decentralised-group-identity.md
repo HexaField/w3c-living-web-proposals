@@ -232,6 +232,8 @@ A graph has at most one `group://didIdentity` triple. Multiple `did:graph` ident
 
 A consumer checking whether a graph is groupified queries its triples for `<ctx.iri> group://didIdentity ?did`. A resolver receiving a `did:graph:...` finds its host graph by querying for `?iri group://didIdentity <this-did>` across mounted stores. (One predicate is sufficient in both directions; the spec deliberately does NOT introduce a reverse predicate.)
 
+> **Durable identity vs. content address (normative).** The subject of the binding triple is the host graph's IRI *as computed for the atomic bootstrap write* ([§4.2](#42-groupification) step 4). Because that write itself adds the binding and seed triples, the graph's IRI advances immediately afterwards: the IRI recorded as the binding-triple subject is therefore the graph's *pre-final-state* content address, and a consumer MUST NOT assume it equals the graph's *current* `iri`. The durable identifier for a group is its `did:graph` — content-independent and fixed at groupification ([§4.2](#42-groupification)) — never a `graph://` content address, which advances on every write. A user agent MUST locate a group's host graph by a stable key (the DID via this binding, or the user agent's own internal graph identity) and MUST NOT treat a `graph://` IRI as a durable handle to a mutable graph. This is why `groupify` operates on a live `Graph` object rather than an IRI string ([§8.2.2](#822-groupify)).
+
 ### 4.4 DID Document Storage
 
 The DID document for a `did:graph` DID is composed from the following triples inside the host graph:
@@ -244,24 +246,28 @@ The DID document for a `did:graph` DID is composed from the following triples in
 <did:graph:z6Mkh...>  group://syncModule  "sha256-<wasm-hex>" .
 
 <did:graph:z6Mkh...>
-  did://verificationMethod              <did:graph:z6Mkh...#key-creator> ,
-                               <did:graph:z6Mkh...#key-alice> ,
-                               <did:graph:z6Mkh...#key-bob> ;
-  did://capabilityInvocation   <did:graph:z6Mkh...#key-creator> ,
-                               <did:graph:z6Mkh...#key-alice> ,
-                               <did:graph:z6Mkh...#key-bob> ;
-  did://capabilityDelegation   <did:graph:z6Mkh...#key-creator> ;
-  did://assertionMethod        <did:graph:z6Mkh...#key-creator> ,
-                               <did:graph:z6Mkh...#key-alice> ,
-                               <did:graph:z6Mkh...#key-bob> .
+  did://verificationMethod              <did:graph:z6Mkh...#z6Mkh...> ,
+                               <did:graph:z6Mkh...#z6Mka...> ,
+                               <did:graph:z6Mkh...#z6Mkb...> ;
+  did://capabilityInvocation   <did:graph:z6Mkh...#z6Mkh...> ,
+                               <did:graph:z6Mkh...#z6Mka...> ,
+                               <did:graph:z6Mkh...#z6Mkb...> ;
+  did://capabilityDelegation   <did:graph:z6Mkh...#z6Mkh...> ;
+  did://assertionMethod        <did:graph:z6Mkh...#z6Mkh...> ,
+                               <did:graph:z6Mkh...#z6Mka...> ,
+                               <did:graph:z6Mkh...#z6Mkb...> .
 
-<did:graph:z6Mkh...#key-creator>
+<did:graph:z6Mkh...#z6Mkh...>
   did://verificationMethod/type                "Ed25519VerificationKey2020" ;
   did://verificationMethod/controller          <did:graph:z6Mkh...> ;
   did://verificationMethod/publicKeyMultibase  "z6Mkh..." .
 
-# (further #key-alice, #key-bob entries similar)
+# The creator's method-id fragment repeats the DID's own multibase, because the
+# DID is derived from that initial key (§4.1). The #z6Mka..., #z6Mkb... delegate
+# entries are similar, each fragment being that key's own publicKeyMultibase.
 ```
+
+**Verification-method identifiers (normative).** A verification method's id MUST be `<did> + "#" + <publicKeyMultibase>`, where `<publicKeyMultibase>` is exactly that method's own `did://verificationMethod/publicKeyMultibase` value — the multibase base58btc Ed25519 encoding of [§4.1](#41-identifier-format). This is the identical construction the atomic bootstrap uses for the creator's method (`did + "#" + multibase_ed25519(pk)`, [§4.2](#42-groupification) step 4). Deriving the fragment from the key rather than from an assigned label makes a method id **self-certifying**: it can be reconstructed from the key alone, matches across independent implementations that hold the same key with no shared label registry, and cannot collide or be spoofed by a chosen name. The `#key-creator` / `#key-alice` / `#key-charlie` style fragments that appear in *illustrative* examples elsewhere in this document are non-normative mnemonics standing in for this `#<publicKeyMultibase>` fragment.
 
 User agents MUST be able to project these triples into a standard JSON-LD DID document for compatibility with consumers expecting [[DID-CORE]] JSON-LD output.
 
@@ -755,8 +761,12 @@ partial interface GraphManager {
   /** Create a fresh graph AND groupify it in one step. */
   [NewObject] Promise<Group> createGroup(GroupCreationOptions options);
 
-  /** Groupify an existing graph (one without a DID). One-way upgrade. */
-  [NewObject] Promise<Group> groupify(USVString graphIri, GroupifyOptions options);
+  /** Groupify an existing graph (one without a DID). One-way upgrade.
+      Takes the live Graph object, NOT an IRI: a graph's graph:// content
+      address advances on every write — including the groupification bootstrap
+      itself (§4.2 step 4) — so an IRI is not a durable handle to the graph
+      being mutated. See §4.3 and §8.2.2. */
+  [NewObject] Promise<Group> groupify(Graph graph, GroupifyOptions options);
 
   /** Fork a groupified graph into a new did:graph. See §4.8. */
   [NewObject] Promise<Group> forkGroup(USVString parentIriOrDid, ForkOptions options);
@@ -800,7 +810,7 @@ Creates a fresh graph via [[PERSONAL-LINKED-DATA-GRAPHS]] §4.1, immediately gro
 
 #### 8.2.2 groupify
 
-Performs [§4.2](#42-groupification) on a graph that does not yet have a DID. Requires the caller to hold a `groupifyContext` ZCAP on the graph (the root capability minted at creation includes this). Rejects with `"InvalidStateError"` if the graph is already a group. After this call:
+Performs [§4.2](#42-groupification) on a graph that does not yet have a DID. The argument is the live `Graph` object (from [[PERSONAL-LINKED-DATA-GRAPHS]] §4.1 `create()`, or a mounted graph), **not** a `graph://` IRI string. Because the atomic bootstrap write advances the graph's content-address IRI ([§4.2](#42-groupification) step 4), an IRI captured before the call would no longer identify the graph after it, and a concurrent write could race between an IRI-based lookup and the bootstrap. Passing the live handle binds groupification to the user agent's stable internal graph identity and removes that race ([§4.3](#43-the-binding-triple)). Requires the caller to hold a `groupifyContext` ZCAP on the graph (the root capability minted at creation includes this). Rejects with `"InvalidStateError"` if the graph is already a group. After this call:
 
 - `graph.did` returns the newly-minted `did:graph:...`.
 - `graph.iri` advances to the post-groupification IRI (the binding + seed DID document are now part of the canonical triple set).
