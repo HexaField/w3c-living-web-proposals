@@ -157,7 +157,7 @@ A **conforming implementation** MUST support all normative requirements when pro
 <dd>Short human-readable identifier. MUST be unique within the shape. MUST match <code>[a-zA-Z_][a-zA-Z0-9_]*</code>.</dd>
 
 <dt><code>datatype</code> (OPTIONAL)</dt>
-<dd>Expected datatype. MUST be an XSD URI or <code>"URI"</code>. If omitted, no type checking is performed.</dd>
+<dd>Expected datatype. MUST be one of: (a) a full XSD datatype URI (e.g. <code>http://www.w3.org/2001/XMLSchema#string</code>); (b) an <code>xsd:</code>-prefixed name (e.g. <code>xsd:string</code>), which an implementation MUST expand against the XSD namespace <code>http://www.w3.org/2001/XMLSchema#</code> and treat identically to its full-URI form; or (c) the literal string <code>"URI"</code>, marking an IRI-valued property whose object term is a link rather than a typed literal. Forms (a) and (b) denote the same datatype and MUST produce the same stored object term. If omitted, no type checking is performed.</dd>
 
 <dt><code>minCount</code> (OPTIONAL, default: 0)</dt>
 <dd>Minimum number of values. Corresponds to <code>sh:minCount</code> in SHACL.</dd>
@@ -232,7 +232,9 @@ For all actions:
 - **action**: MUST be a URI under `shape://actions/`.
 - **subject**: MUST be `"this"` — the new ShapeInstance's URI.
 - **predicate**: MUST be a valid predicate URI.
-- **object**: If the value matches a property `name`, it is resolved from initial values supplied at creation. Otherwise it is treated as a literal.
+- **object**: If the value matches a property `name`, it is resolved from initial values supplied at creation. Otherwise it is treated as a literal (for `setSingleTarget`/`addCollectionTarget`) or an IRI (for `addLink` — see [§4.3.1](#431-addlink) and [§4.5](#45-type-discriminator)).
+
+The three keys `subject`, `predicate`, and `object` are the **canonical, normative** constructor-action field names. Earlier editions of the §12 examples used the aliases `source`/`target`; those are non-normative and have been removed — an implementation MUST accept only `subject`/`predicate`/`object`.
 
 ### 4.4 Property Setters
 
@@ -410,22 +412,23 @@ Shapes are stored as triples *inside the graph they govern*. A graph can be moun
 Shapes are linked to the graph via:
 
 ```
-<graph-did> -[shape://has_shape]→ <shape-definition-address>
+<graph-identifier> -[shape://has_shape]→ <shape-definition-address>
 ```
 
-The predicate `shape://has_shape` is reserved for this purpose.
+The predicate `shape://has_shape` is reserved for this purpose. The subject `<graph-identifier>` is the graph's **stable identifier**: its `did:graph` DID if the graph is groupified ([[GROUP-IDENTITY]]), otherwise its stable graph id ([[PERSONAL-LINKED-DATA-GRAPHS]]). It MUST NOT be the volatile `graph://` content-address IRI, so the link survives mutation of the graph. (An implementation stores this as `did ?? id`.)
 
 ### 6.3 Content Addressing
 
-Shape definitions MUST be stored as content-addressed entities. The address is the SHA-256 of the shape JSON's canonical form (JCS [[JCS]]).
+Shape definitions MUST be stored as content-addressed entities. The address is the URI `sha256:` + the **lowercase hexadecimal** encoding of the SHA-256 digest of the shape JSON's canonical form (JCS [[JCS]]) — i.e. `"sha256:" + lowercaseHex(SHA-256(JCS(shapeJson)))`, a 71-character URI (the 7-character `sha256:` scheme prefix + 64 hex characters). Note the colon separator (`sha256:`), distinguishing a shape address from the hyphenated `sha256-<hex>` WASM content-hash of [[SYNC-MODULE-ARCHITECTURE]] §4.2.
 
 This makes shape definitions immutable. Modifying a shape produces a new content-address; the `shape://has_shape` link is updated to point at the new address.
 
 ### 6.4 Stored Triple Shape
 
 ```turtle
-# Inside the graph's named graph:
-<graph-id>  shape://has_shape   <sha256:abc...> .
+# Inside the graph's named graph. <graph-identifier> is the stable id of §6.2
+# (the graph's did:graph DID if groupified, else its stable graph id).
+<graph-identifier>  shape://has_shape   <sha256:abc...> .
 
 <sha256:abc...>  rdf://type           shape://Shape ;
                  shape://name          "Task" ;
@@ -585,10 +588,10 @@ await work.addShape("Task", JSON.stringify({
     { path: "schema://agent",        name: "assignees",   datatype: "URI",         minCount: 0 }
   ],
   constructor: [
-    { action: "shape://actions/setSingleTarget", source: "this", predicate: "rdf://type",            target: "schema://Action" },
-    { action: "shape://actions/setSingleTarget", source: "this", predicate: "schema://name",         target: "title" },
-    { action: "shape://actions/setSingleTarget", source: "this", predicate: "schema://description",  target: "description" },
-    { action: "shape://actions/setSingleTarget", source: "this", predicate: "schema://actionStatus", target: "status" }
+    { action: "shape://actions/addLink",         subject: "this", predicate: "rdf://type",            object: "schema://Action" },
+    { action: "shape://actions/setSingleTarget", subject: "this", predicate: "schema://name",         object: "title" },
+    { action: "shape://actions/setSingleTarget", subject: "this", predicate: "schema://description",  object: "description" },
+    { action: "shape://actions/setSingleTarget", subject: "this", predicate: "schema://actionStatus", object: "status" }
   ]
 }));
 ```
@@ -644,8 +647,8 @@ await community.addShape("Item", JSON.stringify({
     { path: "schema://name", name: "title", datatype: "xsd:string", minCount: 1, maxCount: 1 }
   ],
   constructor: [
-    { action: "shape://actions/setSingleTarget", source: "this", predicate: "rdf://type", target: "schema://Thing" },
-    { action: "shape://actions/setSingleTarget", source: "this", predicate: "schema://name", target: "title" }
+    { action: "shape://actions/addLink",         subject: "this", predicate: "rdf://type", object: "schema://Thing" },
+    { action: "shape://actions/setSingleTarget", subject: "this", predicate: "schema://name", object: "title" }
   ]
 }));
 
@@ -670,7 +673,7 @@ await channel.addShape("FormalItem", JSON.stringify({
   ],
   constructor: [
     // parent constructor runs first; child constructor appends
-    { action: "shape://actions/setSingleTarget", source: "this", predicate: "schema://identifier", target: "id" }
+    { action: "shape://actions/setSingleTarget", subject: "this", predicate: "schema://identifier", object: "id" }
   ]
 }));
 ```
