@@ -110,6 +110,23 @@ Optional:
 
 **Credential storage convention.** Agents store VCs as content-addressed expressions referenced via `<agent-did> -[governance://has_credential]→ <credential-expression-address>`. The engine resolves and verifies the VC.
 
+**Living-web credential profile.** So that a credential can be resolved, verified, and revocation-checked entirely from graph state — with no external JSON-LD context fetch and no general LD-Proofs suite — a conforming engine MUST accept, and SHOULD emit, the following profile:
+
+- The credential is a JSON object stored **JCS-canonical** (the same canonicalisation [[SHAPE-VALIDATION]] §6.3 applies to shape definitions) as a string literal *at its own content address*:
+
+  ```
+  <credential-expression-address> -[governance://credential_body]→ "<jcs-canonical-vc-json>"
+  ```
+
+  mirroring the `shape://definition` inline-literal convention. The address is `"sha256:" + lowercaseHex(SHA-256(body))`; an engine MUST reject a body whose bytes do not hash to the address it is stored at (content-address integrity), so a credential cannot be silently substituted.
+- `type` is a string or an array of strings; the required `<type-name>` matches when present in it.
+- `issuer` is a `did:key` — a string, or an object carrying an `id` — so the signing key is recovered from the issuer DID itself with no external resolution.
+- `issuanceDate` (or its VC-2.0 spelling `validFrom`) is an RFC 3339 instant, used for the `credential_min_age_hours` freshness check.
+- `credentialSubject.id` is the holder DID; the credential authorises that DID only.
+- `proof` carries `proofValue`, a multibase-encoded Ed25519 signature over a **versioned field projection** of the credential (a tagged, LF-joined projection of the issuer, subject, type, issuance and status fields), constructed exactly as the delegation pre-image of [[CAPABILITY-FRAMEWORK]] §5.2.2. The engine SHA-256s that pre-image and verifies the signature against the key named by the issuer `did:key`. This binds every field the constraint checks without a general LD canonicalisation step.
+
+A held credential that fails any of type, issuer, freshness, content-address integrity, signature, or revocation ([§4.2](#42-credential-verification-algorithm)) simply does not count as a match; the constraint REJECTs only when *no* held credential matches.
+
 ### 4.2 Credential Verification Algorithm
 
 **Input:** A triple, the author's DID, the scope chain, the graph state.
@@ -124,7 +141,7 @@ Optional:
    4. **Issuer match.** If `credential_issuer_pattern` is set, skip credentials whose `issuer` does not match the glob.
    5. **Freshness.** If `credential_min_age_hours` is set, require the credential's `issuanceDate` to be at least `min_age_hours` in the past.
    6. **Signature verification.** Verify the credential's proof per [[VC-DATA-MODEL-2.0]].
-   7. **Revocation check.** If the credential carries a `credentialStatus`, verify it is not revoked. On resolution failure, REJECT (fail-closed).
+   7. **Revocation check.** If the credential carries a `credentialStatus`, verify it is not revoked. Against **local graph state**, the `credentialStatus.id` is itself a graph subject, and the credential is revoked iff that subject bears `<credentialStatus.id> -[governance://revoked]→ "true"`. Absence of that triple means *not revoked*: a peer that has never received a revocation indication treats the credential as live (§9.5). (When a credential is delivered across the network, the presentation MAY additionally carry a status proof; the local-state `governance://revoked` check is the fail-closed floor every peer can evaluate.)
 3. If any constraint had zero matching credentials, REJECT.
 4. Otherwise, return ACCEPT.
 
@@ -227,8 +244,8 @@ Optional:
    3. **Length check.** REJECT if exceeds `content_max_length`.
    4. **Blocked patterns.** REJECT if any regex matches.
    5. **URL policy.** REJECT if `content_allow_urls = "false"` and content contains URLs.
-   6. **Domain whitelist.** REJECT if any URL's domain is not in `content_allowed_domains`.
-   7. **Media type.** REJECT if media type does not match any glob.
+   6. **Domain whitelist.** If `content_allowed_domains` is set, extract the host (the authority minus any userinfo and port) of every `http`/`https` URL in the object and REJECT if any host does not **glob-match** ([§7.4](#74-subject-and-object)) a listed entry — so `*.example.org` admits any subdomain of `example.org`.
+   7. **Media type.** If `content_allow_media_types` is set and the object is an RFC 2397 `data:` URL, REJECT unless its media type — the `data:[<mediatype>]` header, defaulting to `text/plain` when the header is omitted — **glob-matches** a listed entry. An object that is not a `data:` URL is not subject to this check.
 
 3. All passed → ACCEPT.
 
@@ -489,6 +506,8 @@ Temporal enforcement requires the engine to scan recent triples by a specific au
 | `governance://credential_issuer_pattern` | String literal | Issuer DID glob |
 | `governance://credential_min_age_hours` | Integer | Minimum credential age |
 | `governance://has_credential` | URI | Links agent DID to held VC |
+| `governance://credential_body` | String literal | JCS-canonical VC JSON stored inline at its own `sha256:` content address (§4.1) |
+| `governance://revoked` | Boolean string | On a `credentialStatus.id` subject, `"true"` marks the credential revoked in local state (§4.2) |
 | `governance://temporal_min_interval_seconds` | Integer | Min interval between matching writes |
 | `governance://temporal_max_count_per_window` | Integer | Max matching writes per window |
 | `governance://temporal_window_seconds` | Integer | Window duration (default 60) |
@@ -496,7 +515,7 @@ Temporal enforcement requires the engine to scan recent triples by a specific au
 | `governance://content_applies_to_predicates` | Comma-separated URIs | Scope of content constraint |
 | `governance://content_blocked_patterns` | Pipe-separated regex | Blocked patterns |
 | `governance://content_allow_urls` | Boolean string | Whether URLs are permitted |
-| `governance://content_allowed_domains` | Comma-separated domains | URL whitelist |
+| `governance://content_allowed_domains` | Comma-separated domain globs | URL host whitelist (glob-matched, §6.2) |
 | `governance://content_allow_media_types` | Comma-separated MIME globs | Permitted media types |
 | `governance://content_max_length` | Integer | Max character count |
 
