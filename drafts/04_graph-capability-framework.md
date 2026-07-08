@@ -610,6 +610,25 @@ The engine dispatches constraint validation to the registered handler for the co
 
 For non-triple operations ([§7.1](#71-non-triple-operations)), the engine MUST skip caveats whose handler reports `appliesToNonTripleOps = false`.
 
+**Validation context.** Both handler surfaces receive a `ValidationContext` — the evaluation environment the engine assembles for a single authorisation decision:
+
+```webidl
+dictionary ValidationContext {
+  Graph     graph;          // the graph the operation targets
+  USVString graphDid;       // its DID ("" if not groupified)
+  USVString graphIri;       // its stable graph IRI
+  USVString authorDid;      // the operation's author
+  USVString action;         // the derived action (§4.5.4.1)
+  boolean   isNonTripleOp;  // true for mountContext and other non-triple ops
+  USVString now;            // the RFC 3339 evaluation instant
+  USVString zcapId;         // id of the innermost delegation whose caveat is
+                            // under evaluation; "" for a root-capability or
+                            // otherwise non-delegated check
+};
+```
+
+`now` is the single instant the whole decision is computed against, so that a `temporal` constraint and an `expiry` caveat evaluated in the same decision agree on "now". `zcapId` names the specific delegation whose caveats the engine is currently evaluating, so a `CaveatHandler` that maintains per-delegation state — e.g. the `rateLimit` and `cardinality` caveats of [[CONSTRAINT-VOCABULARY]] §7.5–§7.6, whose usage counters are keyed on `(zcap.id, author)` — can identify the capability. It is the empty string when the engine evaluates a constraint kind or a root capability that is not reached through a delegation.
+
 ### 9.4 Performance
 
 `expiry` is a single timestamp comparison. Plug-in caveats define their own evaluation cost; the framework simply dispatches and aggregates.
