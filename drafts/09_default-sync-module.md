@@ -157,7 +157,8 @@ The default module declares the following [[SYNC-MODULE]] §7 capabilities:
 |---|---|
 | `graph.read` | Reading per-graph triples for `requestSync`, snapshot generation, and `validate()` |
 | `graph.write` | Applying received `GraphDiff`s to the per-graph store |
-| `crypto.sign` | Signing wire frames with the local agent's `did:key` |
+| `crypto.commit-sign` | Producing commit-bundle signatures for authored `DIFF` payloads ([§5.2](#52-diff)), per [[CONTEXT-SYNC]] §5.2.2, with the local agent's `did:key` |
+| `crypto.signal-sign` | Producing signal-envelope signatures for `SIGNAL` frames ([§5.5](#55-signal)) within the space |
 | `crypto.verify` | Verifying signatures on inbound frames |
 | `network.relay.<endpoint>` | Opening WebTransport sessions to the configured relays |
 | `network.peer.webrtc` | WebRTC for direct peer-to-peer transports (with STUN/TURN) |
@@ -460,7 +461,15 @@ space_traffic_secret =
     MLS-Exporter("lw-sync space frame", spaceUri_bytes, 32)
 ```
 
-where `MLS-Exporter(label, context, length)` is the exporter of [[RFC9420]] §8.5 (`MLS-Exporter(Label, Context, Length) = ExpandWithLabel(exporter_secret, Label, Hash(Context), Length)`), `exporter_secret` is the current epoch's exporter secret, and `spaceUri_bytes` is the UTF-8 encoding of the full `space://…` URI. The exporter is epoch-specific, so `space_traffic_secret` changes on every epoch advance automatically.
+where `MLS-Exporter(label, context, length)` is the exporter of [[RFC9420]] §8.5, computed in full as
+
+```
+MLS-Exporter(Label, Context, Length) =
+    ExpandWithLabel(DeriveSecret(exporter_secret, Label),
+                    "exported", Hash(Context), Length)
+```
+
+with `DeriveSecret(Secret, Label) = ExpandWithLabel(Secret, Label, "", KDF.Nh)` ([[RFC9420]] §8). Note the two-step form: the per-`Label` secret is first derived from `exporter_secret`, and only then expanded under the fixed `"exported"` string over `Hash(Context)`. `exporter_secret` is the current epoch's exporter secret and `spaceUri_bytes` is the UTF-8 encoding of the full `space://…` URI. The exporter is epoch-specific, so `space_traffic_secret` changes on every epoch advance automatically.
 
 From `space_traffic_secret`, derive the AEAD key and base nonce using HKDF-SHA256 [[RFC5869]] with MLS's labelled expansion ([[RFC9420]] §5.2 `ExpandWithLabel`):
 
