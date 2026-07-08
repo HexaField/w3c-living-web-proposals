@@ -234,7 +234,7 @@ For all actions:
 - **predicate**: MUST be a valid predicate URI.
 - **object**: If the value matches a property `name`, it is resolved from initial values supplied at creation. Otherwise it is treated as a literal (for `setSingleTarget`/`addCollectionTarget`) or an IRI (for `addLink` — see [§4.3.1](#431-addlink) and [§4.5](#45-type-discriminator)).
 
-The three keys `subject`, `predicate`, and `object` are the **canonical, normative** constructor-action field names. Earlier editions of the §12 examples used the aliases `source`/`target`; those are non-normative and have been removed — an implementation MUST accept only `subject`/`predicate`/`object`.
+The three keys `subject`, `predicate`, and `object` are the **canonical, normative** constructor-action field names, and the §12 examples use them. Earlier editions of those examples used the aliases `source` (for `subject`) and `target` (for `object`); for backward compatibility an implementation MAY additionally accept `source`/`target`, treating them as exact aliases of `subject`/`object`. New shape definitions SHOULD use the canonical keys; the aliases are deprecated.
 
 ### 4.4 Property Setters
 
