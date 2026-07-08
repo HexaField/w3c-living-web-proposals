@@ -278,6 +278,41 @@ Canonicalisation MUST use the RDF Dataset Canonicalization algorithm [[RDF-CANON
 
 Receiving peers MUST verify `signature` against `commitId` using the resolved `authorKey` before applying or forwarding the diff. Verification is normative in [§9.2.1](#921-validatediff-graphdid-diff-author-graphstate) step 0. Without this, an attacker observing valid triples could rebundle them into a diff claiming different authorship — the per-triple reifier signatures would remain valid, but the commit-level authorship would be a fabrication.
 
+##### 5.2.2.1 Exact pre-image bytes
+
+This sub-section is normative. It pins the byte strings the [§5.2.2](#522-revision-commitid-and-signature) `||` concatenations denote, so that two independent implementations content-address and sign a diff identically. The `||` in the formulae above is illustrative; the exact pre-images are those defined here. The construction mirrors [[GRAPH-CAPABILITY-FRAMEWORK]] §4.5.3.1 (the delegation-proof pre-image): domain-separated, versioned, and — where a field may itself contain the LF byte — length-framed so field boundaries are unambiguous.
+
+**Canonicalisation.** `canonicalize(additions)` and `canonicalize(removals)` are the RDF Dataset Canonicalization algorithm [[RDF-CANON]] (rdfc-1.0) applied to the respective triples-with-reifiers set, serialised to canonical N-Quads (UTF-8, each statement LF-terminated; the empty set serialises to the empty string). Because a canonical N-Quads block contains LF bytes, the `revision` pre-image length-frames each block.
+
+**`revision` pre-image.** The bytes SHA-256'd to produce `revision` are, in order, with `LF` = U+000A and `decimal(n)` the shortest ASCII decimal encoding of `n`:
+
+```
+"living-web/sync/revision/v1"            LF
+graphDid                                 LF
+decimal(byteLength(canonicalAdditions))  LF  canonicalAdditions
+decimal(byteLength(canonicalRemovals))   LF  canonicalRemovals
+decimal(count(sortedDependencies))       LF
+( dependencyRevision LF ) *                  // each entry of sortedDependencies, in order
+```
+
+There is no trailing separator after the final dependency line beyond its own `LF`; a zero-dependency chain root contributes only the `decimal(0) LF` count line. `sortedDependencies` is `sort(dependencies)` per the ordering pinned below.
+
+**`commitId` pre-image.** None of `revision`, `author`, `timestamp`, or the leaf ZCAP id contains an LF byte, so the `commitId` pre-image is a simple versioned LF-join with no length framing and no trailing LF:
+
+```
+"living-web/sync/commit/v1"  LF
+revision                     LF
+author                       LF
+timestamp                    LF
+leafZcapId                       // capabilityProof.chain[0]; empty string if the proof is omitted
+```
+
+**Hashing and hex.** Both pre-images are hashed with SHA-256; `revision` and `commitId` are the **lowercase** hexadecimal encodings of the respective 32-byte digests.
+
+**`signature` message.** `commitId` is already a SHA-256 digest, so `signature = sign(authorKey, commitId)` signs the UTF-8 bytes of the lowercase-hex `commitId` string **directly** — the signature primitive (Ed25519, which hashes its input internally) is applied to those bytes without a second application-level SHA-256. Verifiers check the signature over the same UTF-8 lowercase-hex `commitId` bytes.
+
+**`sort(dependencies)`.** `sort()` orders the dependency revisions by ascending lexicographic comparison of their lowercase-hex strings and removes duplicates. Both the committer (building `revision`) and every receiver (recomputing it) MUST apply this ordering, so a permuted or duplicated `dependencies` array cannot alter the `revision`.
+
 #### 5.2.3 `diffsSinceSnapshot`
 
 `diffsSinceSnapshot` is the committer's count of diffs in this graph's chain since the most recently observable snapshot. The committer computes it from their local view at commit time. Receiving peers:
