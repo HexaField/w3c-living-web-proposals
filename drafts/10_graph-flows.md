@@ -103,7 +103,7 @@ A conforming **flow engine** is a software component that:
 <dd>A declarative state machine definition: states, transitions, guards, temporal constraints, role requirements.</dd>
 
 <dt><dfn>FlowInstance</dfn></dt>
-<dd>A specific entity in a graph that is governed by a flow. The instance's current state is recorded as a triple <code>&lt;instance&gt; -[flow://state]→ &lt;state-name&gt;</code>.</dd>
+<dd>A specific entity in a graph that is governed by a flow. The instance's current state is recorded as a triple <code>&lt;instance&gt; -[flow://«flow»/state]→ &lt;state-name&gt;</code>, where the predicate is <strong>flow-scoped</strong> ([§5.2](#52-well-known-predicates)): the same entity MAY be an instance of several flows at once (e.g. a parent flow and a triggered sub-flow, [§10](#10-composite-flows)) and each records its state under its own <code>flow://«flow»/state</code> predicate, so the states never collide.</dd>
 
 <dt><dfn>State</dfn></dt>
 <dd>A named position in a flow's state machine. An instance is always in exactly one state per flow.</dd>
@@ -209,6 +209,8 @@ Actions are triple operations executed atomically with the state change:
 - **predicate**: A URI.
 - **object**: A static URI/literal, or `"now"` (substituted with the current ISO 8601 timestamp), or `"agent"` (substituted with the firing agent's DID).
 
+The keys `source` and `target` are accepted as aliases for `subject` and `object` respectively: a definition MAY use either spelling for either key, and an implementation MUST parse both spellings to the same canonical action (so `{ "source": "this", "target": "now" }` and `{ "subject": "this", "object": "now" }` are equivalent). The worked examples in [§16](#16-example-a-governance-proposal-flow) and [§17](#17-example-a-message-thread-flow) use the `source`/`target` spelling. When re-serialising a definition for the `flow://definition` literal ([§5.1](#51-triple-representation)), an implementation MUST normalise both spellings to the canonical `subject`/`object` keys so the [§5.1](#51-triple-representation) JCS pre-image is spelling-independent.
+
 ---
 
 ## 5. Storage and Discovery
@@ -224,7 +226,8 @@ A flow is stored as triples inside the graph it governs:
 <flow://Proposal>  rdf://type           flow://Flow ;
                    flow://name           "Proposal" ;
                    flow://applies_to     <gov://ProposalShape> ;
-                   flow://initial_state  "draft" .
+                   flow://initial_state  "draft" ;
+                   flow://definition     "{\"appliesTo\":\"gov://ProposalShape\",\"initialState\":\"draft\",\"name\":\"Proposal\",\"states\":[…],\"transitions\":[…]}" .
 
 <flow://Proposal>  flow://has_state  <flow://Proposal/state/draft> ,
                                       <flow://Proposal/state/comment> ,
@@ -251,12 +254,15 @@ A flow is stored as triples inside the graph it governs:
   flow://transition_role     "ratify" .
 ```
 
+The decomposed triples above are the human-readable, SPARQL-queryable projection of the flow. In addition, the flow node MUST carry a single `flow://definition` literal holding the **canonical JSON** (JCS, [[RFC8785]]) of the [§4](#4-flow-definition-format) definition object. This literal is the normative round-trip source of truth: the flow engine MUST reconstruct a flow's definition by parsing `flow://definition`, `getFlows()` ([§11](#11-api)) MUST project each returned `FlowInfo` from that parsed definition, and the [§5.1](#51-triple-representation) content hash / signature is computed over its JCS pre-image. The two representations MUST agree; where a consumer observes a decomposed triple that disagrees with the parsed `flow://definition`, the `flow://definition` literal is authoritative. Because the literal is canonicalised, the `subject`/`object` vs `source`/`target` aliasing of [§4.4](#44-actions) is normalised away before hashing, so the pre-image is spelling-independent.
+
 ### 5.2 Well-Known Predicates
 
 | Predicate | Purpose |
 |---|---|
 | `flow://has_flow` | Binds a flow to a graph |
 | `flow://name` | The flow's name (unique within the graph) |
+| `flow://definition` | The canonical-JSON ([[RFC8785]]) literal of the whole [§4](#4-flow-definition-format) definition; normative round-trip source for `getFlows()` projection and the [§5.1](#51-triple-representation) hash pre-image |
 | `flow://applies_to` | The shape (or class URI) of entities this flow governs |
 | `flow://initial_state` | The state name a new instance enters |
 | `flow://has_state` | Enumerates the flow's states |
@@ -267,7 +273,7 @@ A flow is stored as triples inside the graph it governs:
 | `flow://transition_guard` | A transition's SPARQL ASK guard |
 | `flow://transition_min_delay` / `_max_delay` / `_on_deadline` | Temporal constraints |
 | `flow://transition_role` | Required ZCAP action |
-| `flow://state` | A FlowInstance's current state (on the instance itself) |
+| `flow://«flow»/state` | A FlowInstance's current state under a given flow (on the instance itself). **Flow-scoped**: the predicate is `flow://` + the flow's name + `/state` (e.g. `flow://Proposal/state`), so an entity governed by several flows records one current state per flow without collision |
 | `flow://entered_state_at` | A FlowInstance's timestamp of entering its current state (carried by reifier on the state-establishing link) |
 
 ### 5.3 Self-Describing Graphs
@@ -292,10 +298,10 @@ SELECT ?flow ?name ?appliesTo WHERE {
 
 ### 6.1 Creation
 
-When a shape instance (e.g., a Proposal) is created, the flow engine MAY automatically set the initial state if the shape's `targetClass` matches a flow's `appliesTo`. The state-establishing link is:
+When a shape instance (e.g., a Proposal) is created, the flow engine MAY automatically set the initial state if the shape's `targetClass` matches a flow's `appliesTo`. The state-establishing link uses the flow-scoped predicate ([§5.2](#52-well-known-predicates)) — for a flow named `Proposal`:
 
 ```
-<instance>  flow://state  <state-name-literal-or-uri> .
+<instance>  flow://Proposal/state  <state-name-literal-or-uri> .
 ```
 
 The triple is authored with a reifier ([[PERSONAL-LINKED-DATA-GRAPHS]] §3.2) carrying author and timestamp. The reifier's timestamp is the canonical "entered this state at" time for temporal constraints.
@@ -385,20 +391,22 @@ Guards MUST be pure-SPARQL `ASK` queries. They MUST NOT use `UPDATE`, `INSERT`, 
 
 ### 8.2 Timestamp Source
 
-The "entered state at" timestamp is the reifier timestamp on the most recent `<instance> flow://state ?state` triple, carried by the diff that established that state ([[CONTEXT-SYNC]] §5.1). The runtime treats this diff timestamp as authoritative for elapsed-time computation (per [[CONTEXT-SYNC]] §14.5). It is self-reported by the committing agent, so a receiving peer MUST subject it to the timestamp-plausibility checks in [[CONSTRAINT-VOCABULARY]] §5.3 (future bound, causal monotonicity over `dependencies`, per-author monotonicity) before relying on it; a timestamp that fails those checks MUST NOT be used to satisfy `minDelay` or to declare a `maxDelay` deadline elapsed. The causal-ordering checks make backdating across the dependency graph tamper-evident, but do not eliminate a bounded within-skew lie ([[CONSTRAINT-VOCABULARY]] §5.3).
+The "entered state at" timestamp is the reifier timestamp on the most recent `<instance> flow://«flow»/state ?state` triple (the flow-scoped predicate of [§5.2](#52-well-known-predicates)), carried by the diff that established that state ([[CONTEXT-SYNC]] §5.1). The runtime treats this diff timestamp as authoritative for elapsed-time computation (per [[CONTEXT-SYNC]] §14.5). It is self-reported by the committing agent, so a receiving peer MUST subject it to the timestamp-plausibility checks in [[CONSTRAINT-VOCABULARY]] §5.3 (future bound, causal monotonicity over `dependencies`, per-author monotonicity) before relying on it; a timestamp that fails those checks MUST NOT be used to satisfy `minDelay` or to declare a `maxDelay` deadline elapsed. The causal-ordering checks make backdating across the dependency graph tamper-evident, but do not eliminate a bounded within-skew lie ([[CONSTRAINT-VOCABULARY]] §5.3).
 
 ### 8.3 Evaluation
 
 ```sparql
+# `flow://«flow»/state` is the flow-scoped predicate of §5.2, instantiated
+# with the evaluating flow's name — e.g. flow://Proposal/state.
 SELECT ?ts WHERE {
-  ?r rdf:reifies <<( $this flow://state $currentState )>> .
+  ?r rdf:reifies <<( $this flow://«flow»/state $currentState )>> .
   ?r prov://timestamp ?ts .
 }
 ORDER BY DESC(?ts)
 LIMIT 1
 ```
 
-`elapsed = now - ts`. The transition fires only if `elapsed >= minDelay`.
+`elapsed = now - ts`. The transition fires only if `elapsed >= minDelay`. Because the predicate is flow-scoped, this query reads only the elapsed time in *this* flow's state, never a sibling flow's on the same instance.
 
 ### 8.4 Auto-Transition Authorship
 
@@ -438,6 +446,8 @@ A transition MAY trigger a sub-flow:
 ```
 
 On firing, the runtime instantiates `VotingPeriod` with the same `this` instance and the parent's state captured. The parent flow remains in `voting` until the sub-flow reaches a terminal state, at which point the parent MAY fire a follow-up transition (see [§10.2](#102-completion-callback)).
+
+Because the current-state predicate is **flow-scoped** ([§5.2](#52-well-known-predicates)), the parent and the sub-flow coexist on the one instance without collision: the parent's state lives under `flow://«parent»/state` and the sub-flow's under `flow://«VotingPeriod»/state`. The two are independent triples, advanced independently, and — per [§13.1](#131-conflict-detection) — a transition in one flow can never conflict with a concurrent transition in the other. An entity MAY therefore be simultaneously in state `voting` under its parent flow and state `open` under a triggered sub-flow.
 
 ### 10.2 Completion Callback
 
@@ -563,10 +573,10 @@ A flow instance's state is an ordinary set of triples synchronised under the syn
 
 Two transition commits **conflict** when both:
 
-1. target the same flow instance (the same subject of the `<instance> flow://state ?state` link), AND
-2. leave the same **from-state** (each commit removes the same prior `flow://state` value and adds a new one).
+1. target the same flow instance under the same flow (the same subject and the same flow-scoped `<instance> flow://«flow»/state ?state` predicate, [§5.2](#52-well-known-predicates)), AND
+2. leave the same **from-state** (each commit removes the same prior `flow://«flow»/state` value and adds a new one).
 
-Concretely, a receiving peer detects a conflict when, after merge, it observes two distinct `flow://state` add-triples on one instance whose reifiers record the same superseded prior state. This covers both cases of interest: two peers firing the *same* transition (identical `fromState`/`toState`) and two peers firing *different* transitions out of the same `fromState` (e.g. `ratify` vs `reject` from `voting`). A commit that leaves a *different* from-state is not a conflict — it is causally ordered behind whichever transition produced its from-state, and ordinary dependency handling ([[DEFAULT-SYNC-MODULE]] §8.2) applies.
+Concretely, a receiving peer detects a conflict when, after merge, it observes two distinct `flow://«flow»/state` add-triples for the same flow on one instance whose reifiers record the same superseded prior state. Because the predicate is flow-scoped, concurrent transitions in *different* flows on the same instance are never in conflict — they write disjoint predicates. This covers both cases of interest: two peers firing the *same* transition (identical `fromState`/`toState`) and two peers firing *different* transitions out of the same `fromState` (e.g. `ratify` vs `reject` from `voting`). A commit that leaves a *different* from-state is not a conflict — it is causally ordered behind whichever transition produced its from-state, and ordinary dependency handling ([[DEFAULT-SYNC-MODULE]] §8.2) applies.
 
 ### 13.2 Tie-Break
 
@@ -588,7 +598,7 @@ Therefore:
 
 `maxDelay` / `onDeadline: "auto-transition"` deadline transitions ([§8.1](#81-format)) must fire "when the deadline passes", but there is no central authority to observe the deadline or to serialise who fires it. The resolution:
 
-1. **Any peer may fire.** ANY peer that observes, from its own admissible view, that the deadline has passed MAY commit the deadline transition. "The deadline has passed" is evaluated against the instance's state-entry timestamp (the reifier timestamp on the current `flow://state` link, [§8.2](#82-timestamp-source)) plus `maxDelay`, using the **plausible-timestamp rules** of [[CONSTRAINT-VOCABULARY]] §5.3 and [[CONTEXT-SYNC]] §14.5 — the same admissibility checks (future bound, causal monotonicity, per-author monotonicity) that gate every time-based decision. A peer MUST NOT act on a state-entry timestamp it would reject as implausible.
+1. **Any peer may fire.** ANY peer that observes, from its own admissible view, that the deadline has passed MAY commit the deadline transition. "The deadline has passed" is evaluated against the instance's state-entry timestamp (the reifier timestamp on the current `flow://«flow»/state` link, [§8.2](#82-timestamp-source)) plus `maxDelay`, using the **plausible-timestamp rules** of [[CONSTRAINT-VOCABULARY]] §5.3 and [[CONTEXT-SYNC]] §14.5 — the same admissibility checks (future bound, causal monotonicity, per-author monotonicity) that gate every time-based decision. A peer MUST NOT act on a state-entry timestamp it would reject as implausible.
 
 2. **No central authority; first valid commit wins.** Because any peer may fire, two or more peers can commit the deadline transition concurrently. These concurrent deadline commits are ordinary conflicting transitions and resolve via the tie-break of [§13.2](#132-tie-break): the deadline commit with the lexicographically smaller reifier hash wins, the others are rolled back. The **first valid deadline commit to win the tie-break stands**; there is exactly one surviving deadline transition on every honest peer. A deadline commit is still subject to guard re-evaluation ([§13.3](#133-guard-re-evaluation-on-receiving-peers)) and to role/authorship checks: `onDeadline: "auto-transition"` commits are authored by the system identity ([§8.4](#84-auto-transition-authorship), [§12.4](#124-auto-transitions)), so a deadline commit whose author cannot satisfy the transition's role requirement is rejected like any other unauthorised transition.
 
@@ -827,6 +837,9 @@ await community.addFlow("VotingPeriod", JSON.stringify({
 
 <dt>[RFC8174]</dt>
 <dd>Leiba, B., "Ambiguity of Uppercase vs Lowercase in RFC 2119 Key Words", BCP 14, RFC 8174, May 2017.</dd>
+
+<dt>[RFC8785]</dt>
+<dd>Rundgren, A., Jordan, B., Erdtman, S., "JSON Canonicalization Scheme (JCS)", RFC 8785, June 2020.</dd>
 
 <dt>[ISO-8601]</dt>
 <dd>ISO 8601-1:2019, Date and time — Representations for information interchange.</dd>
